@@ -75,4 +75,13 @@ class build_cycle(test_builder):
             f'cd {self.test_path}', './build.sh'
         ]
     
-    
+class build_manystress(test_builder):
+    descr = 'Build manystress sleeper executable'
+    test_name = "manystress"
+    @run_before('compile',always_last=True)
+    def prepare_build(self):
+        self.test_path = os.path.join(self.test_base_path, self.test_name)
+        self.build_system.commands = [
+            f'cd {self.test_path}', './build.sh'
+        ]
+   

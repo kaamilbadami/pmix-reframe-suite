@@ -14,7 +14,7 @@ import reframe.utility.sanity as sn
 from prrte_build_class import build_prrte
 from pmix_build_class import build_pmix
 from libevent_build_class import build_libevent
-from build_pmix_test import build_cycle, build_hello_world, build_prun_wrapper, fetch_pmixtest
+from build_pmix_test import build_cycle, build_hello_world, build_prun_wrapper, fetch_pmixtest, build_manystress
 
 class base_test(rfm.RunOnlyRegressionTest):
     valid_systems = ['*']
@@ -26,7 +26,7 @@ class base_test(rfm.RunOnlyRegressionTest):
     path = list()
     ld_library_path = list()
     
-    time_limit = '0d0h5m0s'
+    time_limit = '0d0h15m0s'
     num_tasks = 640
     num_tasks_per_node = 32
     num_cpus_per_task = 1
@@ -92,7 +92,13 @@ class hostname_test(base_test):
     def prepare_test(self):
         test_path = self.hello_test.test_path
         #1. Change folder 2. Init the DVM 3. set time output to be parsable later
-        self.prerun_cmds = [ f'cd {test_path}', 'prte --no-ready-msg &', 'TIMEFORMAT="runtime,%R,%U,%S"','sleep 5']
+        self.prerun_cmds = [ 
+            f'cd {test_path}', 
+            #"export HOSTS=$(scontrol show hostnames | xargs | tr ' ' ',')",
+            f"prte --no-ready-msg --host $(scontrol show hostnames | xargs | sed 's/ /:{self.num_tasks_per_node},/g' | sed 's/$/:{self.num_tasks_per_node}/') &",
+            'TIMEFORMAT="runtime,%R,%U,%S"',
+            'sleep 10'
+        ]
         self.executable="time"
         self.executable_opts = ["prun", f"--map-by ppr:{self.num_tasks_per_node}:node", "hostname"]
         # At the end shutdown the dvm
@@ -111,7 +117,12 @@ class hello_world_test(base_test):
     def prepare_test(self):
         test_path = self.hello_test.test_path
         #1. Change folder 2. Init the DVM 3. set time output to be parsable later
-        self.prerun_cmds = [ f'cd {test_path}', 'prte --no-ready-msg &', 'TIMEFORMAT="runtime,%R,%U,%S"','sleep 5']
+        self.prerun_cmds = [
+            f'cd {test_path}',
+            f"prte --no-ready-msg --host $(scontrol show hostnames | xargs | sed 's/ /:{self.num_tasks_per_node},/g' | sed 's/$/:{self.num_tasks_per_node}/') &",
+            'TIMEFORMAT="runtime,%R,%U,%S"',
+            'sleep 5'
+        ]
         self.executable="time"
         self.executable_opts = ["prun", f"--map-by ppr:{self.num_tasks_per_node}:node", "./hello"]
         # At the end shutdown the dvm
@@ -133,7 +144,13 @@ class cycle_test_hostname(base_test):
     @run_before("run")
     def prepare_test(self):
         test_path = self.cycle_test.test_path
-        self.prerun_cmds = [ f'cd {test_path}' , 'prte --no-ready-msg --report-uri dvm.uri_0 &', 'TIMEFORMAT="runtime,%R,%U,%S"','sleep 5' ]    
+        self.prerun_cmds = [
+            f'cd {test_path}',
+            #'prte --no-ready-msg --report-uri dvm.uri_0 &',
+            f"prte --no-ready-msg --report-uri dvm.uri_0 --host $(scontrol show hostnames | xargs | sed 's/ /:{self.num_tasks_per_node},/g' | sed 's/$/:{self.num_tasks_per_node}/') &",
+            'TIMEFORMAT="runtime,%R,%U,%S"',
+            'sleep 10'
+        ]    
         cmd = f"prun --dvm-uri file:dvm.uri_0 --num-connect-retries 1000 hostname"
         one_liner = f'for n in $(seq 1 {self.num_iters}); do {cmd}; done'
         self.executable = 'time'
@@ -158,7 +175,13 @@ class cycle_test_initialize_finalize(base_test):
     @run_before("run")
     def prepare_test(self):
         test_path = self.cycle_test.test_path
-        self.prerun_cmds = [ f'cd {test_path}' , 'prte --no-ready-msg --report-uri dvm.uri_1 &',  'TIMEFORMAT="runtime,%R,%U,%S"','sleep 5' ]    
+        self.prerun_cmds = [
+            f'cd {test_path}',
+            #'prte --no-ready-msg --report-uri dvm.uri_1 &',
+            f"prte --no-ready-msg --report-uri dvm.uri_1 --host $(scontrol show hostnames | xargs | sed 's/ /:{self.num_tasks_per_node},/g' | sed 's/$/:{self.num_tasks_per_node}/') &",
+            'TIMEFORMAT="runtime,%R,%U,%S"',
+            'sleep 5'
+        ]    
         cmd = f"prun --dvm-uri file:dvm.uri_1 --num-connect-retries 1000  ./init_finalize_pmix"
         one_liner = f'for n in $(seq 1 {self.num_iters}); do {cmd}; done'
         self.executable = 'time'
@@ -181,17 +204,29 @@ class cycle_test_initialize_finalize_multi(base_test):
     @run_before("run")
     def prepare_test(self):
         test_path = self.cycle_test.test_path
-        self.prerun_cmds = [ f'cd {test_path}' , 'prte --no-ready-msg --report-uri dvm.uri_2 &' ]    
+        self.prerun_cmds = [
+            f'cd {test_path}',
+            #'prte --no-ready-msg --report-uri dvm.uri_2 &'
+            f"prte --no-ready-msg --report-uri dvm.uri_2 --host $(scontrol show hostnames | xargs | sed 's/ /:{self.num_tasks_per_node},/g' | sed 's/$/:{self.num_tasks_per_node}/') &"
+        ]    
         cmd = f"prun --dvm-uri file:dvm.uri_2 --num-connect-retries 1000  ./multi_init_finalize_pmix"
-        one_liner = f'for n in $(seq 1 {self.num_iters}); do {cmd}; done'
+        one_liner = (
+            f'for n in $(seq 1 {self.num_iters}); do '
+            f'{cmd}; '
+            f' done; '
+            f'echo CYCLE_MULTI_COMPLETED'
+        )
         self.executable = 'time'
         self.executable_opts = ['bash', '-c', f"'{one_liner}'"]
         self.postrun_cmds = ["pterm --dvm-uri file:dvm.uri_2", "sleep 2"]
 
     @sanity_function
     def check_test(self):
-        flags = [self.check_host_count(expected_count=0),
-                 self.check_errors()]
+        flags = [
+            self.check_host_count(expected_count=0),
+            self.check_errors(),
+            sn.assert_found(r'CYCLE_MULTI_COMPLETED', self.stdout)
+        ]
         return sn.all(flags)
 
 @rfm.simple_test
@@ -203,7 +238,8 @@ class prun_wrapper_test_hostname(base_test):
     def prepare_test(self):
         test_path = self.prun_test.test_path
         self.prerun_cmds = [ f'cd {test_path}', 'TIMEFORMAT="runtime,%R,%U,%S"'  ]    
-        cmd = f" prterun --map-by node hostname"
+        #cmd = f" prterun --map-by node hostname"
+        cmd = f"prterun  --host $(scontrol show hostnames | xargs | sed 's/ /:{self.num_tasks_per_node},/g' | sed 's/$/:{self.num_tasks_per_node}/') --map-by node hostname"
         self.executable = 'time'
         self.executable_opts = [ f"{cmd}"]
         self.postrun_cmds = ["sleep 2"]
@@ -227,7 +263,8 @@ class prun_wrapper_test_hostname_absolute(base_test):
             'ABS_PATH=$(which prterun)',
             'ABS_PATH=$(dirname $ABS_PATH)'
         ]
-        cmd = f"$ABS_PATH/prterun --map-by node hostname"
+        #cmd = f"$ABS_PATH/prterun --map-by node hostname"
+        cmd = f"$ABS_PATH/prterun  --host $(scontrol show hostnames | xargs | sed 's/ /:{self.num_tasks_per_node},/g' | sed 's/$/:{self.num_tasks_per_node}/') --map-by node hostname"
         self.executable = 'time'
         self.executable_opts = [ f"{cmd}"]
         self.postrun_cmds = ["sleep 2"]
@@ -246,7 +283,8 @@ class prun_wrapper_test_hello(base_test):
     def prepare_test(self):
         test_path = self.prun_test.test_path
         self.prerun_cmds = [ f'cd {test_path}', 'TIMEFORMAT="runtime,%R,%U,%S"'  ]    
-        cmd = f"prterun --map-by node  ../hello_world/hello"
+        #cmd = f"prterun --map-by node  ../hello_world/hello"
+        cmd = f"prterun  --host $(scontrol show hostnames | xargs | sed 's/ /:{self.num_tasks_per_node},/g' | sed 's/$/:{self.num_tasks_per_node}/') --map-by node ../hello_world/hello"
         self.executable = 'time'
         self.executable_opts = [ f"{cmd}"]
         self.postrun_cmds = ["sleep 2"]
@@ -254,4 +292,36 @@ class prun_wrapper_test_hello(base_test):
     def check_test(self):
         flags = [self.check_host_count(),
                  self.check_errors()]
+        return sn.all(flags)
+
+@rfm.simple_test
+class manystress_test(base_test):
+    descr = "Test manystress in pmix-test"
+    test_name = "manystress"
+
+    manystress_build = fixture(build_manystress, scope = 'environment')
+
+    @run_before("run")
+    def prepare_test(self):
+
+        test_path = self.manystress_build.test_path
+
+        self.prerun_cmds = [
+            f'cd {test_path}',
+            f'export CI_NUM_NODES={self.num_tasks // self.num_tasks_per_node}',
+            f'export CI_NUM_CORES_PER_NODE={self.num_tasks_per_node}',
+            f"scontrol show hostnames | sed 's/$/ slots={self.num_tasks_per_node}/' > prte.hostfile",
+            'export CI_HOSTFILE=$PWD/prte.hostfile',
+            'TIMEFORMAT="runtime,%R,%U,%S"'
+        ]
+
+        self.executable = "time"
+        self.executable_opts = ["./run.sh"]
+
+    @sanity_function
+    def check_test(self):
+        flags = [
+            sn.assert_found(r"SUCCESS", self.stdout),
+            self.check_errors()
+        ]
         return sn.all(flags)

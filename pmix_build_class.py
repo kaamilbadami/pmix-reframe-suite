@@ -38,7 +38,8 @@ class build_pmix(rfm.CompileOnlyRegressionTest):
         self.prebuild_cmds = [
             f'cp {fullpath} {self.stagedir}',
             f'tar xzf {tarball}',
-            f'cd {self.build_prefix}'
+            f'cd {self.build_prefix}',
+            "sed -i '2113i\if (0 == bo.size) return;' src/common/pmix_iof.c"
         ]
         self.build_system.max_concurrency = 12
         self.postbuild_cmds = ['make install']

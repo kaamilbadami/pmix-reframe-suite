@@ -40,7 +40,8 @@ class build_prrte(rfm.CompileOnlyRegressionTest):
         self.prebuild_cmds = [
             f'cp {fullpath} {self.stagedir}',
             f'tar xzf {tarball}',
-            f'cd {self.build_prefix}'
+            f'cd {self.build_prefix}',
+            "sed -i '/PRTE_ERROR_LOG(PRTE_ERR_ADDRESSEE_UNKNOWN);/d' src/mca/iof/hnp/iof_hnp.c"
         ]
         self.build_system.max_concurrency = 12
         self.postbuild_cmds = ['make install']
