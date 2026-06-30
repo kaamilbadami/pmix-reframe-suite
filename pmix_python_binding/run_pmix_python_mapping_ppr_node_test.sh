@@ -28,20 +28,20 @@ export LD_LIBRARY_PATH="$PMIX/lib:$PRRTE/lib:$LIBEVENT/lib${LD_LIBRARY_PATH:+:$L
 cd "$SCRIPT_DIR"
 
 
-# Space-separated node counts to test.
+# Comma-separated node counts to test.
 # Examples:
 #   NODE_COUNTS="2"
-#   NODE_COUNTS="1 2 4"
+#   NODE_COUNTS="1,2,4"
 NODE_COUNT_VALUES="${NODE_COUNTS:-2}"
-read -r -a NODE_COUNT_LIST <<< "$NODE_COUNT_VALUES"
+IFS=',' read -r -a NODE_COUNT_LIST <<< "$NODE_COUNT_VALUES"
 
 
-# Space-separated processes-per-node values to test.
+# Comma-separated processes-per-node values to test.
 # Examples:
 #   PPR_VALUES="1"
-#   PPR_VALUES="1 2 4 8"
+#   PPR_VALUES="1,2,4,8"
 PPR_VALUE_TEXT="${PPR_VALUES:-1}"
-read -r -a PPR_VALUE_LIST <<< "$PPR_VALUE_TEXT"
+IFS=',' read -r -a PPR_VALUE_LIST <<< "$PPR_VALUE_TEXT"
 
 
 # Number of process slots advertised for every selected node.

@@ -7,6 +7,7 @@ sys.path.insert(0, REPO_ROOT)
 
 import reframe as rfm
 import reframe.utility.sanity as sn
+import reframe.utility.typecheck as typ
 
 from reframe.core.backends import getlauncher
 from reframe.core.builtins import (
@@ -42,8 +43,8 @@ class PMIxPythonMappingPPRNodeTest(rfm.RunOnlyRegressionTest):
     executable = './run_pmix_python_mapping_ppr_node_test.sh'
 
     # Configurable test values. These may be changed with ReFrame -S.
-    node_counts = variable(str, value='2')
-    ppr_values = variable(str, value='1')
+    node_counts = variable(typ.List[int], value=[2])
+    ppr_values = variable(typ.List[int], value=[1])
     trials = variable(int, value=5)
     slots_per_node = variable(int, value=32)
 
@@ -54,37 +55,17 @@ class PMIxPythonMappingPPRNodeTest(rfm.RunOnlyRegressionTest):
 
     @run_after('init')
     def set_resources(self):
-        try:
-            requested_nodes = [
-                int(value)
-                for value in self.node_counts.split()
-            ]
-        except ValueError as error:
-            raise ValueError(
-                "node_counts must contain positive integers"
-            ) from error
-
-        try:
-            requested_ppr_values = [
-                int(value)
-                for value in self.ppr_values.split()
-            ]
-        except ValueError as error:
-            raise ValueError(
-                "ppr_values must contain positive integers"
-            ) from error
-
         if (
-            not requested_nodes
-            or any(value < 1 for value in requested_nodes)
+            not self.node_counts
+            or any(value < 1 for value in self.node_counts)
         ):
             raise ValueError(
                 "node_counts must contain at least one positive integer"
             )
 
         if (
-            not requested_ppr_values
-            or any(value < 1 for value in requested_ppr_values)
+            not self.ppr_values
+            or any(value < 1 for value in self.ppr_values)
         ):
             raise ValueError(
                 "ppr_values must contain at least one positive integer"
@@ -98,7 +79,7 @@ class PMIxPythonMappingPPRNodeTest(rfm.RunOnlyRegressionTest):
 
         if any(
             value > self.slots_per_node
-            for value in requested_ppr_values
+            for value in self.ppr_values
         ):
             raise ValueError(
                 "a PPR value exceeds the available slots per node"
@@ -106,7 +87,7 @@ class PMIxPythonMappingPPRNodeTest(rfm.RunOnlyRegressionTest):
 
         self.num_tasks_per_node = self.slots_per_node
         self.num_tasks = (
-            max(requested_nodes) * self.slots_per_node
+            max(self.node_counts) * self.slots_per_node
         )
 
     @run_before('run')
@@ -123,8 +104,12 @@ class PMIxPythonMappingPPRNodeTest(rfm.RunOnlyRegressionTest):
             'PMIX': self.pmix.stagedir,
             'PRRTE': self.prrte.stagedir,
             'LIBEVENT': self.libevent.stagedir,
-            'NODE_COUNTS': self.node_counts,
-            'PPR_VALUES': self.ppr_values,
+            'NODE_COUNTS': ','.join(
+                str(value) for value in self.node_counts
+            ),
+            'PPR_VALUES': ','.join(
+                str(value) for value in self.ppr_values
+            ),
             'TRIALS': str(self.trials),
             'SLOTS_PER_NODE': str(self.slots_per_node)
         }
