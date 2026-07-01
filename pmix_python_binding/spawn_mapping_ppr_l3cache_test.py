@@ -42,11 +42,19 @@ process_pattern = os.path.join(
     "process_*_l3"
 )
 
+started_pattern = os.path.join(
+    proof_directory,
+    "started_*_l3"
+)
+
 
 for old_file in glob.glob(topology_pattern + "*"):
     os.remove(old_file)
 
 for old_file in glob.glob(process_pattern + "*"):
+    os.remove(old_file)
+
+for old_file in glob.glob(started_pattern + "*"):
     os.remove(old_file)
 
 
@@ -75,13 +83,40 @@ def wait_for_files(pattern, expected_count, description):
     """Wait up to 15 seconds for the requested proof files."""
     proof_files = []
 
-    for _ in range(150):
+    for attempt in range(150):
         proof_files = sorted(glob.glob(pattern))
 
         if len(proof_files) == expected_count:
+            print(
+                f"{description} files complete: "
+                f"{len(proof_files)}/{expected_count}",
+                flush=True
+            )
             return proof_files
 
+        if attempt % 10 == 0:
+            print(
+                f"waiting for {description} files: "
+                f"{len(proof_files)}/{expected_count}",
+                flush=True
+            )
+
         time.sleep(0.1)
+
+    if pattern == process_pattern:
+        started_files = sorted(glob.glob(started_pattern))
+
+        print(
+            f"process start markers: "
+            f"{len(started_files)}/{expected_count}",
+            flush=True
+        )
+
+        for started_file in started_files:
+            print(
+                f"started: {os.path.basename(started_file)}",
+                flush=True
+            )
 
     raise SystemExit(
         f"found {len(proof_files)} {description} files; "
@@ -279,6 +314,12 @@ try:
     process_command = (
         'host=$(hostname -s); '
         'pid=$$; '
+        'rank=${PMIX_RANK:-unknown}; '
+        f'started={proof_directory_shell}/started_${{host}}_${{pid}}_${{rank}}_l3; '
+        'started_tmp="${started}.tmp"; '
+        'printf "%s|%s|%s\\n" "$host" "$pid" "$rank" '
+        '> "$started_tmp"; '
+        'mv "$started_tmp" "$started"; '
         f'out={proof_directory_shell}/process_${{host}}_${{pid}}_l3; '
         'tmp="${out}.tmp"; '
         "cpu=$(awk '{print $39}' /proc/$$/stat); "
