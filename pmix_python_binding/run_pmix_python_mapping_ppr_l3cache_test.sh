@@ -134,7 +134,7 @@ cleanup_dvm()
 
     PRTE_PID=""
 
-    rm -f dvm.uri topology_*_l3* process_*_l3*
+    rm -f dvm.uri topology_*_l3* process_*_l3* started_*_l3*
 }
 
 
@@ -207,9 +207,13 @@ do
             echo \
                 "NODES $node_count PPR $processes_per_l3cache L3CACHE TRIAL $trial START"
 
-            rm -f topology_*_l3* process_*_l3*
+            rm -f topology_*_l3* process_*_l3* started_*_l3*
 
-            "$PYTHON" spawn_mapping_ppr_l3cache_test.py \
+            timeout \
+                --signal=TERM \
+                --kill-after=30s \
+                300s \
+                "$PYTHON" -u spawn_mapping_ppr_l3cache_test.py \
                 "$EXPECTED_HOSTS" \
                 "$processes_per_l3cache"
 
