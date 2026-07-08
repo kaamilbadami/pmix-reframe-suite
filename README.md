@@ -86,6 +86,34 @@ graph TD
 4. **Configure your system** (edit `sysconfig.yaml`):
    Update the system name, partition, and access credentials to match your HPC cluster.
 
+## PMIx Python Test Coverage
+
+This branch also includes ReFrame tests for the PMIx Python bindings.
+
+These tests use a Python controller to connect to a PRRTE DVM through PMIx and spawn simple sleeper jobs. The sleeper jobs start, sleep briefly, print DONE, and exit. This keeps the tests focused on launch, placement, completion, and regression behavior.
+
+### PMIx Python tests
+
+| Test file | Purpose |
+|----------|---------|
+| `pmix_python_binding/pmix_python_scaling_test.py` | Single-node PMIx Python process scaling |
+| `pmix_python_binding/pmix_python_scaling_multinode_test.py` | Multi-node PMIx Python spawning |
+| `pmix_python_binding/pmix_python_mapping_ppr_node_test.py` | PPR node mapping through PMIx Python |
+| `pmix_python_binding/pmix_python_worker_threads_compat_test.py` | Concurrent spawn submission from Python worker threads |
+| `pmix_python_binding/pmix_python_targeted_compat_test.py` | Requested host targeting through PMIX_HOST |
+| `pmix_python_binding/pmix_python_mixed_thread_compat_test.py` | Mixed job sizes and slot tracking |
+
+### PMIx Python portability
+
+The PMIx Python tests use PMIX_PYTHON when it is set. This lets a CI runner, service account, or another user provide a different Python interpreter with the PMIx bindings installed.
+
+Example:
+
+    export PMIX_PYTHON=/path/to/python-with-pmix-bindings
+
+If PMIX_PYTHON is not set, the tests fall back to the development Python path used during initial Frontier validation.
+
+
 ## Running the Tests
 
 ### Quick Start
