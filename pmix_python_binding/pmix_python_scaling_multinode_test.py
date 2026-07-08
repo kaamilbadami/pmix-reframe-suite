@@ -47,9 +47,9 @@ class PMIxPythonScalingMultinodeTest(rfm.RunOnlyRegressionTest):
 
         # Use the software installations produced by the ReFrame fixtures.
         self.env_vars = {
-            'PYTHON': (
-                '/lustre/orion/scratch/kbadami/gen243/'
-                'reframe_practice/pmix-py310/bin/python'
+            'PYTHON': os.environ.get(
+                'PMIX_PYTHON',
+                '/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python'
             ),
             'PMIX': self.pmix.stagedir,
             'PRRTE': self.prrte.stagedir,

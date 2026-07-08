@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Default locations of the externally installed software. These values may
 # be overridden by setting the variables before running the test.
 INSTALL_DIR="${INSTALL_DIR:-/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix_by_hand/python_binding_test}"
-PYTHON="${PYTHON:-/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python}"
+PYTHON="${PMIX_PYTHON:-${PYTHON:-/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python}}"
 PMIX="${PMIX:-$INSTALL_DIR/pmix-install-finalize-fix}"
 PRRTE="${PRRTE:-$INSTALL_DIR/prrte-install-py310}"
 LIBEVENT="${LIBEVENT:-/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix_by_hand/libevent}"
