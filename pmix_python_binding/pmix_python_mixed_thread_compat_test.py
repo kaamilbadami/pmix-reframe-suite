@@ -16,9 +16,9 @@ from pmix_build_class import build_pmix
 from prrte_build_class import build_prrte
 
 
-PYTHON = (
-    '/lustre/orion/scratch/kbadami/gen243/'
-    'reframe_practice/pmix-py310/bin/python'
+PYTHON = os.environ.get(
+    'PMIX_PYTHON',
+    '/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python'
 )
 
 SLEEPER = (
