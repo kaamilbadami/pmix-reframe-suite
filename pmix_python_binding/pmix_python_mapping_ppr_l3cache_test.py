@@ -1,4 +1,5 @@
 import os
+import subprocess
 import sys
 
 # Allow this test to import build classes from the repository root.
@@ -23,6 +24,9 @@ from pmix_build_class import build_pmix
 from prrte_build_class import build_prrte
 
 
+TEST_DIR = os.path.dirname(__file__)
+
+
 # ReFrame test for PMIx Python PPR L3-cache mapping.
 @rfm.simple_test
 class PMIxPythonMappingPPRL3CacheTest(
@@ -38,8 +42,8 @@ class PMIxPythonMappingPPRL3CacheTest(
     pmix = fixture(build_pmix, scope='environment')
     libevent = fixture(build_libevent, scope='environment')
 
-    # Copy this directory into the ReFrame stage directory.
-    sourcesdir = os.path.dirname(__file__)
+    # Avoid recursively staging ReFrame's output and stage trees.
+    sourcesdir = None
 
     # Run the staged PPR L3-cache mapping shell script.
     executable = (
@@ -87,6 +91,14 @@ class PMIxPythonMappingPPRL3CacheTest(
         if self.trials < 1:
             raise ValueError("trials must be positive")
 
+        if any(
+            value > self.slots_per_node
+            for value in self.ppr_values
+        ):
+            raise ValueError(
+                "a PPR value exceeds the available slots per node"
+            )
+
         self.num_tasks_per_node = self.slots_per_node
         self.num_tasks = (
             max(self.node_counts) * self.slots_per_node
@@ -104,15 +116,38 @@ class PMIxPythonMappingPPRL3CacheTest(
         # Run the shell script directly inside the Slurm allocation.
         self.job.launcher = getlauncher('local')()
 
+        self.prerun_cmds = [
+            f'cp {os.path.join(TEST_DIR, "run_pmix_python_mapping_ppr_l3cache_test.sh")} .',
+            f'cp {os.path.join(TEST_DIR, "spawn_mapping_ppr_l3cache_test.py")} .'
+        ]
+
+        python = os.environ.get(
+            'PMIX_PYTHON',
+            os.path.join(self.pmix.python_env, 'bin', 'python')
+        )
+        python_version = subprocess.check_output(
+            [
+                python,
+                '-c',
+                'import sys; '
+                'print(f"{sys.version_info[0]}.{sys.version_info[1]}")'
+            ],
+            text=True
+        ).strip()
+        pmix_python_package = os.path.join(
+            self.pmix.stagedir,
+            'lib',
+            f'python{python_version}',
+            'site-packages'
+        )
+
         # Use the software installations produced by the fixtures.
         self.env_vars = {
-            'PYTHON': (
-                '/lustre/orion/scratch/kbadami/gen243/'
-                'reframe_practice/pmix-py310/bin/python'
-            ),
+            'PYTHON': python,
             'PMIX': self.pmix.stagedir,
             'PRRTE': self.prrte.stagedir,
             'LIBEVENT': self.libevent.stagedir,
+            'PMIX_PYTHON_PACKAGE': pmix_python_package,
             'NODE_COUNTS': ','.join(
                 str(value) for value in self.node_counts
             ),
