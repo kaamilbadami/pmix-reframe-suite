@@ -63,6 +63,7 @@ parser.add_argument('--iters', type=int, required=True)
 parser.add_argument('--out-file', type=str, required=True)
 parser.add_argument('--delay', type=float, required=True)
 parser.add_argument('--job', type=str, required=True)
+parser.add_argument('--target-host-override', type=str)
 
 
 debug = True
@@ -343,9 +344,10 @@ def worker():
         app = run_queue.get()
 
         next_host_slot = host_q.pop()
-        app_info[0]['value'] = next_host_slot
+        target_host = args.target_host_override or next_host_slot
+        app_info[0]['value'] = target_host
         app['info'] = app_info
-        print_info("my_id {} targeted to {}".format(app['my_id'], next_host_slot))
+        print_info("my_id {} targeted to {}".format(app['my_id'], target_host))
         #print_info(app_info)
 
         print_info("About to launch task {}".format(app))
