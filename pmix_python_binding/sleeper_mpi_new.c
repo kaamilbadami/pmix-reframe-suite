@@ -9,6 +9,10 @@
 #define NUM_SEC   1  /* default number of seconds */
 #define ID_NUM    1  /* default launch id number */
 
+#ifndef PMIX_TEST_EXIT_CODE
+#define PMIX_TEST_EXIT_CODE 0
+#endif
+
 void usage(void)
 {
     char *name = "sleeper";
@@ -84,6 +88,11 @@ int main(int argc, char **argv)
     //fprintf(fp, "(%06d.%6d) [%s] DONE (slept %d seconds)\n", launchid, pid, host, nsec);
     fprintf(stdout, "(%06d.%6d) [%s] %2d %2d  DONE (slept %d seconds)\n", launchid, pid, host, mpi_rank, mpi_size, nsec);
 
+    if (0 != PMIX_TEST_EXIT_CODE) {
+        fprintf(stderr, "INTENTIONAL PMIX PAYLOAD FAILURE: exit_code=%d\n",
+                PMIX_TEST_EXIT_CODE);
+    }
+
     //fprintf(stdout, "MPI report, %i, %i\n", mpi_rank, mpi_size);
 
     //fflush(NULL);
@@ -91,5 +100,5 @@ int main(int argc, char **argv)
 
     MPI_Finalize();
 
-    return 0;
+    return PMIX_TEST_EXIT_CODE;
 }

@@ -25,6 +25,8 @@ SLEEPER = (
     './sleeper_mpi_new'
 )
 
+TEST_DIR = os.path.dirname(__file__)
+
 
 class _PMIxPythonTargetedCompatBase(rfm.RunOnlyRegressionTest):
 
@@ -35,7 +37,9 @@ class _PMIxPythonTargetedCompatBase(rfm.RunOnlyRegressionTest):
     pmix = fixture(build_pmix, scope='environment')
     libevent = fixture(build_libevent, scope='environment')
 
-    sourcesdir = os.path.dirname(__file__)
+    # Do not stage the whole directory: it contains ReFrame's stage/output
+    # trees, which can recursively copy themselves into the next run.
+    sourcesdir = None
 
     executable = PYTHON
 
@@ -68,9 +72,13 @@ class _PMIxPythonTargetedCompatBase(rfm.RunOnlyRegressionTest):
         ]
 
         self.prerun_cmds = [
+            'set -e',
             'mapfile -t nodes < <(scontrol show hostnames "$SLURM_JOB_NODELIST")',
             'test ${#nodes[@]} -ge 3',
             "printf '%s slots=1\\n' \"${nodes[1]}\" \"${nodes[2]}\" > ci.hostfile",
+            f'cp {os.path.join(TEST_DIR, "run_pmix_python_targeted_compat.py")} .',
+            f'cp {os.path.join(TEST_DIR, "pmix_event_utils.py")} .',
+            f'cp {os.path.join(TEST_DIR, "sleeper_mpi_new.c")} .',
             'mpicc -o sleeper_mpi_new sleeper_mpi_new.c'
         ]
 
@@ -99,7 +107,14 @@ class _PMIxPythonTargetedCompatBase(rfm.RunOnlyRegressionTest):
         self.postrun_cmds = [
             "set -euo pipefail; "
             "expected_hosts=$(awk '{print $1}' \"$CI_HOSTFILE\"); "
-            "actual_hosts=$(awk '/targeted to/ {print $NF}' targeted_compat.out); "
+            # This only proves which hosts the controller requested, not where
+            # the sleepers actually ran.
+            # "actual_hosts=$(awk '/targeted to/ {print $NF}' targeted_compat.out); "
+            "actual_hosts=$(awk '/DONE \\(slept 1 seconds\\)/ { "
+            "if (match($0, /\\[[^]]+\\]/)) { "
+            "print substr($0, RSTART + 1, RLENGTH - 2); "
+            "} "
+            "}' rfm_job.out); "
             "test \"$(printf '%s\\n' \"$expected_hosts\" | sed '/^$/d' | wc -l)\" -eq 2; "
             "test \"$(printf '%s\\n' \"$actual_hosts\" | sed '/^$/d' | wc -l)\" -eq 2; "
             "sorted_expected=$(printf '%s\\n' \"$expected_hosts\" | sort); "

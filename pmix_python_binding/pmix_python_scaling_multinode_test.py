@@ -16,6 +16,9 @@ from pmix_build_class import build_pmix
 from prrte_build_class import build_prrte
 
 
+TEST_DIR = os.path.dirname(__file__)
+
+
 # ReFrame test for PMIx Python spawning across multiple nodes.
 @rfm.simple_test
 class PMIxPythonScalingMultinodeTest(rfm.RunOnlyRegressionTest):
@@ -29,8 +32,9 @@ class PMIxPythonScalingMultinodeTest(rfm.RunOnlyRegressionTest):
     pmix = fixture(build_pmix, scope='environment')
     libevent = fixture(build_libevent, scope='environment')
 
-    # Copy this directory into the ReFrame stage directory.
-    sourcesdir = os.path.dirname(__file__)
+    # Do not stage the whole directory: it contains ReFrame's stage/output
+    # trees, which can recursively copy themselves into the next run.
+    sourcesdir = None
 
     # Run the staged shell script.
     executable = './run_pmix_python_scaling_multinode_test.sh'
@@ -44,6 +48,10 @@ class PMIxPythonScalingMultinodeTest(rfm.RunOnlyRegressionTest):
     def prepare_test(self):
         # Run the shell script directly inside the Slurm allocation.
         self.job.launcher = getlauncher('local')()
+        self.prerun_cmds = [
+            f'cp {os.path.join(TEST_DIR, "run_pmix_python_scaling_multinode_test.sh")} .',
+            f'cp {os.path.join(TEST_DIR, "spawn_scaling_multinode_test.py")} .'
+        ]
 
         # Use the software installations produced by the ReFrame fixtures.
         self.env_vars = {

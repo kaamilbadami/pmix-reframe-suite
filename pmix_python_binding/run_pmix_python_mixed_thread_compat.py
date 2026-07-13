@@ -16,6 +16,8 @@ from io import StringIO
 import threading
 import queue
 
+from pmix_event_utils import get_pmix_info_value
+
 # Worker thread blocks on run_queue. PMIx spawn blocks on spawn, but releases the GIL.
 # This means that multiple dispatch threads will be benifitial. This may change if non-blocking
 # spawns are implemented
@@ -190,8 +192,24 @@ def next_handler(evhdlr:int, status:int,
                  source:dict, info:list, results:list):
     global active
 
+    app = running[source['nspace']]
+    term_status = get_pmix_info_value(
+        info, pmix.PMIX_JOB_TERM_STATUS
+    )
+    if term_status is None:
+        log_error('missing PMIX_JOB_TERM_STATUS', app)
+    elif term_status != pmix.PMIX_SUCCESS:
+        error_text = tool.error_string(term_status)
+        print_info(
+            "Completion handler: job {} failed with "
+            "PMIX_JOB_TERM_STATUS={} ({})".format(
+                source['nspace'], term_status, error_text
+            )
+        )
+        log_error(error_text, app)
+
     #print("next_handler FIRED")
-    job = running[source['nspace']]
+    job = app
     #print(f"FIRED {job}")
     nslots = int(job['maxprocs'])
     #print(f"FIRED {nslots}")
@@ -298,7 +316,8 @@ def worker():
     #sleep_time = 0
     # {'key':pmix.PMIX_NO_PROCS_ON_HEAD, 'value':True, 'val_type':pmix.PMIX_BOOL}
     info = [{'key':pmix.PMIX_MAPBY, 'value':"hwthread:NOLOCAL", 'val_type':pmix.PMIX_STRING},
-            {'key':pmix.PMIX_BINDTO, 'value':"hwthread", 'val_type':pmix.PMIX_STRING}]
+            {'key':pmix.PMIX_BINDTO, 'value':"hwthread", 'val_type':pmix.PMIX_STRING},
+            {'key':pmix.PMIX_NOTIFY_COMPLETION, 'value':True, 'val_type':pmix.PMIX_BOOL}]
 #            {'key':pmix.PMIX_IOF_TAG_OUTPUT, 'value':True, 'val_type':pmix.PMIX_BOOL},
 #            {'key':pmix.PMIX_IOF_TIMESTAMP_OUTPUT, 'value':True, 'val_type':pmix.PMIX_BOOL},
 #            {'key':pmix.PMIX_IOF_OUTPUT_TO_FILE, 'value':'dummy.outfile', 'val_type':pmix.PMIX_STRING}]
@@ -324,10 +343,8 @@ def worker():
             # These two lines are to enable a fail semantic.
             avail += app['maxprocs']
             active -= app['maxprocs']
-            mark_complete()
-
-            # Error should be logged both ways
             log_error(tool.error_string(rc), app)
+            mark_complete()
             continue
 
         running[nspace] = app

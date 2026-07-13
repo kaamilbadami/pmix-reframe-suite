@@ -1,4 +1,5 @@
 import os
+import shlex
 import sys
 
 # Allow this test to import build classes from the repository root.
@@ -21,14 +22,12 @@ PYTHON = os.environ.get(
     '/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python'
 )
 
-SLEEPER = (
-    './sleeper_mpi_new'
-)
-
 TEST_DIR = os.path.dirname(__file__)
 
 
-class _PMIxPythonWorkerThreadsCompatBase(rfm.RunOnlyRegressionTest):
+@rfm.simple_test
+class PMIxPythonEventFailurePropagationTest(rfm.RunOnlyRegressionTest):
+    """Deliberately fail spawned jobs to verify failure propagation."""
 
     valid_systems = ['frontier:batch']
     valid_prog_environs = ['pmix_test']
@@ -37,52 +36,58 @@ class _PMIxPythonWorkerThreadsCompatBase(rfm.RunOnlyRegressionTest):
     pmix = fixture(build_pmix, scope='environment')
     libevent = fixture(build_libevent, scope='environment')
 
-    # Do not stage the whole directory: it contains ReFrame's stage/output
-    # trees, which can recursively copy themselves into the next run.
     sourcesdir = None
 
-    executable = PYTHON
-
-    # Reserve three nodes so the driver can use two remote PRRTE hosts.
     num_tasks = 96
     num_tasks_per_node = 32
     time_limit = '10m'
 
-    num_workers = 1
-
     @run_before('run')
     def prepare_test(self):
         self.job.launcher = getlauncher('local')()
-        self.executable_opts = [
-            './run_pmix_python_worker_threads_compat.py',
-            '--slots',
-            '2',
-            '--job-size',
-            '1',
-            '--min-time',
-            '1',
-            '--max-time',
-            '1',
-            '--iters',
-            '2',
-            '--out-file',
-            f'worker_threads_{self.num_workers}.out',
-            '--delay',
-            '0',
-            '--job',
-            SLEEPER,
-            '--num-workers',
-            str(self.num_workers)
+        controller_args = [
+            PYTHON,
+            './run_pmix_python_targeted_compat.py',
+            '--slots', '2',
+            '--job-size', '1',
+            '--min-time', '1',
+            '--max-time', '1',
+            '--iters', '1',
+            '--out-file', 'event_failure.out',
+            '--delay', '0',
+            '--job', './sleeper_mpi_fail'
         ]
+        controller_cmd = shlex.join(controller_args)
+        wrapper = (
+            'set +e; '
+            f'{controller_cmd}; '
+            'controller_rc=$?; '
+            'set -e; '
+            'printf "CONTROLLER_EXIT_CODE=%s\\n" "$controller_rc"; '
+            'test "$controller_rc" -eq 1; '
+            "grep -q 'TARGETED PLACEMENT FAIL' event_failure.out; "
+            "grep -Eq 'PMIX_JOB_TERM_STATUS=(-[0-9]+|[1-9][0-9]*)' "
+            "event_failure.out; "
+            "grep -q 'INTENTIONAL PMIX PAYLOAD FAILURE: exit_code=7' "
+            "rfm_job.err; "
+            "echo 'PMIX EVENT FAILURE PROPAGATION PASS'"
+        )
+
+        self.executable = '/bin/bash'
+        self.executable_opts = ['-c', shlex.quote(wrapper)]
 
         self.prerun_cmds = [
+            'set -e',
             'mapfile -t nodes < <(scontrol show hostnames "$SLURM_JOB_NODELIST")',
             'test ${#nodes[@]} -ge 3',
             "printf '%s slots=1\\n' \"${nodes[1]}\" \"${nodes[2]}\" > ci.hostfile",
-            f'cp {os.path.join(TEST_DIR, "run_pmix_python_worker_threads_compat.py")} .',
+            f'cp {os.path.join(TEST_DIR, "run_pmix_python_targeted_compat.py")} .',
             f'cp {os.path.join(TEST_DIR, "pmix_event_utils.py")} .',
             f'cp {os.path.join(TEST_DIR, "sleeper_mpi_new.c")} .',
-            'mpicc -o sleeper_mpi_new sleeper_mpi_new.c'
+            (
+                'mpicc -DPMIX_TEST_EXIT_CODE=7 '
+                '-o sleeper_mpi_fail sleeper_mpi_new.c'
+            )
         ]
 
         pythonpath = f'{self.pmix.stagedir}/lib/python3.10/site-packages'
@@ -108,30 +113,27 @@ class _PMIxPythonWorkerThreadsCompatBase(rfm.RunOnlyRegressionTest):
         }
 
     @sanity_function
-    def check_output(self):
+    def validate_failure_propagation(self):
         return sn.all([
+            sn.assert_eq(self.job.exitcode, 0),
             sn.assert_found(
-                fr'WORKER COUNT {self.num_workers} PASS',
+                r'CONTROLLER_EXIT_CODE=1',
                 self.stdout
             ),
-            sn.assert_eq(
-                sn.count(sn.findall(r'DONE \(slept 1 seconds\)', self.stdout)),
-                4
+            sn.assert_found(
+                r'TARGETED PLACEMENT FAIL',
+                'event_failure.out'
             ),
-            sn.assert_not_found(r'Spawn Oops', self.stdout),
-            sn.assert_not_found(r'Some jobs failed', self.stdout)
+            sn.assert_found(
+                r'PMIX_JOB_TERM_STATUS=(-[0-9]+|[1-9][0-9]*)',
+                'event_failure.out'
+            ),
+            sn.assert_found(
+                r'INTENTIONAL PMIX PAYLOAD FAILURE: exit_code=7',
+                self.stderr
+            ),
+            sn.assert_found(
+                r'PMIX EVENT FAILURE PROPAGATION PASS',
+                self.stdout
+            )
         ])
-
-
-@rfm.simple_test
-class PMIxPythonWorkerThreadsCompat1Test(
-    _PMIxPythonWorkerThreadsCompatBase
-):
-    num_workers = 1
-
-
-@rfm.simple_test
-class PMIxPythonWorkerThreadsCompat2Test(
-    _PMIxPythonWorkerThreadsCompatBase
-):
-    num_workers = 2
