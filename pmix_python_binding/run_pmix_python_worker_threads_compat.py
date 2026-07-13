@@ -15,7 +15,10 @@ from io import StringIO
 import threading
 import queue
 
-from pmix_event_utils import get_pmix_info_value
+from pmix_event_utils import (
+    format_pmix_job_term_status,
+    get_pmix_info_value,
+)
 
 # Worker thread blocks on run_queue. PMIx spawn blocks on spawn, but releases the GIL.
 # This means that multiple dispatch threads will be benifitial. This may change if non-blocking
@@ -183,11 +186,10 @@ def next_handler(evhdlr:int, status:int,
     if term_status is None:
         log_error('missing PMIX_JOB_TERM_STATUS', app)
     elif term_status != pmix.PMIX_SUCCESS:
-        error_text = tool.error_string(term_status)
+        error_text = format_pmix_job_term_status(term_status)
         print_info(
-            "Completion handler: job {} failed with "
-            "PMIX_JOB_TERM_STATUS={} ({})".format(
-                source['nspace'], term_status, error_text
+            "Completion handler: job {} failed with {}".format(
+                source['nspace'], error_text
             )
         )
         log_error(error_text, app)

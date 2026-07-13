@@ -1,6 +1,9 @@
 import unittest
 
-from pmix_event_utils import get_pmix_info_value
+from pmix_event_utils import (
+    format_pmix_job_term_status,
+    get_pmix_info_value,
+)
 
 
 class TestGetPMIxInfoValue(unittest.TestCase):
@@ -31,6 +34,12 @@ class TestGetPMIxInfoValue(unittest.TestCase):
         self.assertEqual(
             get_pmix_info_value(info, 'pmix.job.term.status'),
             0
+        )
+
+    def test_job_termination_status_is_not_decoded_as_pmix_error(self):
+        self.assertEqual(
+            format_pmix_job_term_status(7),
+            'PMIX_JOB_TERM_STATUS=7 (application termination status)'
         )
 
 

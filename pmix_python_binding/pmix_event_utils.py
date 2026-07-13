@@ -8,3 +8,11 @@ def get_pmix_info_value(info, key):
          if item.get('key') == key),
         None
     )
+
+
+def format_pmix_job_term_status(term_status):
+    """Describe an application job termination status without PMIx decoding."""
+    return (
+        'PMIX_JOB_TERM_STATUS={} (application termination status)'
+        .format(term_status)
+    )
