@@ -6,3 +6,4 @@ output/
 outputdir/
 perflogs/
 stage/
+pmix_python_binding/reports/
