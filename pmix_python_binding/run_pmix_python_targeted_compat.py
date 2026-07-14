@@ -67,6 +67,7 @@ parser.add_argument('--out-file', type=str, required=True)
 parser.add_argument('--delay', type=float, required=True)
 parser.add_argument('--job', type=str, required=True)
 parser.add_argument('--target-host-override', type=str)
+parser.add_argument('--completion-timeout', type=float)
 
 
 debug = True
@@ -98,6 +99,12 @@ def print_info(*args, **kwargs):
 
 
 args = parser.parse_args()
+if (
+    args.completion_timeout is not None
+    and args.completion_timeout <= 0
+):
+    parser.error('--completion-timeout must be positive')
+
 out_file = open(args.out_file, 'w')
 print_info(args)
 
@@ -232,18 +239,33 @@ def log_error(rc,app):
         errors[rc]['jobs'] = [ app ]
 
 def shutdown_dvm():
-    # ---------------------------------------
-    # Cleanup DVM
-    # ---------------------------------------
-    # Todo: See if we can empty stdout/error. The below will block if empty
-    # print(dvm.stdout.read().decode('utf8').strip())
-    subprocess.run([
-        str(Path(os.environ["PRRTE"]) / "bin" / "pterm"),
-        "--dvm-uri",
-        "file:{}".format(dvm_file),
-        "--num-connect-retries",
-        "1000"
-    ])
+    """Request DVM shutdown with a bounded wait."""
+    try:
+        pterm_result = subprocess.run([
+            str(Path(os.environ["PRRTE"]) / "bin" / "pterm"),
+            "--dvm-uri",
+            "file:{}".format(dvm_file),
+            "--num-connect-retries",
+            "1000"
+        ],
+            check=False,
+            timeout=20
+        )
+    except subprocess.TimeoutExpired:
+        print_info("DVM SHUTDOWN FAIL: pterm timed out")
+        return False
+    except OSError as error:
+        print_info("DVM SHUTDOWN FAIL: {}".format(error))
+        return False
+
+    if pterm_result.returncode == 0:
+        print_info("DVM SHUTDOWN PASS: pterm_rc=0")
+        return True
+
+    print_info(
+        "DVM SHUTDOWN FAIL: pterm_rc={}".format(pterm_result.returncode)
+    )
+    return False
 
 #sleeper = Path("/autofs/nccs-svm1_home1/bzf/pmixpy/run-test/sleeper_mpi").resolve()
 sleeper = Path(args.job).resolve()
@@ -390,6 +412,7 @@ def queuer():
             for app in apps:
                 run_queue.put(app)
 
+
 threading.Thread(target=queuer, daemon=True).start()
 for _ in range(n_threads):
     threading.Thread(target=worker, daemon=True).start()
@@ -417,7 +440,29 @@ for app in apps:
     run_queue.put(app)
 try:
     with done_var:
-        done_var.wait()
+        if args.completion_timeout is None:
+            done_var.wait()
+        else:
+            completion_deadline = (
+                time.monotonic() + args.completion_timeout
+            )
+            while completed < num_iters:
+                remaining = completion_deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                done_var.wait(timeout=remaining)
+
+            if completed < num_iters:
+                log_error('controller completion timeout', [])
+                print_info(
+                    "CONTROLLER TIMEOUT: completed={} expected={} "
+                    "deadline={}s".format(
+                        completed,
+                        num_iters,
+                        args.completion_timeout
+                    )
+                )
+                print_info("CHILD PROCESS TIMEOUT")
 except KeyboardInterrupt:
     print_info("killing {} tasks".format(len(fill_queue)))
 finally:
@@ -435,7 +480,9 @@ finally:
         for i in errors:
             print_info("{}: {}".format(i, errors[i]))
 
-    shutdown_dvm()
+    dvm_shutdown_ok = shutdown_dvm()
+    if not dvm_shutdown_ok:
+        log_error('DVM shutdown failure', [])
 
     if errors or completed != num_iters:
         print_info(
