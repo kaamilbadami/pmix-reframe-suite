@@ -15,7 +15,7 @@ class fetch_pmix(rfm.RunOnlyRegressionTest):
     branch = variable(str, value='master')
     commit = variable(
         str,
-        value='5c40dc0b9f6e32223f834a14e9c7caa83a3473de'
+        value=os.environ.get('PMIX_COMMIT', '')
     )
     executable = '/bin/bash'
     local = True
@@ -26,16 +26,52 @@ class fetch_pmix(rfm.RunOnlyRegressionTest):
 
     @run_before('run')
     def prepare_download(self):
+        branch = shlex.quote(self.branch)
+        requested_commit = shlex.quote(self.commit)
         script = f"""
 set -euo pipefail
+PMIX_REQUESTED_BRANCH={branch}
+PMIX_REQUESTED_COMMIT={requested_commit}
+PMIX_BRANCH="origin/$PMIX_REQUESTED_BRANCH"
+PMIX_BRANCH_REF="refs/remotes/$PMIX_BRANCH"
+
+if ! git check-ref-format "refs/heads/$PMIX_REQUESTED_BRANCH" >/dev/null; then
+    printf 'ERROR: invalid PMIx branch name: %s\\n' \
+        "$PMIX_REQUESTED_BRANCH" >&2
+    exit 1
+fi
+
 rm -rf pmix-git
 git --no-pager clone --no-checkout https://github.com/openpmix/openpmix.git pmix-git
-git --no-pager -C pmix-git fetch --no-tags origin {self.branch}
-PMIX_SHA=$(git --no-pager -C pmix-git rev-parse origin/{self.branch})
-test "$PMIX_SHA" = "{self.commit}"
+git --no-pager -C pmix-git fetch --no-tags origin \
+    "+refs/heads/$PMIX_REQUESTED_BRANCH:$PMIX_BRANCH_REF"
+PMIX_BRANCH_SHA=$(git --no-pager -C pmix-git rev-parse --verify \
+    "$PMIX_BRANCH_REF^{{commit}}")
+
+if test -z "$PMIX_REQUESTED_COMMIT"; then
+    PMIX_MODE=latest
+    PMIX_SHA=$PMIX_BRANCH_SHA
+else
+    PMIX_MODE=exact
+    if ! PMIX_SHA=$(git --no-pager -C pmix-git rev-parse --verify \
+        --end-of-options "$PMIX_REQUESTED_COMMIT^{{commit}}"); then
+        printf 'ERROR: requested PMIx commit is invalid or does not exist: %s\\n' \
+            "$PMIX_REQUESTED_COMMIT" >&2
+        exit 1
+    fi
+    if ! git --no-pager -C pmix-git merge-base --is-ancestor \
+        "$PMIX_SHA" "$PMIX_BRANCH_SHA"; then
+        printf 'ERROR: requested PMIx commit %s is not part of %s\\n' \
+            "$PMIX_REQUESTED_COMMIT" "$PMIX_BRANCH" >&2
+        exit 1
+    fi
+fi
+
 git --no-pager -C pmix-git checkout --detach "$PMIX_SHA"
 git --no-pager -C pmix-git submodule update --init --recursive
-printf 'PMIX_COMMIT=%s\\nPMIX_BRANCH=origin/{self.branch}\\n' "$PMIX_SHA" > pmix-commit.env
+printf 'PMIX_MODE=%s\\nPMIX_COMMIT=%s\\nPMIX_BRANCH=%s\\nPMIX_REQUESTED_COMMIT=%s\\n' \
+    "$PMIX_MODE" "$PMIX_SHA" "$PMIX_BRANCH" "$PMIX_REQUESTED_COMMIT" \
+    > pmix-commit.env
 cat pmix-commit.env
 git --no-pager -C pmix-git show -s --format='PMIX_DATE=%cI\\nPMIX_SUBJECT=%s' HEAD
 """
