@@ -1,6 +1,6 @@
 import unittest
 
-from pmix_event_utils import (
+from pmix_python_binding.common.pmix_event_utils import (
     format_pmix_job_term_status,
     get_pmix_info_value,
 )

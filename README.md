@@ -96,12 +96,12 @@ These tests use a Python controller to connect to a PRRTE DVM through PMIx and s
 
 | Test file | Purpose |
 |----------|---------|
-| `pmix_python_binding/pmix_python_scaling_test.py` | Single-node PMIx Python process scaling |
-| `pmix_python_binding/pmix_python_scaling_multinode_test.py` | Multi-node PMIx Python spawning |
-| `pmix_python_binding/pmix_python_mapping_ppr_node_test.py` | PPR node mapping through PMIx Python |
-| `pmix_python_binding/pmix_python_worker_threads_compat_test.py` | Concurrent spawn submission from Python worker threads |
-| `pmix_python_binding/pmix_python_targeted_compat_test.py` | Requested host targeting through PMIX_HOST |
-| `pmix_python_binding/pmix_python_mixed_thread_compat_test.py` | Mixed job sizes and slot tracking |
+| `pmix_python_binding/reframe/pmix_python_scaling_test.py` | Single-node PMIx Python process scaling |
+| `pmix_python_binding/reframe/pmix_python_scaling_multinode_test.py` | Multi-node PMIx Python spawning |
+| `pmix_python_binding/reframe/pmix_python_mapping_ppr_node_test.py` | PPR node mapping through PMIx Python |
+| `pmix_python_binding/reframe/pmix_python_worker_threads_compat_test.py` | Concurrent spawn submission from Python worker threads |
+| `pmix_python_binding/reframe/pmix_python_targeted_compat_test.py` | Requested host targeting through PMIX_HOST |
+| `pmix_python_binding/reframe/pmix_python_mixed_thread_compat_test.py` | Mixed job sizes and slot tracking |
 
 ### PMIx Python portability
 

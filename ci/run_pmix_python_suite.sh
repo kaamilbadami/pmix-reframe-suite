@@ -99,9 +99,10 @@ else
 fi
 
 printf '\nPython unit tests:\n'
-"$PMIX_PYTHON" -m unittest discover -s pmix_python_binding -p 'test_*.py'
+"$PMIX_PYTHON" -m unittest discover \
+    -s pmix_python_binding/unit_tests -p 'test_*.py'
 
-rfm_common=(-C sysconfig.yaml -c pmix_python_binding)
+rfm_common=(-C sysconfig.yaml -c pmix_python_binding/reframe)
 rfm_system=(--system=frontier:batch)
 
 printf '\nReFrame check listing:\n'

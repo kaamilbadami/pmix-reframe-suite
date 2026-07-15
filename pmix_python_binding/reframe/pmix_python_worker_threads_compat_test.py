@@ -2,7 +2,8 @@ import os
 import sys
 
 # Allow this test to import build classes from the repository root.
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SUITE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_ROOT = os.path.dirname(SUITE_DIR)
 sys.path.insert(0, REPO_ROOT)
 
 import reframe as rfm
@@ -25,10 +26,7 @@ SLEEPER = (
     './sleeper_mpi_new'
 )
 
-TEST_DIR = os.path.dirname(__file__)
-
-
-class _PMIxPythonMixedThreadCompatBase(rfm.RunOnlyRegressionTest):
+class _PMIxPythonWorkerThreadsCompatBase(rfm.RunOnlyRegressionTest):
 
     valid_systems = ['frontier:batch']
     valid_prog_environs = ['pmix_test']
@@ -48,42 +46,41 @@ class _PMIxPythonMixedThreadCompatBase(rfm.RunOnlyRegressionTest):
     num_tasks_per_node = 32
     time_limit = '10m'
 
+    num_workers = 1
+
     @run_before('run')
     def prepare_test(self):
         self.job.launcher = getlauncher('local')()
         self.executable = self.pmix.python_env
         self.executable_opts = [
-            './run_pmix_python_mixed_thread_compat.py',
+            './run_pmix_python_worker_threads_compat.py',
             '--slots',
             '2',
-            '--job-size-min',
+            '--job-size',
             '1',
-            '--job-size-max',
-            '2',
             '--min-time',
             '1',
             '--max-time',
             '1',
             '--iters',
-            '8',
+            '2',
             '--out-file',
-            'mixed_thread_compat.out',
+            f'worker_threads_{self.num_workers}.out',
             '--delay',
             '0',
             '--job',
             SLEEPER,
-            '--seed',
-            '235'
+            '--num-workers',
+            str(self.num_workers)
         ]
 
         self.prerun_cmds = [
-            'set -e',
             'mapfile -t nodes < <(scontrol show hostnames "$SLURM_JOB_NODELIST")',
             'test ${#nodes[@]} -ge 3',
             "printf '%s slots=1\\n' \"${nodes[1]}\" \"${nodes[2]}\" > ci.hostfile",
-            f'cp {os.path.join(TEST_DIR, "run_pmix_python_mixed_thread_compat.py")} .',
-            f'cp {os.path.join(TEST_DIR, "pmix_event_utils.py")} .',
-            f'cp {os.path.join(TEST_DIR, "sleeper_mpi_new.c")} .',
+            f'cp {os.path.join(SUITE_DIR, "controllers", "run_pmix_python_worker_threads_compat.py")} .',
+            f'cp {os.path.join(SUITE_DIR, "common", "pmix_event_utils.py")} .',
+            f'cp {os.path.join(SUITE_DIR, "workloads", "sleeper_mpi_new.c")} .',
             'mpicc -o sleeper_mpi_new sleeper_mpi_new.c'
         ]
 
@@ -112,56 +109,16 @@ class _PMIxPythonMixedThreadCompatBase(rfm.RunOnlyRegressionTest):
             'CI_HOSTFILE': f'{self.stagedir}/ci.hostfile'
         }
 
-        self.postrun_cmds = [
-            "set -euo pipefail; "
-            "job_sizes_file=mixed_thread_compat.out.job_sizes; "
-            "run_log=mixed_thread_compat.out; "
-            "stdout_log=rfm_job.out; "
-            "mapfile -t job_sizes < <(grep -v '^$' \"$job_sizes_file\"); "
-            "test \"${#job_sizes[@]}\" -eq 8; "
-            "expected=(1 1 1 1 1 2 1 2); "
-            "for idx in \"${!expected[@]}\"; do "
-            "test \"${job_sizes[$idx]}\" = \"${expected[$idx]}\"; "
-            "done; "
-            "count1=0; "
-            "count2=0; "
-            "total=0; "
-            "for size in \"${job_sizes[@]}\"; do "
-            "case \"$size\" in "
-            "1) count1=$((count1 + 1));; "
-            "2) count2=$((count2 + 1));; "
-            "esac; "
-            "total=$((total + size)); "
-            "done; "
-            "test \"$count1\" -ge 1; "
-            "test \"$count2\" -ge 1; "
-            "test \"$total\" -eq 10; "
-            "test \"$(grep -c 'Completion handler: job ' \"$run_log\")\" -eq 8; "
-            "test \"$(grep -c 'DONE (slept 1 seconds)' \"$stdout_log\")\" -eq 10; "
-            "awk '/Selected [0-9]+ tasks in [0-9]+ slots to dispatch/ { "
-            "for (i = 1; i <= NF; i++) { "
-            "if ($i == \"in\" && $(i+2) == \"slots\" && $(i+3) == \"to\") { "
-            "matched = 1; "
-            "if ($(i+1) > 2) bad = 1; "
-            "} "
-            "} "
-            "} END { "
-            "if (!matched || bad) exit 1; "
-            "}' \"$run_log\"; "
-            "! grep -q 'Spawn Oops' \"$run_log\"; "
-            "! grep -q 'Some jobs failed' \"$run_log\"; "
-            "grep -q 'MIXED JOB SIZES PASS' \"$run_log\"; "
-            "echo 'MIXED JOB SIZE SET PASS'"
-        ]
-
     @sanity_function
     def check_output(self):
         return sn.all([
-            sn.assert_found(r'MIXED JOB SIZES PASS', self.stdout),
-            sn.assert_found(r'MIXED JOB SIZE SET PASS', self.stdout),
+            sn.assert_found(
+                fr'WORKER COUNT {self.num_workers} PASS',
+                self.stdout
+            ),
             sn.assert_eq(
                 sn.count(sn.findall(r'DONE \(slept 1 seconds\)', self.stdout)),
-                10
+                4
             ),
             sn.assert_not_found(r'Spawn Oops', self.stdout),
             sn.assert_not_found(r'Some jobs failed', self.stdout)
@@ -169,7 +126,14 @@ class _PMIxPythonMixedThreadCompatBase(rfm.RunOnlyRegressionTest):
 
 
 @rfm.simple_test
-class PMIxPythonMixedThreadCompatTest(
-    _PMIxPythonMixedThreadCompatBase
+class PMIxPythonWorkerThreadsCompat1Test(
+    _PMIxPythonWorkerThreadsCompatBase
 ):
-    pass
+    num_workers = 1
+
+
+@rfm.simple_test
+class PMIxPythonWorkerThreadsCompat2Test(
+    _PMIxPythonWorkerThreadsCompatBase
+):
+    num_workers = 2

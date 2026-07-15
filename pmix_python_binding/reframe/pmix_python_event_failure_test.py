@@ -3,7 +3,8 @@ import shlex
 import sys
 
 # Allow this test to import build classes from the repository root.
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SUITE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_ROOT = os.path.dirname(SUITE_DIR)
 sys.path.insert(0, REPO_ROOT)
 
 import reframe as rfm
@@ -17,12 +18,14 @@ from pmix_build_class import build_pmix
 from prrte_build_class import build_prrte
 
 
-TEST_DIR = os.path.dirname(__file__)
-
+PYTHON = os.environ.get(
+    'PMIX_PYTHON',
+    'python3'
+)
 
 @rfm.simple_test
-class PMIxPythonChildTimeoutTest(rfm.RunOnlyRegressionTest):
-    """Verify that a long-running child produces a bounded failure."""
+class PMIxPythonEventFailurePropagationTest(rfm.RunOnlyRegressionTest):
+    """Deliberately fail spawned jobs to verify failure propagation."""
 
     valid_systems = ['frontier:batch']
     valid_prog_environs = ['pmix_test']
@@ -33,41 +36,25 @@ class PMIxPythonChildTimeoutTest(rfm.RunOnlyRegressionTest):
 
     sourcesdir = None
 
-    num_tasks = 2
-    num_tasks_per_node = 1
-    time_limit = '5m'
+    num_tasks = 96
+    num_tasks_per_node = 32
+    time_limit = '10m'
 
     @run_before('run')
     def prepare_test(self):
         self.job.launcher = getlauncher('local')()
-
         python = self.pmix.python_env
-        pmix_python_package = os.path.join(
-            self.pmix.stagedir,
-            'python-site-packages'
-        )
-
         controller_args = [
             python,
             './run_pmix_python_targeted_compat.py',
-            '--slots',
-            '1',
-            '--job-size',
-            '1',
-            '--min-time',
-            '5',
-            '--max-time',
-            '5',
-            '--iters',
-            '1',
-            '--out-file',
-            'child_timeout.out',
-            '--delay',
-            '0',
-            '--completion-timeout',
-            '1',
-            '--job',
-            './sleeper_mpi_new'
+            '--slots', '2',
+            '--job-size', '1',
+            '--min-time', '1',
+            '--max-time', '1',
+            '--iters', '1',
+            '--out-file', 'event_failure.out',
+            '--delay', '0',
+            '--job', './sleeper_mpi_fail'
         ]
         controller_cmd = shlex.join(controller_args)
         wrapper = (
@@ -77,12 +64,12 @@ class PMIxPythonChildTimeoutTest(rfm.RunOnlyRegressionTest):
             'set -e; '
             'printf "CONTROLLER_EXIT_CODE=%s\\n" "$controller_rc"; '
             'test "$controller_rc" -eq 1; '
-            "grep -q 'CONTROLLER TIMEOUT: completed=0 expected=1' "
-            'child_timeout.out; '
-            "grep -q 'CHILD PROCESS TIMEOUT' child_timeout.out; "
-            "grep -q 'DVM SHUTDOWN PASS' child_timeout.out; "
-            "! grep -q 'TARGETED PLACEMENT PASS' child_timeout.out; "
-            "echo 'PMIX PYTHON CHILD TIMEOUT PASS'"
+            "grep -q 'TARGETED PLACEMENT FAIL' event_failure.out; "
+            "grep -Eq 'PMIX_JOB_TERM_STATUS=(-[0-9]+|[1-9][0-9]*)' "
+            "event_failure.out; "
+            "grep -q 'INTENTIONAL PMIX PAYLOAD FAILURE: exit_code=7' "
+            "rfm_job.err; "
+            "echo 'PMIX EVENT FAILURE PROPAGATION PASS'"
         )
 
         self.executable = '/bin/bash'
@@ -91,23 +78,28 @@ class PMIxPythonChildTimeoutTest(rfm.RunOnlyRegressionTest):
         self.prerun_cmds = [
             'set -e',
             'mapfile -t nodes < <(scontrol show hostnames "$SLURM_JOB_NODELIST")',
-            'test ${#nodes[@]} -ge 2',
-            "printf '%s slots=1\\n' \"${nodes[1]}\" > ci.hostfile",
-            f'cp {os.path.join(TEST_DIR, "run_pmix_python_targeted_compat.py")} .',
-            f'cp {os.path.join(TEST_DIR, "pmix_event_utils.py")} .',
-            f'cp {os.path.join(TEST_DIR, "sleeper_mpi_new.c")} .',
-            'mpicc -o sleeper_mpi_new sleeper_mpi_new.c'
+            'test ${#nodes[@]} -ge 3',
+            "printf '%s slots=1\\n' \"${nodes[1]}\" \"${nodes[2]}\" > ci.hostfile",
+            f'cp {os.path.join(SUITE_DIR, "controllers", "run_pmix_python_targeted_compat.py")} .',
+            f'cp {os.path.join(SUITE_DIR, "common", "pmix_event_utils.py")} .',
+            f'cp {os.path.join(SUITE_DIR, "workloads", "sleeper_mpi_new.c")} .',
+            (
+                'mpicc -DPMIX_TEST_EXIT_CODE=7 '
+                '-o sleeper_mpi_fail sleeper_mpi_new.c'
+            )
         ]
 
-        pythonpath = pmix_python_package
-        if os.environ.get('PYTHONPATH'):
-            pythonpath = f"{pythonpath}:{os.environ['PYTHONPATH']}"
-
+        pythonpath = os.path.join(
+            self.pmix.stagedir,
+            'python-site-packages'
+        )
         ld_library_path = (
             f'{self.pmix.stagedir}/lib:'
             f'{self.prrte.stagedir}/lib:'
             f'{self.libevent.stagedir}/lib'
         )
+        if os.environ.get('PYTHONPATH'):
+            pythonpath = f"{pythonpath}:{os.environ['PYTHONPATH']}"
         if os.environ.get('LD_LIBRARY_PATH'):
             ld_library_path = (
                 f"{ld_library_path}:{os.environ['LD_LIBRARY_PATH']}"
@@ -123,28 +115,27 @@ class PMIxPythonChildTimeoutTest(rfm.RunOnlyRegressionTest):
         }
 
     @sanity_function
-    def validate_child_timeout(self):
+    def validate_failure_propagation(self):
         return sn.all([
             sn.assert_eq(self.job.exitcode, 0),
-            sn.assert_found(r'CONTROLLER_EXIT_CODE=1', self.stdout),
             sn.assert_found(
-                r'CONTROLLER TIMEOUT: completed=0 expected=1',
-                'child_timeout.out'
+                r'CONTROLLER_EXIT_CODE=1',
+                self.stdout
             ),
             sn.assert_found(
-                r'CHILD PROCESS TIMEOUT',
-                'child_timeout.out'
+                r'TARGETED PLACEMENT FAIL',
+                'event_failure.out'
             ),
             sn.assert_found(
-                r'DVM SHUTDOWN PASS',
-                'child_timeout.out'
-            ),
-            sn.assert_not_found(
-                r'TARGETED PLACEMENT PASS',
-                'child_timeout.out'
+                r'PMIX_JOB_TERM_STATUS=(-[0-9]+|[1-9][0-9]*)',
+                'event_failure.out'
             ),
             sn.assert_found(
-                r'PMIX PYTHON CHILD TIMEOUT PASS',
+                r'INTENTIONAL PMIX PAYLOAD FAILURE: exit_code=7',
+                self.stderr
+            ),
+            sn.assert_found(
+                r'PMIX EVENT FAILURE PROPAGATION PASS',
                 self.stdout
             )
         ])

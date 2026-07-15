@@ -3,7 +3,8 @@ import shlex
 import sys
 
 # Allow this test to import build classes from the repository root.
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SUITE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_ROOT = os.path.dirname(SUITE_DIR)
 sys.path.insert(0, REPO_ROOT)
 
 import reframe as rfm
@@ -21,9 +22,6 @@ PYTHON = os.environ.get(
     'PMIX_PYTHON',
     'python3'
 )
-
-TEST_DIR = os.path.dirname(__file__)
-
 
 @rfm.simple_test
 class PMIxPythonTargetHostFailurePropagationTest(rfm.RunOnlyRegressionTest):
@@ -83,9 +81,9 @@ class PMIxPythonTargetHostFailurePropagationTest(rfm.RunOnlyRegressionTest):
             'mapfile -t nodes < <(scontrol show hostnames "$SLURM_JOB_NODELIST")',
             'test ${#nodes[@]} -ge 3',
             "printf '%s slots=1\\n' \"${nodes[1]}\" \"${nodes[2]}\" > ci.hostfile",
-            f'cp {os.path.join(TEST_DIR, "run_pmix_python_targeted_compat.py")} .',
-            f'cp {os.path.join(TEST_DIR, "pmix_event_utils.py")} .',
-            f'cp {os.path.join(TEST_DIR, "sleeper_mpi_new.c")} .',
+            f'cp {os.path.join(SUITE_DIR, "controllers", "run_pmix_python_targeted_compat.py")} .',
+            f'cp {os.path.join(SUITE_DIR, "common", "pmix_event_utils.py")} .',
+            f'cp {os.path.join(SUITE_DIR, "workloads", "sleeper_mpi_new.c")} .',
             'mpicc -o sleeper_mpi_new sleeper_mpi_new.c'
         ]
 
