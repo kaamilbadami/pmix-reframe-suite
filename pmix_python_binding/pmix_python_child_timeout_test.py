@@ -1,6 +1,5 @@
 import os
 import shlex
-import subprocess
 import sys
 
 # Allow this test to import build classes from the repository root.
@@ -42,24 +41,10 @@ class PMIxPythonChildTimeoutTest(rfm.RunOnlyRegressionTest):
     def prepare_test(self):
         self.job.launcher = getlauncher('local')()
 
-        python = os.environ.get(
-            'PMIX_PYTHON',
-            os.path.join(self.pmix.python_env, 'bin', 'python')
-        )
-        python_version = subprocess.check_output(
-            [
-                python,
-                '-c',
-                'import sys; '
-                'print(f"{sys.version_info[0]}.{sys.version_info[1]}")'
-            ],
-            text=True
-        ).strip()
+        python = self.pmix.python_env
         pmix_python_package = os.path.join(
             self.pmix.stagedir,
-            'lib',
-            f'python{python_version}',
-            'site-packages'
+            'python-site-packages'
         )
 
         controller_args = [

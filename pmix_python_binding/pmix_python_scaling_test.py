@@ -53,16 +53,17 @@ class PMIxPythonScalingTest(rfm.RunOnlyRegressionTest):
             f'cp {os.path.join(TEST_DIR, "spawn_scaling_test.py")} .'
         ]
 
-        # Override the shell script's fallback paths with installations
-        # produced by the ReFrame fixtures.
+        # Pass the selected fixture executable and dynamically discovered
+        # PMIx Python package directory to the shell script.
         self.env_vars = {
-            'PYTHON': os.environ.get(
-                'PMIX_PYTHON',
-                '/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python'
-            ),
+            'PYTHON': self.pmix.python_env,
             'PMIX': self.pmix.stagedir,
             'PRRTE': self.prrte.stagedir,
-            'LIBEVENT': self.libevent.stagedir
+            'LIBEVENT': self.libevent.stagedir,
+            'PMIX_PYTHON_PACKAGE': os.path.join(
+                self.pmix.stagedir,
+                'python-site-packages'
+            )
         }
 
     # Pass only if every process count completed all five trials.

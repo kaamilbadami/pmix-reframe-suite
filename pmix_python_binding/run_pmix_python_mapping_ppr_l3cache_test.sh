@@ -16,9 +16,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${LIBEVENT:?ReFrame must provide LIBEVENT}"
 : "${PMIX_PYTHON_PACKAGE:?ReFrame must provide PMIX_PYTHON_PACKAGE}"
 
-if [[ ! -x "$PYTHON" ]]
+if ! command -v "$PYTHON" >/dev/null 2>&1
 then
-    echo "PMIx Python executable is not executable: $PYTHON"
+    echo "PMIx Python executable is not available: $PYTHON"
     exit 1
 fi
 

@@ -18,7 +18,7 @@ from prrte_build_class import build_prrte
 
 PYTHON = os.environ.get(
     'PMIX_PYTHON',
-    '/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python'
+    'python3'
 )
 
 SLEEPER = (
@@ -51,6 +51,7 @@ class _PMIxPythonMixedThreadCompatBase(rfm.RunOnlyRegressionTest):
     @run_before('run')
     def prepare_test(self):
         self.job.launcher = getlauncher('local')()
+        self.executable = self.pmix.python_env
         self.executable_opts = [
             './run_pmix_python_mixed_thread_compat.py',
             '--slots',
@@ -86,7 +87,10 @@ class _PMIxPythonMixedThreadCompatBase(rfm.RunOnlyRegressionTest):
             'mpicc -o sleeper_mpi_new sleeper_mpi_new.c'
         ]
 
-        pythonpath = f'{self.pmix.stagedir}/lib/python3.10/site-packages'
+        pythonpath = os.path.join(
+            self.pmix.stagedir,
+            'python-site-packages'
+        )
         ld_library_path = (
             f'{self.pmix.stagedir}/lib:'
             f'{self.prrte.stagedir}/lib:'

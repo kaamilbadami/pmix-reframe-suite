@@ -1,24 +1,45 @@
 #!/bin/bash
 
-# Stop immediately if an important command fails.
-set -e
+# Stop immediately if an important command fails, an unset variable is used,
+# or a command in a pipeline fails.
+set -euo pipefail
 
 
 # Directory containing this copy of the test files. Under ReFrame, this is
 # the stage directory.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Default locations of the externally installed software. These values may
-# be overridden by setting the variables before running the test.
-INSTALL_DIR="${INSTALL_DIR:-/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix_by_hand/python_binding_test}"
-PYTHON="${PMIX_PYTHON:-${PYTHON:-/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python}}"
-PMIX="${PMIX:-$INSTALL_DIR/pmix-install-finalize-fix}"
-PRRTE="${PRRTE:-$INSTALL_DIR/prrte-install-py310}"
-LIBEVENT="${LIBEVENT:-/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix_by_hand/libevent}"
+# ReFrame supplies the interpreter and all fixture installation paths.
+: "${PYTHON:?ReFrame must provide PYTHON}"
+: "${PMIX:?ReFrame must provide PMIX}"
+: "${PRRTE:?ReFrame must provide PRRTE}"
+: "${LIBEVENT:?ReFrame must provide LIBEVENT}"
+: "${PMIX_PYTHON_PACKAGE:?ReFrame must provide PMIX_PYTHON_PACKAGE}"
+
+if ! command -v "$PYTHON" >/dev/null 2>&1
+then
+    echo "PMIx Python executable is not available: $PYTHON"
+    exit 1
+fi
+
+for fixture_path in "$PMIX" "$PRRTE" "$LIBEVENT"
+do
+    if [[ ! -d "$fixture_path" ]]
+    then
+        echo "ReFrame fixture path is not a directory: $fixture_path"
+        exit 1
+    fi
+done
+
+if [[ ! -d "$PMIX_PYTHON_PACKAGE" ]]
+then
+    echo "PMIx Python package directory does not exist: $PMIX_PYTHON_PACKAGE"
+    exit 1
+fi
 
 
 # Let Python find the PMIx Python module.
-export PYTHONPATH="$PMIX/lib/python3.10/site-packages${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$PMIX_PYTHON_PACKAGE${PYTHONPATH:+:$PYTHONPATH}"
 
 # Let programs find the PMIx, PRRTE, and libevent libraries.
 export LD_LIBRARY_PATH="$PMIX/lib:$PRRTE/lib:$LIBEVENT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"

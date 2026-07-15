@@ -19,7 +19,7 @@ from prrte_build_class import build_prrte
 
 PYTHON = os.environ.get(
     'PMIX_PYTHON',
-    '/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python'
+    'python3'
 )
 
 TEST_DIR = os.path.dirname(__file__)
@@ -45,8 +45,9 @@ class PMIxPythonEventFailurePropagationTest(rfm.RunOnlyRegressionTest):
     @run_before('run')
     def prepare_test(self):
         self.job.launcher = getlauncher('local')()
+        python = self.pmix.python_env
         controller_args = [
-            PYTHON,
+            python,
             './run_pmix_python_targeted_compat.py',
             '--slots', '2',
             '--job-size', '1',
@@ -90,7 +91,10 @@ class PMIxPythonEventFailurePropagationTest(rfm.RunOnlyRegressionTest):
             )
         ]
 
-        pythonpath = f'{self.pmix.stagedir}/lib/python3.10/site-packages'
+        pythonpath = os.path.join(
+            self.pmix.stagedir,
+            'python-site-packages'
+        )
         ld_library_path = (
             f'{self.pmix.stagedir}/lib:'
             f'{self.prrte.stagedir}/lib:'

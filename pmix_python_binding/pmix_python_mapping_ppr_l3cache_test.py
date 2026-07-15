@@ -1,5 +1,4 @@
 import os
-import subprocess
 import sys
 
 # Allow this test to import build classes from the repository root.
@@ -121,24 +120,10 @@ class PMIxPythonMappingPPRL3CacheTest(
             f'cp {os.path.join(TEST_DIR, "spawn_mapping_ppr_l3cache_test.py")} .'
         ]
 
-        python = os.environ.get(
-            'PMIX_PYTHON',
-            os.path.join(self.pmix.python_env, 'bin', 'python')
-        )
-        python_version = subprocess.check_output(
-            [
-                python,
-                '-c',
-                'import sys; '
-                'print(f"{sys.version_info[0]}.{sys.version_info[1]}")'
-            ],
-            text=True
-        ).strip()
+        python = self.pmix.python_env
         pmix_python_package = os.path.join(
             self.pmix.stagedir,
-            'lib',
-            f'python{python_version}',
-            'site-packages'
+            'python-site-packages'
         )
 
         # Use the software installations produced by the fixtures.
