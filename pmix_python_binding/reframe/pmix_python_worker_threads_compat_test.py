@@ -116,6 +116,10 @@ class _PMIxPythonWorkerThreadsCompatBase(rfm.RunOnlyRegressionTest):
                 fr'WORKER COUNT {self.num_workers} PASS',
                 self.stdout
             ),
+            sn.assert_found(
+                fr'workers used: \[{", ".join(str(worker_id) for worker_id in range(self.num_workers))}\]',
+                self.stdout
+            ),
             sn.assert_eq(
                 sn.count(sn.findall(r'DONE \(slept 1 seconds\)', self.stdout)),
                 4

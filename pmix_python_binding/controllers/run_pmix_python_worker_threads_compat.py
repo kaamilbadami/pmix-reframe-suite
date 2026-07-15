@@ -20,11 +20,6 @@ from pmix_event_utils import (
     get_pmix_info_value,
 )
 
-# Worker thread blocks on run_queue. PMIx spawn blocks on spawn, but releases the GIL.
-# This means that multiple dispatch threads will be benifitial. This may change if non-blocking
-# spawns are implemented
-run_queue = queue.Queue()
-
 # The fill_queue is the list of tasks to be run, but there are no slots availible to run them
 fill_queue = []
 
@@ -113,6 +108,12 @@ verbose = 1
 # Numer of worker threads
 n_threads = args.num_workers
 
+# Give each worker a queue so jobs can be dispatched deterministically. PMIx
+# spawn blocks, but releases the GIL, so multiple dispatch threads are useful.
+worker_queues = [queue.Queue() for _ in range(n_threads)]
+used_worker_ids = set()
+used_worker_ids_lock = threading.Lock()
+
 # spawn invocations
 num_iters = args.iters * ( ttl_num_cores // job_size )
 
@@ -131,6 +132,11 @@ avail = ttl_num_cores
 def add_task(app):
     fill_queue.append(app)
     return app['maxprocs']
+
+
+def dispatch_task(app):
+    worker_id = app['my_id'] % n_threads
+    worker_queues[worker_id].put(app)
 
 
 def select_tasks():
@@ -290,7 +296,7 @@ while True:
 
 threading.Thread(target=prte_log_thread, daemon=True).start()
 
-def worker():
+def worker(worker_id):
     #sleep_time = 0
     # {'key':pmix.PMIX_NO_PROCS_ON_HEAD, 'value':True, 'val_type':pmix.PMIX_BOOL}
     info = [{'key':pmix.PMIX_MAPBY, 'value':"hwthread:NOLOCAL", 'val_type':pmix.PMIX_STRING},
@@ -304,8 +310,8 @@ def worker():
         global active
         if sleep_time:
             time.sleep(sleep_time)
-        app = run_queue.get()
-        print_info("About to launch task {}".format(app))
+        app = worker_queues[worker_id].get()
+        print_info("Worker {} about to launch task {}".format(worker_id, app))
         rc, nspace = tool.spawn(info, [app])
         print_info("New task: {}".format(nspace))
         if rc != pmix.PMIX_SUCCESS:
@@ -323,6 +329,9 @@ def worker():
             mark_complete()
             continue
 
+        with used_worker_ids_lock:
+            used_worker_ids.add(worker_id)
+
         with run_var:
             running[nspace] = app
             active += app['maxprocs']
@@ -338,11 +347,11 @@ def queuer():
             if apps:
                 print_info(apps)
             for app in apps:
-                run_queue.put(app)
+                dispatch_task(app)
 
 threading.Thread(target=queuer, daemon=True).start()
-for _ in range(n_threads):
-    threading.Thread(target=worker, daemon=True).start()
+for worker_id in range(n_threads):
+    threading.Thread(target=worker, args=(worker_id,), daemon=True).start()
 #TODO: write stdout to a file for sanity tests
 tool = pmix.PMIxTool()
 rc,my_proc = tool.init([{"key": pmix.PMIX_SERVER_URI, "value": "file:{}".format(dvm_file), 'val_type':pmix.PMIX_STRING}])
@@ -364,7 +373,7 @@ print_info("Starting timer")
 start = time.perf_counter()
 apps = select_tasks()
 for app in apps:
-    run_queue.put(app)
+    dispatch_task(app)
 try:
     with done_var:
         done_var.wait()
@@ -401,7 +410,16 @@ finally:
 
     # do sanity tests here
     shutdown_dvm()
-    if errors or completed != num_iters:
+    expected_worker_ids = set(range(n_threads))
+    worker_coverage_failed = used_worker_ids != expected_worker_ids
+    if worker_coverage_failed:
+        print_info(
+            "Worker coverage mismatch: used {}; expected {}".format(
+                sorted(used_worker_ids), sorted(expected_worker_ids)
+            )
+        )
+
+    if errors or completed != num_iters or worker_coverage_failed:
         print_info(
             "WORKER COUNT {} FAIL: completed={} expected={} errors={}".format(
                 n_threads, completed, num_iters, len(errors)
@@ -409,4 +427,5 @@ finally:
         )
         sys.exit(1)
 
+    print("workers used: {}".format(sorted(used_worker_ids)), flush=True)
     print_info("WORKER COUNT {} PASS".format(n_threads))
