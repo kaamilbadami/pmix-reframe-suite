@@ -3,7 +3,35 @@
 N=$1
 TRIALS=$2
 
-PRTE_DIR=/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix_by_hand/prrte/bin
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+CURRENT_PRTE_DIR=${SCRIPT_DIR}/../../../prrte/bin
+PLANNED_PRTE_DIR=${SCRIPT_DIR}/../../../../dependencies/prrte/prrte/bin
+
+is_prte_dir() {
+	[[ -n "${1}" && -x "${1}/prte" && -x "${1}/pterm" ]]
+}
+
+if is_prte_dir "${PRTE_DIR:-}"; then
+	:
+elif PRTE_PATH=$(type -P prte) &&
+	PTERM_PATH=$(type -P pterm) &&
+	[[ "$(dirname -- "${PRTE_PATH}")" == "$(dirname -- "${PTERM_PATH}")" ]] &&
+	is_prte_dir "$(dirname -- "${PRTE_PATH}")"; then
+	PRTE_DIR=$(dirname -- "${PRTE_PATH}")
+elif is_prte_dir "${CURRENT_PRTE_DIR}"; then
+	PRTE_DIR=${CURRENT_PRTE_DIR}
+elif is_prte_dir "${PLANNED_PRTE_DIR}"; then
+	PRTE_DIR=${PLANNED_PRTE_DIR}
+else
+	printf '%s\n' \
+		"Error: could not find executable prte and pterm in the same directory." \
+		"Supported methods:" \
+		"  1. Set PRTE_DIR to their directory." \
+		"  2. Put both executables in the same directory on PATH." \
+		"  3. Use the current pmix_by_hand/prrte/bin layout." \
+		"  4. Use the planned pmix_by_hand/dependencies/prrte/prrte/bin layout." >&2
+	exit 1
+fi
 
 ALLOCATED=$(scontrol show hostnames | wc -l)
 
