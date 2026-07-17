@@ -1,5 +1,6 @@
 
 .venv/
+.ci-state/
 __pycache__/
 *.py[cod]
 output/

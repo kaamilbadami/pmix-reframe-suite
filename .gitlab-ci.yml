@@ -14,6 +14,7 @@ variables:
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - when: never
 
 pmix-python-suite:
@@ -23,9 +24,28 @@ pmix-python-suite:
 
   timeout: 1h
 
+  cache:
+    key: pmix-master-state-v1
+    paths:
+      - .ci-state/pmix-master.env
+    policy: pull-push
+
   script:
     - |
       set -euxo pipefail
+
+      decision_file=".ci-state/pmix-decision.env"
+      bash ci/should_run_pmix_suite.sh "$decision_file"
+      source "$decision_file"
+
+      if [[ "$PMIX_RUN_SUITE" == 0 ]]; then
+          printf 'Skipping complete PMIx Python suite: %s\n' "$PMIX_RUN_REASON"
+          exit 0
+      fi
+
+      export PMIX_COMMIT
+      printf 'Running complete PMIx Python suite for OpenPMIx %s: %s\n' \
+          "$PMIX_COMMIT" "$PMIX_RUN_REASON"
 
       module load miniforge3/23.11.0-0
 
@@ -43,6 +63,18 @@ pmix-python-suite:
       "${RFM_BIN}" --version
 
       bash ci/run_pmix_python_suite.sh
+
+      state_file=".ci-state/pmix-master.env"
+      mkdir -p "$(dirname -- "$state_file")"
+      state_tmp=$(mktemp "${state_file}.tmp.XXXXXX")
+      trap 'rm -f -- "$state_tmp"' EXIT
+      last_success_epoch=$(date -u +%s)
+      printf 'PMIX_COMMIT=%s\nLAST_SUCCESS_EPOCH=%s\n' \
+          "$PMIX_COMMIT" "$last_success_epoch" > "$state_tmp"
+      mv -f -- "$state_tmp" "$state_file"
+      trap - EXIT
+      printf 'Saved successful PMIx suite state: SHA=%s UTC_epoch=%s\n' \
+          "$PMIX_COMMIT" "$last_success_epoch"
 
   artifacts:
     when: always
