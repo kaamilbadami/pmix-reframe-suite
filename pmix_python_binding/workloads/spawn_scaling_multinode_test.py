@@ -1,4 +1,6 @@
+import glob
 import os
+import shlex
 import sys
 import time
 from collections import Counter
@@ -21,11 +23,12 @@ expected_hosts = sys.argv[2].split(",")
 slots_per_node = int(sys.argv[3])
 
 
-# Create one hostname proof file for each process.
-proof_files = [
-    os.path.abspath(f"process_{number}_host")
-    for number in range(1, num_processes + 1)
-]
+# Every spawned process creates a unique hostname proof file.
+proof_directory = os.path.abspath(".")
+proof_pattern = os.path.join(proof_directory, "process_*_host")
+
+for old_proof_file in glob.glob(proof_pattern):
+    os.remove(old_proof_file)
 
 
 # Read the address of the running PRRTE DVM.
@@ -52,19 +55,24 @@ if init_result[0] != 0:
     raise SystemExit("init failed")
 
 
-# Create one app for each process.
-# Each process writes its hostname into its own proof file.
+# Create one application for the entire spawned job.
+# The hostname and PID make every proof filename unique.
+proof_directory_shell = shlex.quote(proof_directory)
+
 apps = [
     {
         "cmd": "/bin/bash",
         "argv": [
             "bash",
             "-c",
-            f"hostname -s > {proof_file}"
+            (
+                'host=$(hostname -s); '
+                f'printf "%s\\n" "$host" > '
+                f'{proof_directory_shell}/process_${{host}}_$$_host'
+            )
         ],
-        "maxprocs": 1
+        "maxprocs": num_processes
     }
-    for proof_file in proof_files
 ]
 
 
@@ -78,26 +86,27 @@ if spawn_result[0] != 0:
 
 
 # Wait up to five seconds for every hostname file.
+proof_files = []
+
 for attempt in range(50):
-    if all(os.path.exists(name) for name in proof_files):
+    proof_files = sorted(glob.glob(proof_pattern))
+
+    if len(proof_files) == num_processes:
         break
 
     time.sleep(0.1)
 
 
 # Read the hostname written by every process.
+proof_files = sorted(glob.glob(proof_pattern))
 observed_hosts = []
 
-for process_number, proof_file in enumerate(proof_files, start=1):
-    if not os.path.exists(proof_file):
-        print(f"process {process_number} host: MISSING")
-        continue
-
+for proof_file in proof_files:
     with open(proof_file) as file:
         hostname = file.readline().strip()
 
     observed_hosts.append(hostname)
-    print(f"process {process_number} host:", hostname)
+    print(f"{os.path.basename(proof_file)} host:", hostname)
 
 
 # Count how many processes ran on each hostname.
