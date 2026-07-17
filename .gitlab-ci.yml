@@ -24,6 +24,8 @@ pmix-python-suite:
 
   timeout: 1h
 
+  resource_group: pmix-python-suite-frontier
+
   cache:
     key: pmix-master-state-v1
     paths:
