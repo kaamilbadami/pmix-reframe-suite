@@ -1,170 +1,197 @@
 # PMIx ReFrame Test Suite
 
-A [ReFrame](https://reframe-hpc.readthedocs.io/en/stable/)-based testing framework for the **PMIx (Process Management Interface for Exascale)** library and runtime environment. This test suite automatically builds all dependencies from source and validates the PMIx stack through a series of functional tests.
+A [ReFrame](https://reframe-hpc.readthedocs.io/en/stable/)-based test suite for PMIx and PRRTE on Frontier. The repository builds `libevent`, OpenPMIx, and PRRTE from source and exercises PMIx through Python binding, functional, placement, concurrency, failure-path, and startup tests.
 
-## Overview
+## Repository layout
 
-**What does this do?**
-
-This test suite:
-- Automatically downloads and builds three core components from source: `libevent`, `PMIx`, and `PRRTE`
-- Ensures all components are built with compatible versions and linked correctly
-- Validates the complete PMIx stack by running functional tests
-
-
-## Project Structure
-
-### File Organization
-
-| File | Purpose |
+| Path | Purpose |
 |------|---------|
-| `libevent_build_class.py` | Download and build the `libevent` library (base dependency) |
-| `pmix_build_class.py` | Download and build `PMIx` (linked against `libevent`) |
-| `prrte_build_class.py` | Download and build `PRRTE` (linked against `libevent` and `PMIx`) |
-| `build_pmix_test.py` | Build test binaries (`hello_world`, `cycle`, `prun-wrapper`) |
-| `run_pmix_test.py` | Main ReFrame test file - run all tests |
-| `sysconfig.yaml` | ReFrame system configuration for your HPC cluster |
-| `setup_env.sh` | Optional environment setup script |
+| `libevent_build_class.py` | Fetch and build libevent |
+| `pmix_build_class.py` | Fetch and build OpenPMIx with Python bindings |
+| `prrte_build_class.py` | Fetch and build PRRTE against the suite-built PMIx and libevent |
+| `pmix_python_binding/reframe/` | The 11 ReFrame checks run by the PMIx Python CI suite |
+| `pmix_python_binding/controllers/` | PMIx Python spawn controllers |
+| `pmix_python_binding/workloads/` | Spawned Python, C, mapping, and scaling workloads |
+| `pmix_python_binding/wrappers/` | Slurm-allocation wrappers for mapping and scaling checks |
+| `pmix_python_binding/unit_tests/` | Unit tests for shared PMIx event utilities |
+| `build_pmix_test.py` | Fixtures that build the external `pmix-tests` workloads |
+| `run_pmix_test.py` | Root functional suite for hostname, cycle, prun-wrapper, and manystress coverage |
+| `prte_startup/` | Standalone PRTE startup performance checks and configuration |
+| `ci/` | CI entry point, gating, GitHub status, artifact collection, and shell tests |
+| `sysconfig.yaml` | Frontier `frontier:batch` ReFrame configuration |
+| `setup_env.sh` | Optional environment setup for the root functional suite |
 
-### Build Dependency 
+The shared build fixtures follow this dependency order:
 
-The test suite follows a strict build order to ensure all dependencies are satisfied:
-
-```mermaid
-graph TD
-    %% Fetch steps
-    FLB[fetch_libevent] --> BLB
-    FPM[fetch_pmix] --> BPM
-    FPR[fetch_prrte] --> BPR
-    FTS[fetch_pmixtest] --> BTST
-
-    %% Build steps
-    BLB(build_libevent) --> BPM(build_pmix)
-    BLB --> BPR(build_prrte)
-    BPM --> BPR
-
-    %% Test Runtime setup
-    BLB -. LD_LIBRARY_PATH/PATH .-> BTST{base_test}
-    BPM -. LD_LIBRARY_PATH/PATH .-> BTST
-    BPR -. LD_LIBRARY_PATH/PATH .-> BTST
-    
-    %% Target Tests
-    BTST --> T1(hello_test)
-    BTST --> T2(cycle_test)
-    BTST --> T3(prun_wrapper_test)
-
-    classDef fetch fill:#2a9d8f,stroke:#264653,stroke-width:2px,color:#fff;
-    classDef build fill:#e9c46a,stroke:#264653,stroke-width:2px,color:#000;
-    classDef test fill:#e76f51,stroke:#264653,stroke-width:2px,color:#fff;
-    classDef base fill:#f4a261,stroke:#264653,stroke-width:2px,color:#000;
-
-    class FLB,FPM,FPR,FTS fetch;
-    class BLB,BPM,BPR build;
-    class T1,T2,T3 test;
-    class BTST base;
+```text
+fetch_libevent -> build_libevent
+fetch_pmix ---------------------> build_pmix
+fetch_prrte ---------------------------------> build_prrte
+                    build_libevent ----------^     ^
+                    build_pmix --------------------|
 ```
 
-### Installation
+## Installation
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/NiccoloTosato/pmix-reframe-suite.git
-   cd pmix-reframe-suite
-   ```
+```bash
+git clone https://github.com/kaamilbadami/pmix-reframe-suite.git
+cd pmix-reframe-suite
 
-2. **Create and activate a Python virtual environment:**
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install "Cython==3.2.6" "reframe-hpc==4.10.0"
+```
 
-3. **Install ReFrame:**
-   ```bash
-   pip install reframe-hpc
-   ```
+The tracked configurations use the Frontier `gen243` project. Adjust the account, partition, modules, or environment definitions before using the suite on another system.
 
-4. **Configure your system** (edit `sysconfig.yaml`):
-   Update the system name, partition, and access credentials to match your HPC cluster.
+## PMIx source selection
 
-## PMIx Python Test Coverage
+`fetch_pmix` builds the latest commit on OpenPMIx `master` by default. A different branch can be selected with a ReFrame variable:
 
-This branch also includes ReFrame tests for the PMIx Python bindings.
+```bash
+reframe -C sysconfig.yaml -c pmix_python_binding/reframe \
+  --system=frontier:batch \
+  -S fetch_pmix.branch=my-branch \
+  -l
+```
 
-These tests use a Python controller to connect to a PRRTE DVM through PMIx and spawn simple sleeper jobs. The sleeper jobs start, sleep briefly, print DONE, and exit. This keeps the tests focused on launch, placement, completion, and regression behavior.
+To build an exact commit, provide both its branch and full commit SHA. The fetch fixture verifies that the commit exists and is an ancestor of the selected remote branch:
 
-### PMIx Python tests
+```bash
+reframe -C sysconfig.yaml -c pmix_python_binding/reframe \
+  --system=frontier:batch \
+  -S fetch_pmix.branch=master \
+  -S fetch_pmix.commit=0123456789abcdef0123456789abcdef01234567 \
+  -r --keep-stage-files
+```
 
-| Test file | Purpose |
-|----------|---------|
-| `pmix_python_binding/reframe/pmix_python_scaling_test.py` | Single-node PMIx Python process scaling |
-| `pmix_python_binding/reframe/pmix_python_scaling_multinode_test.py` | Multi-node PMIx Python spawning |
-| `pmix_python_binding/reframe/pmix_python_mapping_ppr_node_test.py` | PPR node mapping through PMIx Python |
-| `pmix_python_binding/reframe/pmix_python_worker_threads_compat_test.py` | Concurrent spawn submission from Python worker threads |
-| `pmix_python_binding/reframe/pmix_python_targeted_compat_test.py` | Requested host targeting through PMIX_HOST |
-| `pmix_python_binding/reframe/pmix_python_mixed_thread_compat_test.py` | Mixed job sizes and slot tracking |
+`PMIX_COMMIT` is the environment-variable equivalent used by CI and is convenient for scripted exact-commit runs:
 
-### PMIx Python portability
+```bash
+export PMIX_COMMIT=0123456789abcdef0123456789abcdef01234567
+```
 
-The PMIx Python tests use PMIX_PYTHON when it is set. This lets a CI runner, service account, or another user provide a different Python interpreter with the PMIx bindings installed.
+PRRTE and libevent remain selectable by version, for example:
 
-Example:
+```bash
+-S fetch_prrte.version=4.1.0 -S fetch_libevent.version=2.1.12
+```
 
-    export PMIX_PYTHON=/path/to/python-with-pmix-bindings
+## PMIx Python CI suite
 
-If PMIX_PYTHON is not set, the tests fall back to the development Python path used during initial Frontier validation.
+The CI suite runs the PMIx event utility unit tests, confirms that ReFrame discovers exactly 11 checks, and then runs all checks on `frontier:batch`.
 
+| ReFrame check | Test file | Coverage |
+|---------------|-----------|----------|
+| `PMIxPythonScalingTest` | `pmix_python_scaling_test.py` | Single-node process-count scaling |
+| `PMIxPythonScalingMultinodeTest` | `pmix_python_scaling_multinode_test.py` | One-, two-, and four-node spawning and placement |
+| `PMIxPythonMappingPPRNodeTest` | `pmix_python_mapping_ppr_node_test.py` | Explicit processes-per-node mapping |
+| `PMIxPythonMappingPPRL3CacheTest` | `pmix_python_mapping_ppr_l3cache_test.py` | L3-cache mapping, binding, and topology validation |
+| `PMIxPythonWorkerThreadsCompat1Test` | `pmix_python_worker_threads_compat_test.py` | Single Python dispatch-worker behavior |
+| `PMIxPythonWorkerThreadsCompat2Test` | `pmix_python_worker_threads_compat_test.py` | Concurrent two-worker spawn submission and participation |
+| `PMIxPythonTargetedCompatTest` | `pmix_python_targeted_compat_test.py` | Requested-host targeting through `PMIX_HOST` |
+| `PMIxPythonMixedThreadCompatTest` | `pmix_python_mixed_thread_compat_test.py` | Mixed job sizes and slot accounting |
+| `PMIxPythonChildTimeoutTest` | `pmix_python_child_timeout_test.py` | Bounded controller failure for a long-running child |
+| `PMIxPythonEventFailurePropagationTest` | `pmix_python_event_failure_test.py` | Nonzero child termination propagated through PMIx events |
+| `PMIxPythonTargetHostFailurePropagationTest` | `pmix_python_target_host_failure_test.py` | Invalid target-host spawn failure propagation |
 
-## Running the Tests
+The interpreter selected through `PMIX_PYTHON` is also used to build and run the PMIx Python bindings. It must be executable and able to import Cython. If no override is supplied directly to the ReFrame fixtures, the build falls back to `python3`.
 
-### Quick Start
+### Run the CI suite locally
 
-Run all tests with default versions:
+```bash
+export PMIX_PYTHON="$PWD/.venv/bin/python"
+export RFM_BIN="$PWD/.venv/bin/reframe"
+
+# Run unit tests and validate the 11-check ReFrame listing only.
+bash ci/run_pmix_python_suite.sh --list-only
+
+# Run unit tests, validate discovery, and execute all 11 checks.
+bash ci/run_pmix_python_suite.sh
+```
+
+## Root functional suite
+
+The root suite is a separate entry point for nine functional checks covering hostname launch, `hello_world`, PMIx initialize/finalize cycles, `prun-wrapper`, and `manystress`. It uses fixtures from `build_pmix_test.py` to clone and build the external `pmix-tests` workloads.
+
 ```bash
 source setup_env.sh
-reframe -C ./sysconfig.yaml -c run_pmix_test.py --system=odo:batch -r
-```
-
-### With Custom Component Versions
-
-Specify different versions for any component:
-```bash
 reframe -C ./sysconfig.yaml -c run_pmix_test.py \
-  --system=odo:batch \
-  -S fetch_pmix.version="6.1.0" \
-  -S fetch_prrte.version="4.1.0" \
-  -S fetch_libevent.version="2.1.12" \
-  -r
+  --system=frontier:batch -r
 ```
 
-### Environment Variables
+`setup_env.sh` activates `.venv`, preserves stage files, selects `sysconfig.yaml`, and places this suite's ReFrame prefix under `outputdir/`.
 
-The `setup_env.sh` script sets useful ReFrame environment variables:
-- `RFM_KEEP_STAGE_FILES=1`: Preserves build artifacts for debugging
-- `RFM_CONFIG_FILES`: Points to the system configuration
-- `RFM_PREFIX`: Output directory for test results
+## PRTE startup suite
 
-You can also set these manually before running tests.
+The PRTE startup suite is independent of the two PMIx suites. It contains one startup timing check without explicit slot counts and one with 32 advertised slots per node.
 
-## Execution Flow
+```bash
+reframe -C prte_startup/prte_startup_config.py \
+  -c prte_startup \
+  --system=frontier:compute -r
+```
 
-The test suite executes in the following phases:
+The startup workloads locate `prte` and `pterm` through `PRTE_DIR`, `PATH`, or the supported repository-relative dependency layouts.
 
-### Phase 1: Download
-- `fetch_libevent` downloads `libevent` source
-- `fetch_pmix` downloads `PMIx` source
-- `fetch_prrte` downloads `PRRTE` source
-- `fetch_pmixtest` clones the `pmix-tests` repository
+## GitLab pipelines
 
-### Phase 2: Build
-- `build_libevent` compiles `libevent` and installs to staging directory
-- `build_pmix` compiles `PMIx`, explicitly linking against the built `libevent`
-- `build_prrte` compiles `PRRTE`, linking against both built `libevent` and `PMIx`
+The tracked workflow accepts only two pipeline sources:
 
-### Phase 3: Test Preparation
-- `build_hello_world`, `build_cycle`, `build_prun_wrapper` build test binaries
-- Environment variables (`PATH`, `LD_LIBRARY_PATH`) are configured to use the locally built libraries
+- A manual pipeline started from the GitLab web interface always runs the complete PMIx Python suite.
+- An hourly scheduled pipeline evaluates the OpenPMIx and suite state before deciding whether to run the complete suite.
 
-### Phase 4: Test Execution
-- Each test runs in the configured environment
-- Tests validate the PMIx stack functionality
+Merge-request and push pipelines are not enabled by `.gitlab-ci.yml`.
 
+### Scheduled-pipeline gating
+
+Before an hourly scheduled run, `ci/should_run_pmix_suite.sh` queries the current SHA of OpenPMIx `master` and compares it with the cached state from the last successful complete run. The state records:
+
+```text
+PMIX_COMMIT=<OpenPMIx SHA>
+SUITE_COMMIT=<pmix-reframe-suite SHA>
+LAST_SUCCESS_EPOCH=<UTC epoch>
+```
+
+The complete suite runs when any of the following is true:
+
+- no valid successful-run state is available;
+- the OpenPMIx SHA changed;
+- the suite SHA changed;
+- both SHAs changed;
+- at least 86,400 seconds have passed since the last successful complete run; or
+- the saved timestamp is in the future.
+
+The scheduled pipeline intentionally skips the complete suite only when both SHAs are unchanged and the last successful complete run is less than 24 hours old. A new state is saved only after a successful full run, so the hourly schedule also provides at least one daily health run when neither repository changes.
+
+Manual and scheduled pipelines report pending and final commit status to GitHub. A Frontier resource group prevents overlapping PMIx suite jobs.
+
+## Artifacts and generated files
+
+Normal ReFrame runs may create these generated directories at the repository root:
+
+| Path | Contents |
+|------|----------|
+| `output/` | Copied job and build output |
+| `stage/` | Staged sources, generated scripts, builds, and test-specific logs |
+| `perflogs/` | ReFrame performance logs |
+| `reports/` | ReFrame reports when report output is enabled |
+| `outputdir/` | Prefix used by `setup_env.sh` for the root functional suite |
+
+GitLab CI always runs `ci/collect_ci_artifacts.sh` in `after_script`. It recreates `ci-artifacts/`, writes `ci-artifacts/artifact-summary.txt`, and copies any available `output/`, `perflogs/`, and `reports/` trees. It also preserves selected PMIx fetch/build evidence under the same relative `stage/frontier/batch/pmix_test/...` paths, including:
+
+- `rfm_build.sh`, `rfm_build.out`, and `rfm_build.err`;
+- the PMIx `config.log`;
+- the installed `python-site-packages` link; and
+- `pmix-commit.env`.
+
+GitLab uploads `ci-artifacts/` even for failed or intentionally skipped pipelines and retains it for 14 days. `.ci-venv/`, `ci-artifacts/`, ReFrame output trees, and reports are generated content covered by `.gitignore`.
+
+## Execution flow
+
+1. Fetch libevent, the selected OpenPMIx branch/commit, PRRTE, and—when required—the external `pmix-tests` repository.
+2. Build libevent, PMIx with Python bindings, and PRRTE in fixture dependency order.
+3. Build or stage the workload required by each entry point.
+4. Configure `PATH`, `PYTHONPATH`, and `LD_LIBRARY_PATH` from the fixture installations.
+5. Run the selected PMIx Python, root functional, or PRTE startup checks and apply their ReFrame sanity/performance validation.
