@@ -40,6 +40,11 @@ pmix-python-suite:
           printf 'warning: could not report pending status to GitHub\n' >&2
       fi
 
+    - bash ci/test_should_run_pmix_suite.sh
+    - bash ci/test_collect_ci_artifacts.sh
+    - bash ci/test_report_github_status.sh
+
+    - |
       decision_file=".ci-state/pmix-decision.env"
       bash ci/should_run_pmix_suite.sh "$decision_file"
       source "$decision_file"
