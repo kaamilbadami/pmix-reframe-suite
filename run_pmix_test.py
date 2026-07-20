@@ -3,11 +3,9 @@
 # SPDX-License-Identifier: MIT
 
 import os
-import time
 from packaging.version import parse as parse_version
 
 import reframe as rfm
-import reframe.utility.typecheck as typ
 import reframe.utility.sanity as sn
 
 
@@ -94,7 +92,6 @@ class hostname_test(base_test):
         #1. Change folder 2. Init the DVM 3. set time output to be parsable later
         self.prerun_cmds = [ 
             f'cd {test_path}', 
-            #"export HOSTS=$(scontrol show hostnames | xargs | tr ' ' ',')",
             f"prte --no-ready-msg --host $(scontrol show hostnames | xargs | sed 's/ /:{self.num_tasks_per_node},/g' | sed 's/$/:{self.num_tasks_per_node}/') &",
             'TIMEFORMAT="runtime,%R,%U,%S"',
             'sleep 10'
@@ -146,7 +143,6 @@ class cycle_test_hostname(base_test):
         test_path = self.cycle_test.test_path
         self.prerun_cmds = [
             f'cd {test_path}',
-            #'prte --no-ready-msg --report-uri dvm.uri_0 &',
             f"prte --no-ready-msg --report-uri dvm.uri_0 --host $(scontrol show hostnames | xargs | sed 's/ /:{self.num_tasks_per_node},/g' | sed 's/$/:{self.num_tasks_per_node}/') &",
             'TIMEFORMAT="runtime,%R,%U,%S"',
             'sleep 10'
@@ -177,7 +173,6 @@ class cycle_test_initialize_finalize(base_test):
         test_path = self.cycle_test.test_path
         self.prerun_cmds = [
             f'cd {test_path}',
-            #'prte --no-ready-msg --report-uri dvm.uri_1 &',
             f"prte --no-ready-msg --report-uri dvm.uri_1 --host $(scontrol show hostnames | xargs | sed 's/ /:{self.num_tasks_per_node},/g' | sed 's/$/:{self.num_tasks_per_node}/') &",
             'TIMEFORMAT="runtime,%R,%U,%S"',
             'sleep 5'
@@ -206,7 +201,6 @@ class cycle_test_initialize_finalize_multi(base_test):
         test_path = self.cycle_test.test_path
         self.prerun_cmds = [
             f'cd {test_path}',
-            #'prte --no-ready-msg --report-uri dvm.uri_2 &'
             f"prte --no-ready-msg --report-uri dvm.uri_2 --host $(scontrol show hostnames | xargs | sed 's/ /:{self.num_tasks_per_node},/g' | sed 's/$/:{self.num_tasks_per_node}/') &"
         ]    
         cmd = f"prun --dvm-uri file:dvm.uri_2 --num-connect-retries 1000  ./multi_init_finalize_pmix"
@@ -238,7 +232,6 @@ class prun_wrapper_test_hostname(base_test):
     def prepare_test(self):
         test_path = self.prun_test.test_path
         self.prerun_cmds = [ f'cd {test_path}', 'TIMEFORMAT="runtime,%R,%U,%S"'  ]    
-        #cmd = f" prterun --map-by node hostname"
         cmd = f"prterun  --host $(scontrol show hostnames | xargs | sed 's/ /:{self.num_tasks_per_node},/g' | sed 's/$/:{self.num_tasks_per_node}/') --map-by node hostname"
         self.executable = 'time'
         self.executable_opts = [ f"{cmd}"]
@@ -263,7 +256,6 @@ class prun_wrapper_test_hostname_absolute(base_test):
             'ABS_PATH=$(which prterun)',
             'ABS_PATH=$(dirname $ABS_PATH)'
         ]
-        #cmd = f"$ABS_PATH/prterun --map-by node hostname"
         cmd = f"$ABS_PATH/prterun  --host $(scontrol show hostnames | xargs | sed 's/ /:{self.num_tasks_per_node},/g' | sed 's/$/:{self.num_tasks_per_node}/') --map-by node hostname"
         self.executable = 'time'
         self.executable_opts = [ f"{cmd}"]
@@ -283,7 +275,6 @@ class prun_wrapper_test_hello(base_test):
     def prepare_test(self):
         test_path = self.prun_test.test_path
         self.prerun_cmds = [ f'cd {test_path}', 'TIMEFORMAT="runtime,%R,%U,%S"'  ]    
-        #cmd = f"prterun --map-by node  ../hello_world/hello"
         cmd = f"prterun  --host $(scontrol show hostnames | xargs | sed 's/ /:{self.num_tasks_per_node},/g' | sed 's/$/:{self.num_tasks_per_node}/') --map-by node ../hello_world/hello"
         self.executable = 'time'
         self.executable_opts = [ f"{cmd}"]

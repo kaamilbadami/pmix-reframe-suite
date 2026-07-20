@@ -3,11 +3,8 @@
 # SPDX-License-Identifier: MIT
 
 import os
-import time
-from packaging.version import parse as parse_version
 
 import reframe as rfm
-import reframe.utility.typecheck as typ
 import reframe.utility.sanity as sn
 
 

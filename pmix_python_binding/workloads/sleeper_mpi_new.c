@@ -26,13 +26,11 @@ void usage(void)
 int main(int argc, char **argv)
 {
     char host[128];
-    char outfile[128];
     int rc;
     int nsec = NUM_SEC;
     int launchid = ID_NUM;
     pid_t pid = getpid();
-    FILE *fp = NULL;
-    int opt, mpi_rank, mpi_size, number;
+    int opt, mpi_rank, mpi_size;
 
     MPI_Init(&argc, &argv);
 
@@ -61,42 +59,14 @@ int main(int argc, char **argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
 
-//    sprintf(outfile, "%s/output.sleeper.%s.%d.%d.txt",
-//                     "/tmp",
-//                     host, launchid, pid);
-
-//    if (NULL == (fp = fopen(outfile, "wx"))) {
-//        fprintf(stderr, "(%6d) Error: failed to open output file (rc=%d)\n", pid, rc);
-//        return (1);
-//    }
-    /*
-    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
-
-    if (mpi_rank%2 == 0) {
-	number = -1;
-	MPI_Send(&number, 1, MPI_INT, mpi_rank+1, 0, MPI_COMM_WORLD);
-    } else if (mpi_rank%2 == 1) {
-	MPI_Recv(&number, 1, MPI_INT, mpi_rank-1, 0, MPI_COMM_WORLD,
-		 MPI_STATUS_IGNORE);
-	fprintf(stdout, "Process 1 received number %d from process 0\n",
-	       number);
-    }
-    */
     sleep(nsec);
 
-    //fprintf(fp, "(%06d.%6d) [%s] DONE (slept %d seconds)\n", launchid, pid, host, nsec);
     fprintf(stdout, "(%06d.%6d) [%s] %2d %2d  DONE (slept %d seconds)\n", launchid, pid, host, mpi_rank, mpi_size, nsec);
 
     if (0 != PMIX_TEST_EXIT_CODE) {
         fprintf(stderr, "INTENTIONAL PMIX PAYLOAD FAILURE: exit_code=%d\n",
                 PMIX_TEST_EXIT_CODE);
     }
-
-    //fprintf(stdout, "MPI report, %i, %i\n", mpi_rank, mpi_size);
-
-    //fflush(NULL);
-    //fclose(fp);
 
     MPI_Finalize();
 

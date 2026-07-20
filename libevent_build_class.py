@@ -4,7 +4,6 @@
 
 import os
 import reframe as rfm
-import reframe.utility.typecheck as typ
 import reframe.utility.sanity as sn
 
 class fetch_libevent(rfm.RunOnlyRegressionTest):
@@ -41,4 +40,3 @@ class build_libevent(rfm.CompileOnlyRegressionTest):
         self.build_system.max_concurrency = 8
         self.postbuild_cmds = ['make install']
     
-

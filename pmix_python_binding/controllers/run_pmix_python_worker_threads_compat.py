@@ -4,13 +4,11 @@ import sys
 import os
 import time
 import random
-import time
 import argparse
 import datetime
 import select
 
 from pathlib import Path
-from io import StringIO
 
 import threading
 import queue
@@ -72,7 +70,6 @@ def print_info(*args, **kwargs):
     else:
         machine = info['nspace']
 
-    #new_string = "{} {} ".format(time.mktime(datetime.datetime.today().timetuple()), machine) + fstring
     new_string = "{} {} ".format(time.perf_counter(), machine) + fstring
 
     #  Remove 'flush' if it exists. We will control that var
@@ -99,12 +96,6 @@ num_cores_pn = 1 #${CI_NUM_CORES_PER_NODE:-20}
 # Scale test based on number of nodes
 ttl_num_cores = num_nodes * num_cores_pn
 
-# Enable more verbose output (set VERBOSE=1)
-verbose = 1
-
-# TJN: Stash some debug bits for now
-#debug = True
-
 # Numer of worker threads
 n_threads = args.num_workers
 
@@ -122,10 +113,8 @@ expected = ((args.min_time + args.max_time) / 2)*args.iters
 
 print_info("Machine size: {} slots\nsize per job: {}\njob iterations: {}\nTotal spawns: {}\nTotal sleepers run: {}\nEstimated runtime: {}".format(ttl_num_cores, job_size, args.iters, num_iters, num_iters * job_size, str(datetime.timedelta(seconds=expected))), flush=True)
 
-#dvm_file = "/tmp/bzfdvm.uri"
 dvm_file = f"/tmp/{os.getpid()}.dvm.uri"
 
-slots = ttl_num_cores
 avail = ttl_num_cores
 
 
@@ -152,15 +141,6 @@ def select_tasks():
         fill = sum(map(lambda x: x['maxprocs'], selected))
         print_info("Selected {} tasks in {} slots to dispatch. {} slots remain".format(len(selected), fill, avail))
     return selected
-
-
-def give_back(app):
-    global avail
-    in_avail = sum([add_task(x) for x in app])
-    print_info("Giving back {} slots due to errors".format(in_avail))
-    avail += in_avail
-    with run_var:
-        run_var.notify()
 
 
 def mark_complete(source=None):
@@ -212,7 +192,6 @@ def iof_cb(iofhdlr:int, channel:int,
     messages = payload['bytes'][:int(payload['size'])].decode('UTF-8').strip()
     for message in messages.split("\n"):
         print_info(message, info=source)
-    #messages.append(message)
 
 errors = dict()
 def log_error(rc,app):
@@ -228,8 +207,6 @@ def shutdown_dvm():
     # ---------------------------------------
     # Cleanup DVM
     # ---------------------------------------
-    # Todo: See if we can empty stdout/error. The below will block if empty
-    # print(dvm.stdout.read().decode('utf8').strip())
     subprocess.run([
         str(Path(os.environ["PRRTE"]) / "bin" / "pterm"),
         "--dvm-uri",
@@ -238,17 +215,13 @@ def shutdown_dvm():
         "1000"
     ])
 
-#sleeper = Path("/autofs/nccs-svm1_home1/bzf/pmixpy/run-test/sleeper_mpi").resolve()
 sleeper = Path(args.job).resolve()
 
 if not sleeper.exists():
     print("ERROR: Missing executable './sleeper'\n INFO: Remember to run './build.sh' first.\n\tGiven path was: '{}'".format(str(sleeper)))
     print("Continuing")
-    # sys.exit(1)
 
 dvm_messages = []
-
-# TODO: Factoring the DVM code into a function maybe good hygine
 
 def add_to_dvm_msg(fileh, name):
     msg = fileh.readline().decode('utf8').strip()
@@ -260,8 +233,6 @@ def prte_log_thread():
     global dvm
 
     while True:
-        outs = ""
-        errs = ""
         ready = select.select([dvm.stdout, dvm.stderr], [], [])
 
         if dvm.stdout in ready[0]:
@@ -269,13 +240,8 @@ def prte_log_thread():
         if dvm.stderr in ready[0]:
             add_to_dvm_msg(dvm.stderr, "stderr")
 
-#prte_args = ["prte", "--report-uri", "dvm.uri"]
-#spock requires some extra args
-#prte_args = ["prte", "--report-uri", dvm_file, "--prtemca", "plm", "^slurm,lsf", "--prtemca", "ras", "^slurm,lsf", "--map-by", ":NOLOCAL", "--pmixmca", "pmix_server_spawn_verbose", "10"]
-#prte_args = ["prte", "--report-uri", dvm_file, "--prtemca", "plm", "^slurm,lsf", "--prtemca", "ras", "^slurm,lsf", "--prtemca", "rmaps_base_verbose", "5"]
 prte_prefix = os.environ["PRRTE"]
 prte_args = [f"{prte_prefix}/bin/prte", "--prefix", prte_prefix, "--report-uri", dvm_file, "--prtemca", "plm", "^slurm,lsf", "--prtemca", "ras", "^slurm,lsf"]
-#time.sleep(10)
 if "CI_HOSTFILE" in os.environ:
     print_info("Using hostfile: {}".format(os.environ["CI_HOSTFILE"]))
     prte_args.extend(["--hostfile", os.environ["CI_HOSTFILE"]])
@@ -297,14 +263,9 @@ while True:
 threading.Thread(target=prte_log_thread, daemon=True).start()
 
 def worker(worker_id):
-    #sleep_time = 0
-    # {'key':pmix.PMIX_NO_PROCS_ON_HEAD, 'value':True, 'val_type':pmix.PMIX_BOOL}
     info = [{'key':pmix.PMIX_MAPBY, 'value':"hwthread:NOLOCAL", 'val_type':pmix.PMIX_STRING},
             {'key':pmix.PMIX_BINDTO, 'value':"hwthread", 'val_type':pmix.PMIX_STRING},
             {'key':pmix.PMIX_NOTIFY_COMPLETION, 'value':True, 'val_type':pmix.PMIX_BOOL}]
-#            {'key':pmix.PMIX_IOF_TAG_OUTPUT, 'value':True, 'val_type':pmix.PMIX_BOOL},
-#            {'key':pmix.PMIX_IOF_TIMESTAMP_OUTPUT, 'value':True, 'val_type':pmix.PMIX_BOOL},
-#            {'key':pmix.PMIX_IOF_OUTPUT_TO_FILE, 'value':'dummy.outfile', 'val_type':pmix.PMIX_STRING}]
     sleep_time = args.delay
     while True:
         global active
@@ -318,11 +279,6 @@ def worker(worker_id):
             global avail
             print_info("Spawn Oops", tool.error_string(rc))
             print_info("Job that oopsed: {} avail: {} active: {}".format(app, avail, active), flush=True)
-            # At present a failure to spawn is fatal to the job. The commented out function below is meant to allow for a
-            # retry mechanism. Future version of the script should allow for a choice between retry vs fail semantics.
-            # The retry mechanism probably works, but it is untested.
-            # give_back([app])
-
             # These two lines are to enable a fail semantic.
             avail += app['maxprocs']
             log_error(tool.error_string(rc), app)
@@ -352,19 +308,14 @@ def queuer():
 threading.Thread(target=queuer, daemon=True).start()
 for worker_id in range(n_threads):
     threading.Thread(target=worker, args=(worker_id,), daemon=True).start()
-#TODO: write stdout to a file for sanity tests
 tool = pmix.PMIxTool()
 rc,my_proc = tool.init([{"key": pmix.PMIX_SERVER_URI, "value": "file:{}".format(dvm_file), 'val_type':pmix.PMIX_STRING}])
 rc,myhandle = tool.register_event_handler([pmix.PMIX_EVENT_JOB_END], [], next_handler)
 
 print_info("generating tasks")
-#random.seed(42)
 random.seed(time.time())
-total_sec = 0
 for idx in range(num_iters):
-    #maxprocs = random.randint(1,8)
     num_seconds = random.randint(args.min_time, args.max_time)
-    total_sec += num_seconds
     app = {'cmd':str(sleeper), 'argv':[str(sleeper),"-n",str(num_seconds), "-i", str(idx)], 'maxprocs':job_size, 'my_id': idx}
     app_times.append(str(num_seconds))
     add_task(app)
@@ -383,8 +334,6 @@ finally:
     end = time.perf_counter()
     print_info("Main thread awakens")
     time_taken = end - start
-    #print("Elapsed seconds: {}".format(str(datetime.timedelta(seconds=time_taken))))
-    #print("Overhead: {}".format(str(datetime.timedelta(seconds=time_taken - expected))))
     print_info("Elapsed seconds: {}".format(time_taken))
     print_info("Elapsed time: {}".format(str(datetime.timedelta(seconds=time_taken))))
     print_info("Overhead seconds: {}".format(time_taken - expected))

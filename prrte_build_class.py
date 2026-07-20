@@ -4,7 +4,6 @@
 
 import os
 import reframe as rfm
-import reframe.utility.typecheck as typ
 import reframe.utility.sanity as sn
 from libevent_build_class import build_libevent
 from pmix_build_class import build_pmix
