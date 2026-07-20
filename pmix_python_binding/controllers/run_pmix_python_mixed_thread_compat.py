@@ -121,11 +121,6 @@ dvm_file = f"/tmp/{os.getpid()}.dvm.uri"
 avail = ttl_num_cores
 
 
-def add_task(app):
-    fill_queue.append(app)
-    return app['maxprocs']
-
-
 def select_tasks():
     global avail
     selected = []
@@ -322,7 +317,7 @@ for idx in range(num_iters):
     print_info(f"ADDED TASK TO QUEUE {app}")
     app_times.append(str(num_seconds))
     job_sizes.append(str(job_size))
-    add_task(app)
+    fill_queue.append(app)
 
 print_info("Starting timer")
 start = time.perf_counter()
