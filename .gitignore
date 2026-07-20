@@ -1,10 +1,12 @@
 
 .venv/
+.ci-venv/
 .ci-state/
+ci-artifacts/
 __pycache__/
 *.py[cod]
 output/
 outputdir/
 perflogs/
+reports/
 stage/
-pmix_python_binding/reports/
