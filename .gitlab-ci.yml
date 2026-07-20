@@ -115,17 +115,12 @@ pmix-python-suite:
           printf 'warning: could not report final status to GitHub\n' >&2
       fi
 
+      if ! ci/collect_ci_artifacts.sh; then
+          printf 'warning: could not collect CI artifacts\n' >&2
+      fi
+
   artifacts:
     when: always
     expire_in: 14 days
     paths:
-      - output/
-      - perflogs/
-      - reports/
-      - stage/frontier/batch/pmix_test/build_pmix_*/rfm_build.sh
-      - stage/frontier/batch/pmix_test/build_pmix_*/rfm_build.out
-      - stage/frontier/batch/pmix_test/build_pmix_*/rfm_build.err
-      - stage/frontier/batch/pmix_test/build_pmix_*/pmix-git/config.log
-      - stage/frontier/batch/pmix_test/build_pmix_*/python-site-packages
-      - stage/frontier/batch/pmix_test/build_pmix_*/lib/python*/site-packages/pmix*
-      - stage/frontier/batch/pmix_test/fetch_pmix_*/pmix-commit.env
+      - ci-artifacts/
