@@ -36,6 +36,10 @@ pmix-python-suite:
     - |
       set -euxo pipefail
 
+      if ! bash ci/report_github_status.sh pending 'Frontier PMIx CI is running'; then
+          printf 'warning: could not report pending status to GitHub\n' >&2
+      fi
+
       decision_file=".ci-state/pmix-decision.env"
       bash ci/should_run_pmix_suite.sh "$decision_file"
       source "$decision_file"
@@ -77,6 +81,39 @@ pmix-python-suite:
       trap - EXIT
       printf 'Saved successful PMIx suite state: SHA=%s UTC_epoch=%s\n' \
           "$PMIX_COMMIT" "$last_success_epoch"
+
+  after_script:
+    - |
+      set +x
+      set -uo pipefail
+
+      case "${CI_JOB_STATUS:-}" in
+          success)
+              github_state=success
+              if [[ -f .ci-state/pmix-decision.env ]] &&
+                 grep -Fxq 'PMIX_RUN_SUITE=0' .ci-state/pmix-decision.env; then
+                  description='Frontier check passed; full suite skipped'
+              else
+                  description='Frontier PMIx CI passed'
+              fi
+              ;;
+          failed)
+              github_state=failure
+              description='Frontier PMIx CI failed'
+              ;;
+          canceled)
+              github_state=error
+              description='Frontier PMIx CI was canceled'
+              ;;
+          *)
+              github_state=error
+              description='Frontier PMIx CI ended with an unexpected status'
+              ;;
+      esac
+
+      if ! bash ci/report_github_status.sh "$github_state" "$description"; then
+          printf 'warning: could not report final status to GitHub\n' >&2
+      fi
 
   artifacts:
     when: always
