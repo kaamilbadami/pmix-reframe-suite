@@ -1,0 +1,31 @@
+stages:
+  - test
+
+include:
+  - project: ci/resources/templates
+    ref: main
+    file:
+      - /runners.yml
+
+variables:
+  OLCF_SERVICE_ACCOUNT: "gen243_auser"
+  FF_GIT_URLS_WITHOUT_TOKENS: "1"
+
+pmix-failed-result-artifact:
+  stage: test
+  extends:
+    - .frontier-shell-runner
+  timeout: 10m
+  variables:
+    PMIX_COMMIT: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+  script:
+    - |
+      printf '%s\n' 'Intentional failure for PMIx result artifact validation.'
+      exit 1
+  after_script:
+    - bash ci/write_pmix_commit_result.sh ci-results
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-results/deadbeefdeadbeefdeadbeefdeadbeefdeadbeef.env

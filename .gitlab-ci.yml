@@ -108,6 +108,16 @@ trigger-pmix-child-pipeline-pilot:
         job: generate-pmix-child-pipeline-pilot
     strategy: mirror
 
+trigger-pmix-failed-result-pilot:
+  stage: pilot-trigger
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_FAILED_RESULT_PILOT == "1"'
+    - when: never
+  trigger:
+    include:
+      - local: ci/pmix_failed_result_child.yml
+    strategy: mirror
+
 pmix-python-suite:
   stage: test
   extends:
@@ -118,6 +128,8 @@ pmix-python-suite:
   resource_group: pmix-python-suite-frontier
 
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_FAILED_RESULT_PILOT == "1"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "web"'
@@ -144,6 +156,7 @@ pmix-python-suite:
     - bash ci/test_run_exact_pmix_commit.sh
     - bash ci/test_discover_untested_pmix_commits.sh
     - bash ci/test_generate_pmix_child_pipeline.sh
+    - bash ci/test_pmix_failed_result_child.sh
     - bash ci/test_write_pmix_commit_result.sh
 
     - |
