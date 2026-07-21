@@ -54,6 +54,13 @@ pmix-__SHA__:
       export PMIX_PYTHON="${CI_PROJECT_DIR}/.ci-venv/bin/python"
       export RFM_BIN="${CI_PROJECT_DIR}/.ci-venv/bin/reframe"
       bash ci/run_exact_pmix_commit.sh
+  after_script:
+    - bash ci/write_pmix_commit_result.sh ci-results
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-results/__RESULT_SHA__.env
 """
 
 
@@ -86,7 +93,10 @@ def read_shas(input_path):
 
 
 def render_pipeline(shas):
-    jobs = [COMMIT_JOB.replace("__SHA__", sha) for sha in shas]
+    jobs = [
+        COMMIT_JOB.replace("__SHA__", sha).replace("__RESULT_SHA__", sha.lower())
+        for sha in shas
+    ]
     if not jobs:
         jobs = [NOOP_JOB]
     return "\n".join([HEADER, *jobs])

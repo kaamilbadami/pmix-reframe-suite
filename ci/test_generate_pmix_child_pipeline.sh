@@ -123,6 +123,10 @@ grep -Fq 'No untested OpenPMIx commits were discovered.' "$empty_output" ||
 if grep -Eq 'PMIX_COMMIT|run_exact_pmix_commit' "$empty_output"; then
     fail 'empty input generated an exact-commit job'
 fi
+if grep -Eq 'write_pmix_commit_result|ci-results|^[[:space:]]+artifacts:' \
+    "$empty_output"; then
+    fail 'empty input generated per-commit result behavior'
+fi
 pass 'empty input generates only the no-op job'
 
 multiple_input="$test_dir/multiple"
@@ -148,6 +152,23 @@ pass 'SHA case, order, and exact PMIX_COMMIT values are preserved'
 [[ $(grep -Fc 'bash ci/run_exact_pmix_commit.sh' "$multiple_output") == 3 ]] ||
     fail 'not every job invokes the exact runner'
 pass 'every job invokes the exact runner'
+[[ $(grep -Fc 'bash ci/write_pmix_commit_result.sh ci-results' \
+    "$multiple_output") == 3 ]] ||
+    fail 'not every job invokes the result helper exactly once'
+pass 'every job invokes the result helper exactly once'
+for sha in "$lower_sha" "$upper_sha" "$third_sha"; do
+    result_path="ci-results/${sha,,}.env"
+    [[ $(grep -Fxc "      - $result_path" "$multiple_output") == 1 ]] ||
+        fail "job does not have exactly its lowercase result path: $sha"
+done
+[[ $(grep -Fc 'when: always' "$multiple_output") == 3 ]] ||
+    fail 'not every job preserves artifacts on all outcomes'
+[[ $(grep -Fc 'expire_in: 14 days' "$multiple_output") == 3 ]] ||
+    fail 'not every job has the required result retention'
+if grep -Eqi 'reports:|dotenv|ci-results/.*\*' "$multiple_output"; then
+    fail 'generated artifacts use a forbidden report or wildcard'
+fi
+pass 'every job has an always-retained lowercase SHA-specific result artifact'
 grep -Fq 'project: ci/resources/templates' "$multiple_output" &&
     grep -Fq 'ref: main' "$multiple_output" &&
     grep -Fq -- '- /runners.yml' "$multiple_output" ||
@@ -161,11 +182,11 @@ grep -Fq 'project: ci/resources/templates' "$multiple_output" &&
 pass 'runner include, base, timeout, and resource group are preserved'
 
 if grep -Eqi \
-    '\.ci-state|PMIX_CHILD_PIPELINE_BASE_SHA|should_run_pmix_suite|discover_untested|github|openpmix\.git|ls-remote|git fetch' \
+    '\.ci-state|PMIX_CHILD_PIPELINE_BASE_SHA|should_run_pmix_suite|discover|reconcil|update.*state|state.*update|github|openpmix\.git|ls-remote|git fetch' \
     "$multiple_output"; then
-    fail 'generated jobs contain forbidden discovery or state behavior'
+    fail 'generated jobs contain forbidden state, reconciliation, discovery, or status behavior'
 fi
-pass 'generated jobs contain no discovery, gate, remote, or state references'
+pass 'generated jobs contain no state, updater, discovery, reconciliation, or GitHub behavior'
 
 atomic_output="$test_dir/atomic.yml"
 printf 'old output\n' > "$atomic_output"
@@ -190,13 +211,70 @@ import pathlib
 import sys
 import yaml
 
-for filename in sys.argv[1:]:
-    yaml.safe_load(pathlib.Path(filename).read_text())
+lower_sha = "0123456789abcdef0123456789abcdef01234567"
+upper_sha = "89ABCDEF0123456789ABCDEF0123456789ABCDEF"
+third_sha = "fedcba9876543210fedcba9876543210fedcba98"
+
+empty = yaml.safe_load(pathlib.Path(sys.argv[1]).read_text())
+multiple = yaml.safe_load(pathlib.Path(sys.argv[2]).read_text())
+
+header = {
+    "stages": ["test"],
+    "include": [{
+        "project": "ci/resources/templates",
+        "ref": "main",
+        "file": ["/runners.yml"],
+    }],
+    "variables": {
+        "OLCF_SERVICE_ACCOUNT": "gen243_auser",
+        "FF_GIT_URLS_WITHOUT_TOKENS": "1",
+    },
+}
+expected_noop = {
+    **header,
+    "no-untested-pmix-commits": {
+        "stage": "test",
+        "extends": [".frontier-shell-runner"],
+        "script": [
+            "printf '%s\\n' 'No untested OpenPMIx commits were discovered.'\n"
+        ],
+    },
+}
+assert empty == expected_noop
+
+expected_script = """\
+set -euo pipefail
+module load miniforge3/23.11.0-0
+python3 -m venv .ci-venv
+source .ci-venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install "Cython==3.2.6" "reframe-hpc==4.10.0"
+export PMIX_PYTHON="${CI_PROJECT_DIR}/.ci-venv/bin/python"
+export RFM_BIN="${CI_PROJECT_DIR}/.ci-venv/bin/reframe"
+bash ci/run_exact_pmix_commit.sh
+"""
+expected_multiple = dict(header)
+for sha in (lower_sha, upper_sha, third_sha):
+    expected_multiple[f"pmix-{sha}"] = {
+        "stage": "test",
+        "extends": [".frontier-shell-runner"],
+        "timeout": "1h",
+        "resource_group": "pmix-python-suite-frontier",
+        "variables": {"PMIX_COMMIT": sha},
+        "script": [expected_script],
+        "after_script": ["bash ci/write_pmix_commit_result.sh ci-results"],
+        "artifacts": {
+            "when": "always",
+            "expire_in": "14 days",
+            "paths": [f"ci-results/{sha.lower()}.env"],
+        },
+    }
+assert multiple == expected_multiple
 PY
 else
     printf '# YAML parser unavailable; parse validation skipped\n'
 fi
-pass 'generated YAML parses when a parser is available'
+pass 'parsed generated YAML matches the expected real and no-op structures'
 
 if python3 -c 'import yaml' >/dev/null 2>&1; then
     python3 - "$parent_ci" <<'PY'
