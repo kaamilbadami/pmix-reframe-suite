@@ -44,6 +44,7 @@ pmix-python-suite:
     - bash ci/test_collect_ci_artifacts.sh
     - bash ci/test_report_github_status.sh
     - bash ci/test_run_exact_pmix_commit.sh
+    - bash ci/test_discover_untested_pmix_commits.sh
 
     - |
       decision_file=".ci-state/pmix-decision.env"
