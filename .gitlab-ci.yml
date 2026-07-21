@@ -118,6 +118,27 @@ trigger-pmix-failed-result-pilot:
       - local: ci/pmix_failed_result_child.yml
     strategy: mirror
 
+probe-pmix-child-artifacts:
+  stage: test
+  extends:
+    - .frontier-shell-runner
+
+  timeout: 10m
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_ARTIFACT_RETRIEVAL_PILOT == "1"'
+      when: manual
+    - when: never
+
+  script:
+    - python3 ci/probe_pmix_child_artifacts.py
+
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-probe-results/
+
 pmix-python-suite:
   stage: test
   extends:
@@ -128,6 +149,8 @@ pmix-python-suite:
   resource_group: pmix-python-suite-frontier
 
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_ARTIFACT_RETRIEVAL_PILOT == "1"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_FAILED_RESULT_PILOT == "1"'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
@@ -157,6 +180,7 @@ pmix-python-suite:
     - bash ci/test_discover_untested_pmix_commits.sh
     - bash ci/test_generate_pmix_child_pipeline.sh
     - bash ci/test_pmix_failed_result_child.sh
+    - bash ci/test_probe_pmix_child_artifacts.sh
     - bash ci/test_write_pmix_commit_result.sh
 
     - |

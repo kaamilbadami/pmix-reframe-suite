@@ -287,6 +287,9 @@ parent = yaml.safe_load(pathlib.Path(sys.argv[1]).read_text())
 failed_result_rule = (
     '$CI_PIPELINE_SOURCE == "web" && $PMIX_FAILED_RESULT_PILOT == "1"'
 )
+artifact_probe_rule = (
+    '$CI_PIPELINE_SOURCE == "web" && $PMIX_ARTIFACT_RETRIEVAL_PILOT == "1"'
+)
 pilot_rule = (
     '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
 )
@@ -299,6 +302,7 @@ suite = parent["pmix-python-suite"]
 assert generation["rules"] == pilot_rules
 assert trigger["rules"] == pilot_rules
 assert suite["rules"] == [
+    {"if": artifact_probe_rule, "when": "never"},
     {"if": failed_result_rule, "when": "never"},
     {"if": pilot_rule, "when": "never"},
     {"if": '$CI_PIPELINE_SOURCE == "web"'},

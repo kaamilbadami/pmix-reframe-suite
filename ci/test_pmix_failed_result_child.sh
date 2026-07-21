@@ -147,6 +147,9 @@ assert "PMIX_FAILED_RESULT_PILOT" not in json.dumps(generation)
 assert "PMIX_FAILED_RESULT_PILOT" not in json.dumps(normal_trigger)
 
 suite = parent["pmix-python-suite"]
+artifact_probe_rule = (
+    '$CI_PIPELINE_SOURCE == "web" && $PMIX_ARTIFACT_RETRIEVAL_PILOT == "1"'
+)
 legacy_suite_rules = [
     {"if": normal_pilot_rule, "when": "never"},
     {"if": '$CI_PIPELINE_SOURCE == "web"'},
@@ -154,6 +157,7 @@ legacy_suite_rules = [
     {"when": "never"},
 ]
 assert suite["rules"] == [
+    {"if": artifact_probe_rule, "when": "never"},
     {"if": diagnostic_rule, "when": "never"},
     *legacy_suite_rules,
 ]
