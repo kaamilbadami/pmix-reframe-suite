@@ -43,6 +43,7 @@ pmix-python-suite:
     - bash ci/test_should_run_pmix_suite.sh
     - bash ci/test_collect_ci_artifacts.sh
     - bash ci/test_report_github_status.sh
+    - bash ci/test_run_exact_pmix_commit.sh
 
     - |
       decision_file=".ci-state/pmix-decision.env"
@@ -74,7 +75,7 @@ pmix-python-suite:
       "${PMIX_PYTHON}" -c 'import Cython; print("Cython", Cython.__version__)'
       "${RFM_BIN}" --version
 
-      bash ci/run_pmix_python_suite.sh
+      bash ci/run_exact_pmix_commit.sh
 
       state_file=".ci-state/pmix-master.env"
       mkdir -p "$(dirname -- "$state_file")"
