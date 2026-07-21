@@ -1,4 +1,6 @@
 stages:
+  - pilot-generate
+  - pilot-trigger
   - test
 
 include:
@@ -17,6 +19,69 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - when: never
 
+generate-pmix-child-pipeline-pilot:
+  stage: pilot-generate
+  extends:
+    - .frontier-shell-runner
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
+    - when: never
+
+  cache:
+    key: pmix-master-state-v2
+    paths:
+      - .ci-state/pmix-master.env
+    policy: pull
+
+  script:
+    - |
+      set -euo pipefail
+
+      if [[ ! -f .ci-state/pmix-master.env ]]; then
+          printf 'error: cached PMIx state was not restored: %s\n' \
+              '.ci-state/pmix-master.env' >&2
+          exit 1
+      fi
+
+      mkdir -p ci-generated
+
+      for test_script in ci/test_*.sh; do
+          echo "Running $test_script"
+          bash "$test_script"
+      done
+
+      bash ci/discover_untested_pmix_commits.sh \
+          .ci-state/pmix-master.env \
+          ci-generated/pmix-untested-commits.txt
+
+      python3 ci/generate_pmix_child_pipeline.py \
+          ci-generated/pmix-untested-commits.txt \
+          ci-generated/pmix-child-pipeline.yml
+
+      printf '%s\n' 'Discovered OpenPMIx commits:'
+      cat ci-generated/pmix-untested-commits.txt
+
+      printf '%s\n' 'Generated child pipeline:'
+      cat ci-generated/pmix-child-pipeline.yml
+
+  artifacts:
+    expire_in: 1 day
+    paths:
+      - ci-generated/pmix-untested-commits.txt
+      - ci-generated/pmix-child-pipeline.yml
+
+trigger-pmix-child-pipeline-pilot:
+  stage: pilot-trigger
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
+    - when: never
+  trigger:
+    include:
+      - artifact: ci-generated/pmix-child-pipeline.yml
+        job: generate-pmix-child-pipeline-pilot
+    strategy: mirror
+
 pmix-python-suite:
   stage: test
   extends:
@@ -25,6 +90,13 @@ pmix-python-suite:
   timeout: 1h
 
   resource_group: pmix-python-suite-frontier
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - when: never
 
   cache:
     key: pmix-master-state-v2

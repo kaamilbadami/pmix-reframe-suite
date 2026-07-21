@@ -2,7 +2,9 @@
 set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+repo_root=$(cd -- "$script_dir/.." && pwd)
 generator="$script_dir/generate_pmix_child_pipeline.py"
+parent_ci="$repo_root/.gitlab-ci.yml"
 test_dir=$(mktemp -d)
 trap 'rm -rf -- "$test_dir"' EXIT
 
@@ -170,5 +172,77 @@ else
     printf '# YAML parser unavailable; parse validation skipped\n'
 fi
 pass 'generated YAML parses when a parser is available'
+
+if python3 -c 'import yaml' >/dev/null 2>&1; then
+    python3 - "$parent_ci" <<'PY'
+import pathlib
+import sys
+import yaml
+
+parent = yaml.safe_load(pathlib.Path(sys.argv[1]).read_text())
+pilot_rule = (
+    '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
+)
+pilot_rules = [{"if": pilot_rule}, {"when": "never"}]
+
+generation = parent["generate-pmix-child-pipeline-pilot"]
+trigger = parent["trigger-pmix-child-pipeline-pilot"]
+suite = parent["pmix-python-suite"]
+
+assert generation["rules"] == pilot_rules
+assert trigger["rules"] == pilot_rules
+assert suite["rules"] == [
+    {"if": pilot_rule, "when": "never"},
+    {"if": '$CI_PIPELINE_SOURCE == "web"'},
+    {"if": '$CI_PIPELINE_SOURCE == "schedule"'},
+    {"when": "never"},
+]
+assert parent["workflow"]["rules"] == [
+    {"if": '$CI_PIPELINE_SOURCE == "web"'},
+    {"if": '$CI_PIPELINE_SOURCE == "schedule"'},
+    {"when": "never"},
+]
+assert parent["stages"].index(generation["stage"]) < parent["stages"].index(
+    trigger["stage"]
+)
+assert generation["cache"] == {
+    "key": "pmix-master-state-v2",
+    "paths": [".ci-state/pmix-master.env"],
+    "policy": "pull",
+}
+assert generation["artifacts"]["paths"] == [
+    "ci-generated/pmix-untested-commits.txt",
+    "ci-generated/pmix-child-pipeline.yml",
+]
+assert trigger["trigger"] == {
+    "include": [{
+        "artifact": "ci-generated/pmix-child-pipeline.yml",
+        "job": "generate-pmix-child-pipeline-pilot",
+    }],
+    "strategy": "mirror",
+}
+assert "resource_group" not in generation
+assert "resource_group" not in trigger
+assert "script" not in trigger
+generation_script = "\n".join(generation["script"])
+assert "cached PMIx state was not restored" in generation_script
+for forbidden in ("LAST_SUCCESS_EPOCH", "state_tmp", "Saved successful PMIx"):
+    assert forbidden not in generation_script
+PY
+else
+    for required_text in \
+        'generate-pmix-child-pipeline-pilot:' \
+        'trigger-pmix-child-pipeline-pilot:' \
+        '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"' \
+        'policy: pull' \
+        'artifact: ci-generated/pmix-child-pipeline.yml' \
+        'job: generate-pmix-child-pipeline-pilot' \
+        'strategy: mirror'
+    do
+        grep -Fq "$required_text" "$parent_ci" ||
+            fail "parent CI is missing: $required_text"
+    done
+fi
+pass 'parent CI contains the guarded manual child-pipeline pilot'
 
 printf '1..%d\n' "$pass_count"
