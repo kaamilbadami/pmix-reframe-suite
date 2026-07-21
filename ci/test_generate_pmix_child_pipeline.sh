@@ -38,6 +38,31 @@ write_input() {
     printf '%s\n' "$@" > "$path"
 }
 
+pilot_override_is_valid() {
+    [[ $1 =~ ^[0-9A-Fa-f]{40}$ ]]
+}
+
+pilot_override_is_valid "$lower_sha" ||
+    fail 'pilot override validation rejected a full lowercase SHA'
+pass 'pilot override validation accepts a full lowercase SHA'
+pilot_override_is_valid "$upper_sha" ||
+    fail 'pilot override validation rejected a full uppercase SHA'
+pass 'pilot override validation accepts a full uppercase SHA'
+
+for invalid_override in \
+    0123456789abcdef \
+    master \
+    refs/tags/v1.0 \
+    " $lower_sha" \
+    "$lower_sha " \
+    0123456789abcdef0123456789abcdef0123456g
+do
+    if pilot_override_is_valid "$invalid_override"; then
+        fail "pilot override validation accepted: $invalid_override"
+    fi
+done
+pass 'pilot override validation rejects short, symbolic, whitespace, and non-hex values'
+
 expect_failure 'missing arguments are rejected'
 expect_failure 'too many arguments are rejected' one two three
 expect_failure 'missing input is rejected' \
@@ -136,7 +161,7 @@ grep -Fq 'project: ci/resources/templates' "$multiple_output" &&
 pass 'runner include, base, timeout, and resource group are preserved'
 
 if grep -Eqi \
-    '\.ci-state|should_run_pmix_suite|discover_untested|github|openpmix\.git|ls-remote|git fetch' \
+    '\.ci-state|PMIX_CHILD_PIPELINE_BASE_SHA|should_run_pmix_suite|discover_untested|github|openpmix\.git|ls-remote|git fetch' \
     "$multiple_output"; then
     fail 'generated jobs contain forbidden discovery or state behavior'
 fi
@@ -176,6 +201,7 @@ pass 'generated YAML parses when a parser is available'
 if python3 -c 'import yaml' >/dev/null 2>&1; then
     python3 - "$parent_ci" <<'PY'
 import pathlib
+import re
 import sys
 import yaml
 
@@ -226,8 +252,87 @@ assert "resource_group" not in trigger
 assert "script" not in trigger
 generation_script = "\n".join(generation["script"])
 assert "cached PMIx state was not restored" in generation_script
-for forbidden in ("LAST_SUCCESS_EPOCH", "state_tmp", "Saved successful PMIx"):
+for forbidden in (
+    "SUITE_COMMIT",
+    "LAST_SUCCESS_EPOCH",
+    "state_tmp",
+    "Saved successful PMIx",
+):
     assert forbidden not in generation_script
+assert "PMIX_CHILD_PIPELINE_BASE_SHA" not in parent.get("variables", {})
+assert "${PMIX_CHILD_PIPELINE_BASE_SHA:-}" in generation_script
+assert (
+    "[[ ! $PMIX_CHILD_PIPELINE_BASE_SHA =~ ^[0-9A-Fa-f]{40}$ ]]"
+    in generation_script
+)
+assert "discovery_state=.ci-state/pmix-master.env" in generation_script
+assert "discovery_state=ci-generated/pmix-pilot-state.env" in generation_script
+assert re.search(
+    r"printf 'PMIX_COMMIT=%s\\n' \"\$PMIX_CHILD_PIPELINE_BASE_SHA\" > "
+    r"\\\n\s+ci-generated/pmix-pilot-state\.env",
+    generation_script,
+)
+assert re.search(
+    r"discover_untested_pmix_commits\.sh\s+\\\n\s+"
+    r'"\$discovery_state"',
+    generation_script,
+)
+validation_position = generation_script.index(
+    "[[ ! $PMIX_CHILD_PIPELINE_BASE_SHA =~ ^[0-9A-Fa-f]{40}$ ]]"
+)
+required_state_position = generation_script.index(
+    "if [[ ! -f .ci-state/pmix-master.env ]]"
+)
+discovery_position = generation_script.index(
+    "bash ci/discover_untested_pmix_commits.sh"
+)
+assert required_state_position < validation_position
+assert validation_position < discovery_position
+checksum_before_position = generation_script.index(
+    "official_state_checksum_before=$(sha256sum -- .ci-state/pmix-master.env)"
+)
+temporary_state_position = generation_script.index(
+    "ci-generated/pmix-pilot-state.env"
+)
+generation_position = generation_script.index(
+    "python3 ci/generate_pmix_child_pipeline.py"
+)
+checksum_after_position = generation_script.index(
+    "official_state_checksum_after=$(sha256sum -- .ci-state/pmix-master.env)"
+)
+assert checksum_before_position < temporary_state_position
+assert checksum_after_position > generation_position
+assert (
+    '[[ $official_state_checksum_before != "$official_state_checksum_after" ]]'
+    in generation_script
+)
+assert "error: the manual pilot modified the official cached PMIx state" in generation_script
+checksum_guard = generation_script[checksum_after_position:]
+assert checksum_guard.index("error: the manual pilot modified") < checksum_guard.index(
+    "exit 1"
+)
+assert "Pilot discovery baseline: official cached state" in generation_script
+assert "Pilot discovery baseline override: %s" in generation_script
+for line in generation_script.splitlines():
+    assert not re.search(
+        r"\b(?:cp|mv|sed)\b.*\.ci-state/pmix-master\.env", line
+    )
+    assert not (
+        ".ci-state/pmix-master.env" in line
+        and re.search(r"(?:^|\s)(?:>|>>)(?:\s|$)", line)
+    )
+for job in parent.values():
+    if not isinstance(job, dict):
+        continue
+    rules = job.get("rules", [])
+    has_schedule_rule = any(
+        isinstance(rule, dict) and "schedule" in rule.get("if", "")
+        for rule in rules
+    )
+    if has_schedule_rule:
+        assert "PMIX_CHILD_PIPELINE_BASE_SHA" not in "\n".join(
+            job.get("script", [])
+        )
 PY
 else
     for required_text in \

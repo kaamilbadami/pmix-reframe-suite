@@ -44,7 +44,26 @@ generate-pmix-child-pipeline-pilot:
           exit 1
       fi
 
+      discovery_state=.ci-state/pmix-master.env
+      official_state_checksum_before=$(sha256sum -- .ci-state/pmix-master.env)
+
       mkdir -p ci-generated
+
+      if [[ -z ${PMIX_CHILD_PIPELINE_BASE_SHA:-} ]]; then
+          printf '%s\n' 'Pilot discovery baseline: official cached state'
+      else
+          if [[ ! $PMIX_CHILD_PIPELINE_BASE_SHA =~ ^[0-9A-Fa-f]{40}$ ]]; then
+              printf '%s\n' \
+                  'error: PMIX_CHILD_PIPELINE_BASE_SHA must be exactly 40 hexadecimal characters' \
+                  >&2
+              exit 1
+          fi
+          printf 'PMIX_COMMIT=%s\n' "$PMIX_CHILD_PIPELINE_BASE_SHA" > \
+              ci-generated/pmix-pilot-state.env
+          discovery_state=ci-generated/pmix-pilot-state.env
+          printf 'Pilot discovery baseline override: %s\n' \
+              "$PMIX_CHILD_PIPELINE_BASE_SHA"
+      fi
 
       for test_script in ci/test_*.sh; do
           echo "Running $test_script"
@@ -52,12 +71,19 @@ generate-pmix-child-pipeline-pilot:
       done
 
       bash ci/discover_untested_pmix_commits.sh \
-          .ci-state/pmix-master.env \
+          "$discovery_state" \
           ci-generated/pmix-untested-commits.txt
 
       python3 ci/generate_pmix_child_pipeline.py \
           ci-generated/pmix-untested-commits.txt \
           ci-generated/pmix-child-pipeline.yml
+
+      official_state_checksum_after=$(sha256sum -- .ci-state/pmix-master.env)
+      if [[ $official_state_checksum_before != "$official_state_checksum_after" ]]; then
+          printf '%s\n' \
+              'error: the manual pilot modified the official cached PMIx state' >&2
+          exit 1
+      fi
 
       printf '%s\n' 'Discovered OpenPMIx commits:'
       cat ci-generated/pmix-untested-commits.txt
