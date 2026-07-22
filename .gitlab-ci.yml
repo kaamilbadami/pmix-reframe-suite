@@ -108,6 +108,40 @@ trigger-pmix-child-pipeline-pilot:
         job: generate-pmix-child-pipeline-pilot
     strategy: mirror
 
+collect-reconcile-pmix-child-pipeline-pilot:
+  stage: test
+  extends:
+    - .frontier-shell-runner
+
+  timeout: 15m
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
+      when: always
+    - when: never
+
+  needs:
+    - job: generate-pmix-child-pipeline-pilot
+      artifacts: true
+    - job: trigger-pmix-child-pipeline-pilot
+      artifacts: false
+
+  script:
+    - bash ci/run_pmix_collection_reconciliation_pilot.sh ci-generated/pmix-untested-commits.txt ci-pilot-results
+
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-generated/pmix-untested-commits.txt
+      - ci-generated/pmix-child-pipeline.yml
+      - ci-pilot-results/baseline-pmix-master.env
+      - ci-pilot-results/current-pmix-master.env
+      - ci-pilot-results/collection/collection-report.json
+      - ci-pilot-results/collection/*.env
+      - ci-pilot-results/reconciliation/reconciliation.env
+      - ci-pilot-results/reconciliation/proposed-pmix-master.env
+
 trigger-pmix-failed-result-pilot:
   stage: pilot-trigger
   rules:
@@ -179,6 +213,7 @@ pmix-python-suite:
     - bash ci/test_run_exact_pmix_commit.sh
     - bash ci/test_discover_untested_pmix_commits.sh
     - bash ci/test_generate_pmix_child_pipeline.sh
+    - bash ci/test_pmix_collection_reconciliation_pilot.sh
     - bash ci/test_pmix_failed_result_child.sh
     - bash ci/test_probe_pmix_child_artifacts.sh
     - bash ci/test_write_pmix_commit_result.sh
