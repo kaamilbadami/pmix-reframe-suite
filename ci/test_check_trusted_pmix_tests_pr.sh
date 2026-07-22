@@ -79,7 +79,7 @@ assert_no_output() {
 fork_kaamil="$test_dir/fork-kaamil.json"
 fork_kaamil_output="$test_dir/fork-kaamil.env"
 write_fixture "$fork_kaamil" kaamilbadami open contributor/pmix-tests \
-    openpmix/pmix-tests
+    kaamilbadami/pmix-tests
 before_fixture="$test_dir/fork-kaamil.before"
 cp -- "$fork_kaamil" "$before_fixture"
 run_checker "$fork_kaamil" "$fork_kaamil_output"
@@ -91,7 +91,7 @@ PR_NUMBER=42
 PR_AUTHOR=kaamilbadami
 PR_HEAD_SHA=$head_sha
 PR_HEAD_REPOSITORY=contributor/pmix-tests
-PR_BASE_REPOSITORY=openpmix/pmix-tests
+PR_BASE_REPOSITORY=kaamilbadami/pmix-tests
 PR_FROM_FORK=1"
 [[ $(< "$fork_kaamil_output") == "$expected_output" ]] ||
     fail 'eligible fork output fields, order, or values differ'
@@ -106,15 +106,15 @@ grep -Fxq 'PR_FROM_FORK=1' "$fork_kaamil_output" ||
 pass 'trusted fork output sets PR_FROM_FORK=1'
 
 fork_rhc="$test_dir/fork-rhc.json"
-write_fixture "$fork_rhc" rhc54 open rhc54/pmix-tests openpmix/pmix-tests
+write_fixture "$fork_rhc" rhc54 open rhc54/pmix-tests kaamilbadami/pmix-tests
 run_checker "$fork_rhc" "$test_dir/fork-rhc.env"
 assert_status 0 "$checker_status" 'rhc54 fork PR eligibility'
 pass 'rhc54 fork PR is eligible'
 
 same_repo="$test_dir/same-repo.json"
 same_repo_output="$test_dir/same-repo.env"
-write_fixture "$same_repo" kaamilbadami open openpmix/pmix-tests \
-    openpmix/pmix-tests
+write_fixture "$same_repo" kaamilbadami open kaamilbadami/pmix-tests \
+    kaamilbadami/pmix-tests
 run_checker "$same_repo" "$same_repo_output"
 assert_status 0 "$checker_status" 'same-repository PR eligibility'
 grep -Fxq 'PR_FROM_FORK=0' "$same_repo_output" ||
@@ -123,29 +123,29 @@ pass 'trusted same-repository PR is eligible with PR_FROM_FORK=0'
 
 unknown_fork="$test_dir/unknown-fork.json"
 write_fixture "$unknown_fork" unknown-user open unknown/pmix-tests \
-    openpmix/pmix-tests
+    kaamilbadami/pmix-tests
 run_checker "$unknown_fork" "$test_dir/unknown-fork.env"
 assert_status 3 "$checker_status" 'unknown fork author policy rejection'
 assert_no_output "$test_dir/unknown-fork.env" 'unknown fork author rejection'
 pass 'unknown fork author is policy-rejected'
 
 unknown_same="$test_dir/unknown-same.json"
-write_fixture "$unknown_same" unknown-user open openpmix/pmix-tests \
-    openpmix/pmix-tests
+write_fixture "$unknown_same" unknown-user open kaamilbadami/pmix-tests \
+    kaamilbadami/pmix-tests
 run_checker "$unknown_same" "$test_dir/unknown-same.env"
 assert_status 3 "$checker_status" 'unknown same-repository author policy rejection'
 pass 'unknown same-repository author is policy-rejected'
 
 closed="$test_dir/closed.json"
 write_fixture "$closed" kaamilbadami closed contributor/pmix-tests \
-    openpmix/pmix-tests
+    kaamilbadami/pmix-tests
 run_checker "$closed" "$test_dir/closed.env"
 assert_status 3 "$checker_status" 'closed PR policy rejection'
 pass 'closed PR is policy-rejected'
 
 wrong_base="$test_dir/wrong-base.json"
 write_fixture "$wrong_base" kaamilbadami open contributor/pmix-tests \
-    openpmix/not-pmix-tests
+    openpmix/pmix-tests
 run_checker "$wrong_base" "$test_dir/wrong-base.env"
 assert_status 3 "$checker_status" 'wrong base policy rejection'
 pass 'wrong base repository is policy-rejected'
@@ -192,7 +192,7 @@ do
     fixture="$test_dir/sha-${pass_count}-${RANDOM}.json"
     output="$test_dir/sha-${pass_count}-${RANDOM}.env"
     write_fixture "$fixture" kaamilbadami open contributor/pmix-tests \
-        openpmix/pmix-tests "$invalid_sha"
+        kaamilbadami/pmix-tests "$invalid_sha"
     run_checker "$fixture" "$output"
     assert_status 4 "$checker_status" "invalid SHA $invalid_sha"
     assert_no_output "$output" "invalid SHA $invalid_sha"
@@ -215,7 +215,7 @@ done
 pass 'noncanonical CLI PR numbers are invalid'
 
 duplicate="$test_dir/duplicate.json"
-printf '%s\n' '{"id":1,"id":2,"number":42,"state":"open","user":{"id":3,"login":"kaamilbadami"},"head":{"sha":"0123456789abcdef0123456789abcdef01234567","repo":{"id":4,"full_name":"contributor/pmix-tests"}},"base":{"repo":{"id":5,"full_name":"openpmix/pmix-tests"}}}' > "$duplicate"
+printf '%s\n' '{"id":1,"id":2,"number":42,"state":"open","user":{"id":3,"login":"kaamilbadami"},"head":{"sha":"0123456789abcdef0123456789abcdef01234567","repo":{"id":4,"full_name":"contributor/pmix-tests"}},"base":{"repo":{"id":5,"full_name":"kaamilbadami/pmix-tests"}}}' > "$duplicate"
 run_checker "$duplicate" "$test_dir/duplicate.env"
 assert_status 4 "$checker_status" 'duplicate JSON keys'
 pass 'duplicate JSON object keys are invalid'

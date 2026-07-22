@@ -25,7 +25,7 @@ fetcher_path = Path(sys.argv[1]).resolve()
 checker_path = Path(sys.argv[2]).resolve()
 token = "dummy-read-token-that-must-never-appear"
 pr_number = "42"
-request_path = "/repos/openpmix/pmix-tests/pulls/42"
+request_path = "/repos/kaamilbadami/pmix-tests/pulls/42"
 head_sha = "0123456789abcdef0123456789abcdef01234567"
 pass_count = 0
 
@@ -49,10 +49,10 @@ def pr_body(author="kaamilbadami"):
         "user": {"id": 101, "login": author},
         "head": {
             "sha": head_sha,
-            "repo": {"id": 202, "full_name": "contributor/pmix-tests"},
+            "repo": {"id": 202, "full_name": "kaamilbadami/pmix-tests"},
         },
         "base": {
-            "repo": {"id": 303, "full_name": "openpmix/pmix-tests"},
+            "repo": {"id": 303, "full_name": "kaamilbadami/pmix-tests"},
         },
     }
     return (json.dumps(document, separators=(",", ":")) + "\n \t").encode()
@@ -513,7 +513,15 @@ try:
         check(checked.returncode == 0, "trusted integration checker failed")
         check(b"PR_ELIGIBLE=1\n" in trusted_env.read_bytes(),
               "trusted integration did not produce PR_ELIGIBLE=1")
-        passed("mock fetch feeds checker and trusted fork becomes PR_ELIGIBLE=1")
+        check(b"PR_HEAD_REPOSITORY=kaamilbadami/pmix-tests\n" in
+              trusted_env.read_bytes(),
+              "trusted integration head repository changed")
+        check(b"PR_BASE_REPOSITORY=kaamilbadami/pmix-tests\n" in
+              trusted_env.read_bytes(),
+              "trusted integration base repository changed")
+        check(b"PR_FROM_FORK=0\n" in trusted_env.read_bytes(),
+              "trusted same-repository integration was marked as a fork")
+        passed("mock fetch feeds checker and trusted same-repository PR is eligible")
 
         untrusted_json = root / "untrusted.json"
         completed = run_fetch(untrusted_json, body=pr_body("untrusted-user"))

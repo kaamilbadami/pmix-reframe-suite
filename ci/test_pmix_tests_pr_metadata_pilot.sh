@@ -73,9 +73,9 @@ if status == 0 or os.environ.get("STUB_CHECK_WRITE_ON_FAILURE") == "1":
         "PR_NUMBER=42\n"
         "PR_AUTHOR=kaamilbadami\n"
         "PR_HEAD_SHA=0123456789abcdef0123456789abcdef01234567\n"
-        "PR_HEAD_REPOSITORY=contributor/pmix-tests\n"
-        "PR_BASE_REPOSITORY=openpmix/pmix-tests\n"
-        "PR_FROM_FORK=1\n"
+        "PR_HEAD_REPOSITORY=kaamilbadami/pmix-tests\n"
+        "PR_BASE_REPOSITORY=kaamilbadami/pmix-tests\n"
+        "PR_FROM_FORK=0\n"
     )
 raise SystemExit(status)
 '''
@@ -146,7 +146,7 @@ completed = case.run()
 check(completed.returncode == 0, "eligible pilot did not succeed")
 check((case.output / "pr.json").is_file(), "eligible pilot lost PR JSON")
 check((case.output / "trusted-pr.env").is_file(), "eligible pilot lost eligibility")
-passed("eligible trusted fork metadata completes successfully")
+passed("eligible trusted same-repository metadata completes successfully")
 
 check(case.fetch_args() == [
     "--pr-number", "42", "--output", "ci-pr-pilot/pr.json",
@@ -165,9 +165,9 @@ expected_record = (
     "PR_NUMBER=42\n"
     "PR_AUTHOR=kaamilbadami\n"
     f"PR_HEAD_SHA={head_sha}\n"
-    "PR_HEAD_REPOSITORY=contributor/pmix-tests\n"
-    "PR_BASE_REPOSITORY=openpmix/pmix-tests\n"
-    "PR_FROM_FORK=1\n"
+    "PR_HEAD_REPOSITORY=kaamilbadami/pmix-tests\n"
+    "PR_BASE_REPOSITORY=kaamilbadami/pmix-tests\n"
+    "PR_FROM_FORK=0\n"
 )
 check((case.output / "trusted-pr.env").read_text() == expected_record,
       "eligible safe fields changed")

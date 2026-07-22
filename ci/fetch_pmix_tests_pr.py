@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch authoritative openpmix/pmix-tests pull-request metadata.
+"""Fetch authoritative kaamilbadami/pmix-tests pull-request metadata.
 
 Usage: fetch_pmix_tests_pr.py --pr-number NUMBER --output PATH
 
@@ -34,7 +34,7 @@ EXIT_UNSAFE = 5
 EXIT_LOCAL = 6
 
 PRODUCTION_ORIGIN = "https://api.github.com"
-PR_PATH_PREFIX = "/repos/openpmix/pmix-tests/pulls/"
+PR_PATH_PREFIX = "/repos/kaamilbadami/pmix-tests/pulls/"
 TOKEN_ENVIRONMENT = "GITHUB_PR_READ_TOKEN"
 API_VERSION = "2026-03-10"
 RESPONSE_LIMIT = 2 * 1024 * 1024

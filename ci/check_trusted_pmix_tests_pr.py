@@ -24,7 +24,7 @@ EXIT_REJECTED = 3
 EXIT_INVALID = 4
 EXIT_CHANGED = 5
 
-TARGET_REPOSITORY = "openpmix/pmix-tests"
+TARGET_REPOSITORY = "kaamilbadami/pmix-tests"
 TRUSTED_AUTHORS = frozenset({"rhc54", "kaamilbadami"})
 OUTPUT_FIELDS = (
     "PR_ELIGIBLE",
