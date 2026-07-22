@@ -848,6 +848,7 @@ try:
           "failed-result pilot guard changed")
     suite_rules = parent["pmix-python-suite"]["rules"]
     check(suite_rules == [
+        {"if": '$PMIX_TESTS_PR_PILOT == "1"', "when": "never"},
         {"if": probe_rule, "when": "never"},
         {"if": failed_rule, "when": "never"},
         {"if": normal_rule, "when": "never"},

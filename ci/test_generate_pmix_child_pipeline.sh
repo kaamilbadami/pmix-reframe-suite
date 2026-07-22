@@ -298,10 +298,15 @@ pilot_rules = [{"if": pilot_rule}, {"when": "never"}]
 generation = parent["generate-pmix-child-pipeline-pilot"]
 trigger = parent["trigger-pmix-child-pipeline-pilot"]
 suite = parent["pmix-python-suite"]
+pr_metadata_pilot_exclusion = {
+    "if": '$PMIX_TESTS_PR_PILOT == "1"',
+    "when": "never",
+}
 
 assert generation["rules"] == pilot_rules
 assert trigger["rules"] == pilot_rules
 assert suite["rules"] == [
+    pr_metadata_pilot_exclusion,
     {"if": artifact_probe_rule, "when": "never"},
     {"if": failed_result_rule, "when": "never"},
     {"if": pilot_rule, "when": "never"},

@@ -173,6 +173,38 @@ probe-pmix-child-artifacts:
     paths:
       - ci-probe-results/
 
+validate-pmix-tests-pr-pilot:
+  stage: test
+  extends:
+    - .frontier-shell-runner
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_TESTS_PR_PILOT == "1"'
+    - when: never
+
+  script:
+    - |
+      set -euo pipefail
+
+      if [[ -z ${PMIX_TESTS_PR_NUMBER:-} ]]; then
+          printf '%s\n' 'error: PMIX_TESTS_PR_NUMBER is required' >&2
+          exit 2
+      fi
+      if [[ -z ${GITHUB_PR_READ_TOKEN:-} ]]; then
+          printf '%s\n' 'error: GITHUB_PR_READ_TOKEN is required' >&2
+          exit 2
+      fi
+
+      bash ci/run_pmix_tests_pr_metadata_pilot.sh \
+          "$PMIX_TESTS_PR_NUMBER" ci-pr-pilot
+
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-pr-pilot/pr.json
+      - ci-pr-pilot/trusted-pr.env
+
 pmix-python-suite:
   stage: test
   extends:
@@ -183,6 +215,8 @@ pmix-python-suite:
   resource_group: pmix-python-suite-frontier
 
   rules:
+    - if: '$PMIX_TESTS_PR_PILOT == "1"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_ARTIFACT_RETRIEVAL_PILOT == "1"'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_FAILED_RESULT_PILOT == "1"'

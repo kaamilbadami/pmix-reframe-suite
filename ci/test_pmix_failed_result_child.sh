@@ -157,6 +157,7 @@ legacy_suite_rules = [
     {"when": "never"},
 ]
 assert suite["rules"] == [
+    {"if": '$PMIX_TESTS_PR_PILOT == "1"', "when": "never"},
     {"if": artifact_probe_rule, "when": "never"},
     {"if": diagnostic_rule, "when": "never"},
     *legacy_suite_rules,
