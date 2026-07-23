@@ -99,7 +99,11 @@ for forbidden in (
 diagnostic_rule = (
     '$CI_PIPELINE_SOURCE == "web" && $PMIX_FAILED_RESULT_PILOT == "1"'
 )
-diagnostic_rules = [{"if": diagnostic_rule}, {"when": "never"}]
+execution_exclusion = {
+    "if": '$PMIX_TESTS_PR_EXECUTION_PILOT == "1"',
+    "when": "never",
+}
+diagnostic_rules = [execution_exclusion, {"if": diagnostic_rule}, {"when": "never"}]
 diagnostic_trigger = parent["trigger-pmix-failed-result-pilot"]
 assert diagnostic_trigger == {
     "stage": "pilot-trigger",
@@ -114,7 +118,7 @@ assert "PMIX_FAILED_RESULT_PILOT" not in parent.get("variables", {})
 normal_pilot_rule = (
     '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
 )
-normal_pilot_rules = [{"if": normal_pilot_rule}, {"when": "never"}]
+normal_pilot_rules = [execution_exclusion, {"if": normal_pilot_rule}, {"when": "never"}]
 generation = parent["generate-pmix-child-pipeline-pilot"]
 normal_trigger = parent["trigger-pmix-child-pipeline-pilot"]
 assert generation["stage"] == "pilot-generate"
@@ -157,6 +161,7 @@ legacy_suite_rules = [
     {"when": "never"},
 ]
 assert suite["rules"] == [
+    execution_exclusion,
     {"if": '$PMIX_TESTS_PR_PILOT == "1"', "when": "never"},
     {"if": artifact_probe_rule, "when": "never"},
     {"if": diagnostic_rule, "when": "never"},
@@ -167,7 +172,9 @@ assert parent["workflow"]["rules"] == [
     {"if": '$CI_PIPELINE_SOURCE == "schedule"'},
     {"when": "never"},
 ]
-assert parent["stages"] == ["pilot-generate", "pilot-trigger", "test"]
+assert parent["stages"] == [
+    "pilot-generate", "pilot-trigger", "pr-prepare", "test", "pr-finalize"
+]
 suite_script = "\n".join(suite["script"])
 assert suite_script.count("bash ci/test_pmix_failed_result_child.sh") == 1
 

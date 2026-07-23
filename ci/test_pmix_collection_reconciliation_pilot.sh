@@ -260,7 +260,11 @@ passed("the wrapper has no build, scheduler, ReFrame, GitHub, apply, commit, or 
 
 parent = yaml.safe_load(parent_ci.read_text(encoding="utf-8"))
 pilot_rule = '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
-guarded_rules = [{"if": pilot_rule}, {"when": "never"}]
+execution_exclusion = {
+    "if": '$PMIX_TESTS_PR_EXECUTION_PILOT == "1"',
+    "when": "never",
+}
+guarded_rules = [execution_exclusion, {"if": pilot_rule}, {"when": "never"}]
 generation = parent["generate-pmix-child-pipeline-pilot"]
 trigger = parent["trigger-pmix-child-pipeline-pilot"]
 job = parent["collect-reconcile-pmix-child-pipeline-pilot"]
@@ -272,6 +276,7 @@ check(parent["workflow"]["rules"] == [
 check(generation["rules"] == guarded_rules, "generation pilot guard changed")
 check(trigger["rules"] == guarded_rules, "trigger pilot guard changed")
 check(job["rules"] == [
+    execution_exclusion,
     {"if": pilot_rule, "when": "always"},
     {"when": "never"},
 ], "collection job guard or always behavior changed")

@@ -277,8 +277,12 @@ for forbidden in (
 passed("production wrapper has only metadata fetch and validation capability")
 
 pilot_rule = '$CI_PIPELINE_SOURCE == "web" && $PMIX_TESTS_PR_PILOT == "1"'
+execution_exclusion = {
+    "if": '$PMIX_TESTS_PR_EXECUTION_PILOT == "1"',
+    "when": "never",
+}
 job = parent["validate-pmix-tests-pr-pilot"]
-check(job["rules"] == [{"if": pilot_rule}, {"when": "never"}],
+check(job["rules"] == [execution_exclusion, {"if": pilot_rule}, {"when": "never"}],
       "manual pilot guard changed")
 check(job["extends"] == [".frontier-shell-runner"],
       "runner inheritance convention changed")
@@ -307,18 +311,19 @@ passed("job does not run for scheduled pipelines")
 
 child_rule = '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
 check(parent["generate-pmix-child-pipeline-pilot"]["rules"] == [
-    {"if": child_rule}, {"when": "never"},
+    execution_exclusion, {"if": child_rule}, {"when": "never"},
 ], "child generation pilot rules changed")
 check(parent["trigger-pmix-child-pipeline-pilot"]["rules"] == [
-    {"if": child_rule}, {"when": "never"},
+    execution_exclusion, {"if": child_rule}, {"when": "never"},
 ], "child trigger pilot rules changed")
 check(parent["collect-reconcile-pmix-child-pipeline-pilot"]["rules"] == [
-    {"if": child_rule, "when": "always"}, {"when": "never"},
+    execution_exclusion, {"if": child_rule, "when": "always"}, {"when": "never"},
 ], "child collection pilot rules changed")
 passed("existing PMIx child-pipeline pilot rules remain intact")
 
 suite_rules = parent["pmix-python-suite"]["rules"]
-check(suite_rules[0] == {
+check(suite_rules[0] == execution_exclusion, "normal PMIx suite lacks execution-pilot exclusion")
+check(suite_rules[1] == {
     "if": '$PMIX_TESTS_PR_PILOT == "1"', "when": "never",
 }, "normal PMIx suite lacks the PR-pilot exclusion")
 passed("normal and scheduled PMIx suite work is excluded by the pilot flag")

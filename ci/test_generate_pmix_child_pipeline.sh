@@ -293,7 +293,11 @@ artifact_probe_rule = (
 pilot_rule = (
     '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
 )
-pilot_rules = [{"if": pilot_rule}, {"when": "never"}]
+execution_exclusion = {
+    "if": '$PMIX_TESTS_PR_EXECUTION_PILOT == "1"',
+    "when": "never",
+}
+pilot_rules = [execution_exclusion, {"if": pilot_rule}, {"when": "never"}]
 
 generation = parent["generate-pmix-child-pipeline-pilot"]
 trigger = parent["trigger-pmix-child-pipeline-pilot"]
@@ -306,6 +310,7 @@ pr_metadata_pilot_exclusion = {
 assert generation["rules"] == pilot_rules
 assert trigger["rules"] == pilot_rules
 assert suite["rules"] == [
+    execution_exclusion,
     pr_metadata_pilot_exclusion,
     {"if": artifact_probe_rule, "when": "never"},
     {"if": failed_result_rule, "when": "never"},

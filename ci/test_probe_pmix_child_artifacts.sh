@@ -823,12 +823,16 @@ try:
         '$CI_PIPELINE_SOURCE == "web" && '
         '$PMIX_ARTIFACT_RETRIEVAL_PILOT == "1"'
     )
+    execution_exclusion = {
+        "if": '$PMIX_TESTS_PR_EXECUTION_PILOT == "1"',
+        "when": "never",
+    }
     job = parent["probe-pmix-child-artifacts"]
     check(job == {
         "stage": "test",
         "extends": [".frontier-shell-runner"],
         "timeout": "10m",
-        "rules": [{"if": probe_rule, "when": "manual"}, {"when": "never"}],
+        "rules": [execution_exclusion, {"if": probe_rule, "when": "manual"}, {"when": "never"}],
         "script": ["python3 ci/probe_pmix_child_artifacts.py"],
         "artifacts": {
             "when": "always",
@@ -839,7 +843,7 @@ try:
     check("resource_group" not in job, "probe uses the PMIx resource group")
     normal_rule = '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
     failed_rule = '$CI_PIPELINE_SOURCE == "web" && $PMIX_FAILED_RESULT_PILOT == "1"'
-    guarded_rules = lambda rule: [{"if": rule}, {"when": "never"}]
+    guarded_rules = lambda rule: [execution_exclusion, {"if": rule}, {"when": "never"}]
     check(parent["generate-pmix-child-pipeline-pilot"]["rules"] == guarded_rules(normal_rule),
           "dynamic generation pilot guard changed")
     check(parent["trigger-pmix-child-pipeline-pilot"]["rules"] == guarded_rules(normal_rule),
@@ -848,6 +852,7 @@ try:
           "failed-result pilot guard changed")
     suite_rules = parent["pmix-python-suite"]["rules"]
     check(suite_rules == [
+        execution_exclusion,
         {"if": '$PMIX_TESTS_PR_PILOT == "1"', "when": "never"},
         {"if": probe_rule, "when": "never"},
         {"if": failed_rule, "when": "never"},

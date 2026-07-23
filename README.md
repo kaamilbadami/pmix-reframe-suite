@@ -167,6 +167,38 @@ The scheduled pipeline intentionally skips the complete suite only when both SHA
 
 Manual and scheduled pipelines report pending and final commit status to GitHub. A Frontier resource group prevents overlapping PMIx suite jobs.
 
+### Manual trusted-author `pmix-tests` PR pilot
+
+The opt-in `PMIX_TESTS_PR_EXECUTION_PILOT=1` workflow is a bounded manual MVP
+for same-repository pull requests in `kaamilbadami/pmix-tests`. Eligibility is
+limited to the existing `rhc54` and `kaamilbadami` allowlist, fork-originated
+PRs are rejected, and code from an approved author is trusted to execute under
+the Frontier service account. This workflow is not a sandbox for arbitrary,
+hostile, or fork-originated PR code. Supporting that threat model would require
+a separate account, container boundary, or equivalent stronger isolation.
+
+The workflow uses three jobs. Preparation retrieves and revalidates the exact
+head SHA and posts pending status. Both artifact-producing jobs remove their
+fixed output directory before an early failure can expose stale data, and the
+strict preparation and result schemas are bound to the current numeric GitLab
+pipeline ID. Execution receives the validated record, removes the GitLab job
+environment with `env -i`, rebuilds the trusted Frontier module environment,
+checks out only the exact SHA from the fixed public URL, and runs one
+suite-owned Python server/client smoke adapter. The adapter interposes a
+suite-owned `client.py` wrapper so the selected client exit status is recorded
+independently. Finalization runs from a fresh suite checkout, strictly compares
+the preparation and result pipeline IDs and SHAs, and reports status only on
+the original preparation SHA. GitHub and GitLab credential variables are
+removed before approved PR code executes, but the shared service-account
+filesystem remains within the approved-author trust assumption.
+
+`checkout.env`, `checkout-commit.txt`, and `test-source.sha256` are diagnostic
+artifacts for operators, not trusted security evidence. The final decision uses
+only the strict preparation and execution-result records. A complete GitLab
+pipeline cancellation can prevent the always-run finalization job from running
+and therefore leave the GitHub status pending; a separate cleanup mechanism is
+future work.
+
 ## Artifacts and generated files
 
 Normal ReFrame runs may create these generated directories at the repository root:
