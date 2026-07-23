@@ -54,7 +54,7 @@ def execution(result, selected_sha=sha, selected_pipeline=pipeline_id):
         f"CI_PIPELINE_ID={selected_pipeline}\n"
         f"PR_HEAD_SHA={selected_sha}\n"
         f"RESULT={result}\n"
-        "EXPECTED_CHECK=PMIxTestsPRPythonSmokeTest\n"
+        "EXPECTED_CHECK=PMIxTestsPRHelloWorldTest\n"
         f"CHECK_RAN={'0' if result == 'error' else '1'}\n"
         f"REPORT_SHA256={'missing' if result == 'error' else 'a' * 64}\n"
         f"EXECUTION_ID={execution_id}\n"

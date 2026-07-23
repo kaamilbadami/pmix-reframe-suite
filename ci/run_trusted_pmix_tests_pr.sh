@@ -39,7 +39,7 @@ preparation_record=ci-pr-preparation/preparation.env
 checkout_dir=$output_dir/pmix-tests
 result_record=$output_dir/result.env
 report_file=$output_dir/reframe/run-report.json
-evidence_dir=$output_dir/reframe/stage/frontier/batch/pmix_test/PMIxTestsPRPythonSmokeTest
+evidence_dir=$output_dir/reframe/stage/frontier/batch/pmix_test/PMIxTestsPRHelloWorldTest
 clone_url=https://github.com/kaamilbadami/pmix-tests.git
 
 for helper in "$records" "$test_runner"; do
@@ -126,8 +126,8 @@ printf '%s\n' \
 /usr/bin/git -C "$checkout_dir" show -s --format='%H' HEAD > \
     "$output_dir/checkout-commit.txt"
 /usr/bin/sha256sum -- \
-    "$checkout_dir/python/server.py" \
-    "$checkout_dir/python/client.py" > "$output_dir/test-source.sha256"
+    "$checkout_dir/prrte/hello_world/build.sh" \
+    "$checkout_dir/prrte/hello_world/hello.c" > "$output_dir/test-source.sha256"
 
 export PMIX_TESTS_SOURCE_DIR=$checkout_absolute
 export PMIX_TESTS_PR_HEAD_SHA=$selected_sha

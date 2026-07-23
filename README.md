@@ -184,9 +184,9 @@ strict preparation and result schemas are bound to the current numeric GitLab
 pipeline ID. Execution receives the validated record, removes the GitLab job
 environment with `env -i`, rebuilds the trusted Frontier module environment,
 checks out only the exact SHA from the fixed public URL, and runs one
-suite-owned Python server/client smoke adapter. The adapter interposes a
-suite-owned `client.py` wrapper so the selected client exit status is recorded
-independently. Finalization runs from a fresh suite checkout, strictly compares
+suite-owned adapter that builds the PR-owned `prrte/hello_world` source and
+launches two ranks with a foreground `prterun`. Finalization runs from a fresh
+suite checkout, strictly compares
 the preparation and result pipeline IDs and SHAs, and reports status only on
 the original preparation SHA. GitHub and GitLab credential variables are
 removed before approved PR code executes, but the shared service-account

@@ -85,10 +85,10 @@ mkdir -m 700 -- "$reframe_prefix"
 reframe_status=0
 "$RFM_BIN" \
     -C "$repo_root/sysconfig.yaml" \
-    -c "$repo_root/pmix_python_binding/reframe/pmix_tests_pr_python_smoke_test.py" \
+    -c "$repo_root/pmix_python_binding/reframe/pmix_tests_pr_hello_world_test.py" \
     -r \
     --system=frontier:batch \
-    -n '^PMIxTestsPRPythonSmokeTest$' \
+    -n '^PMIxTestsPRHelloWorldTest$' \
     --keep-stage-files \
     --prefix "$reframe_prefix" \
     --report-file "$reframe_prefix/run-report.json" || reframe_status=$?

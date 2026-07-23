@@ -6,7 +6,8 @@ repo_root=$(cd -- "$script_dir/.." && pwd -P)
 
 python3.11 - "$script_dir/run_trusted_pmix_tests_pr.sh" \
     "$script_dir/pmix_tests_pr_artifacts.py" \
-    "$repo_root/pmix_python_binding/reframe/pmix_tests_pr_python_smoke_test.py" <<'PY'
+    "$repo_root/pmix_python_binding/reframe/pmix_tests_pr_hello_world_test.py" <<'PY'
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -67,17 +68,19 @@ case $command_name in
     clone)
         destination=${arguments[${#arguments[@]}-1]}
         if [[ -f make-root-symlink ]]; then
-            mkdir -p real-checkout/python
+            mkdir -p real-checkout/prrte/hello_world
             ln -s ../../real-checkout "$destination"
         else
-            mkdir -p "$destination/python"
+            mkdir -p "$destination/prrte/hello_world"
         fi
-        printf '%s\n' 'server from selected checkout' > "$destination/python/server.py"
-        printf '%s\n' 'client from selected checkout' > "$destination/python/client.py"
-        if [[ -f make-python-symlink ]]; then
-            rm -rf "$destination/python"
-            mkdir -p outside-python
-            ln -s ../../outside-python "$destination/python"
+        printf '%s\n' 'build from selected checkout' > \
+            "$destination/prrte/hello_world/build.sh"
+        printf '%s\n' 'hello from selected checkout' > \
+            "$destination/prrte/hello_world/hello.c"
+        if [[ -f make-hello-symlink ]]; then
+            rm -rf "$destination/prrte/hello_world"
+            mkdir -p outside-hello
+            ln -s ../../../outside-hello "$destination/prrte/hello_world"
         fi
         ;;
     fetch)
@@ -122,37 +125,29 @@ for name in ("GITHUB_PR_READ_TOKEN", "GITHUB_STATUS_TOKEN", "CI_JOB_TOKEN",
         raise SystemExit(92)
 source = Path(os.environ["PMIX_TESTS_SOURCE_DIR"])
 Path("consumed-source.txt").write_text(
-    (source / "python/server.py").read_text()
-    + (source / "python/client.py").read_text()
+    (source / "prrte/hello_world/build.sh").read_text()
+    + (source / "prrte/hello_world/hello.c").read_text()
 )
 sha = os.environ["PMIX_TESTS_PR_HEAD_SHA"]
 execution_id = os.environ["PMIX_TESTS_PR_EXECUTION_ID"]
+pmix_sha = "fedcba9876543210fedcba9876543210fedcba98"
 prefix = Path("ci-pr-execution/reframe")
-evidence = prefix / "stage/frontier/batch/pmix_test/PMIxTestsPRPythonSmokeTest"
+evidence = prefix / "stage/frontier/batch/pmix_test/PMIxTestsPRHelloWorldTest"
 evidence.mkdir(parents=True)
 common = (
-    "PMIX_TESTS_PR_RUN_EVIDENCE_VERSION=2\n"
+    "PMIX_TESTS_PR_RUN_EVIDENCE_VERSION=4\n"
     f"PR_HEAD_SHA={sha}\n"
     f"EXECUTION_ID={execution_id}\n"
-    "PYTHON_PREFLIGHT_EXIT_CODE=0\n"
+    f"PMIX_COMMIT={pmix_sha}\n"
 )
 (evidence / "pmix-tests-pr-run-started.env").write_text(common)
 (evidence / "pmix-tests-pr-run-completed.env").write_text(
-    common + "SERVER_EXIT_CODE=0\n"
-)
-client_common = (
-    "PMIX_TESTS_PR_RUN_EVIDENCE_VERSION=2\n"
-    f"PR_HEAD_SHA={sha}\n"
-    f"EXECUTION_ID={execution_id}\n"
-)
-(evidence / "pmix-tests-pr-client-started.env").write_text(client_common)
-(evidence / "pmix-tests-pr-client-completed.env").write_text(
-    client_common + "CLIENT_EXIT_CODE=0\n"
+    common + "WORKLOAD_EXIT_CODE=0\n"
 )
 case = {
-    "name": "PMIxTestsPRPythonSmokeTest",
-    "unique_name": "PMIxTestsPRPythonSmokeTest",
-    "filename": str(Path("pmix_python_binding/reframe/pmix_tests_pr_python_smoke_test.py").resolve()),
+    "name": "PMIxTestsPRHelloWorldTest",
+    "unique_name": "PMIxTestsPRHelloWorldTest",
+    "filename": str(Path("pmix_python_binding/reframe/pmix_tests_pr_hello_world_test.py").resolve()),
     "fixture": False, "system": "frontier", "partition": "batch",
     "environ": "pmix_test", "scheduler": "slurm",
     "jobid": "12345", "job_submit_time": 1.0,
@@ -281,9 +276,20 @@ with tempfile.TemporaryDirectory() as temporary_name:
     passed("only the fixed clone URL and exact detached SHA reach Git")
 
     consumed = (case.root / "consumed-source.txt").read_text()
-    check("server from selected checkout" in consumed
-          and "client from selected checkout" in consumed,
+    check("build from selected checkout" in consumed
+          and "hello from selected checkout" in consumed,
           "selected source files were not consumed")
+    checksum_lines = (
+        case.root / "ci-pr-execution/test-source.sha256"
+    ).read_text().splitlines()
+    expected_digests = {
+        hashlib.sha256(b"build from selected checkout\n").hexdigest(),
+        hashlib.sha256(b"hello from selected checkout\n").hexdigest(),
+    }
+    check({line.split()[0] for line in checksum_lines} == expected_digests
+          and checksum_lines[0].endswith("/prrte/hello_world/build.sh")
+          and checksum_lines[1].endswith("/prrte/hello_world/hello.c"),
+          "diagnostic checksums do not cover the exact hello-world sources")
     result = (case.root / "ci-pr-execution/result.env").read_text()
     check("RESULT=success\n" in result and f"PR_HEAD_SHA={sha}\n" in result,
           "trusted report classification did not publish success on the exact SHA")
@@ -291,7 +297,7 @@ with tempfile.TemporaryDirectory() as temporary_name:
           "execution result was not bound to the current pipeline")
     check((stale / "run-report.json").read_text() == "stale root report\n",
           "root stale report was read or changed")
-    passed("the fixed smoke source is consumed and only the job-specific report is classified")
+    passed("the exact hello sources are hashed and only the job-specific report is classified")
 
     case = Case()
     stale_output = case.root / "ci-pr-execution"
@@ -301,7 +307,7 @@ with tempfile.TemporaryDirectory() as temporary_name:
         "CI_PIPELINE_ID=455\n"
         f"PR_HEAD_SHA={'8' * 40}\n"
         "RESULT=success\n"
-        "EXPECTED_CHECK=PMIxTestsPRPythonSmokeTest\n"
+        "EXPECTED_CHECK=PMIxTestsPRHelloWorldTest\n"
         "CHECK_RAN=1\n"
         f"REPORT_SHA256={'a' * 64}\n"
         f"EXECUTION_ID={'b' * 32}\n"

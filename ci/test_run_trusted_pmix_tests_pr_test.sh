@@ -6,9 +6,10 @@ repo_root=$(cd -- "$script_dir/.." && pwd -P)
 
 python3.11 - "$script_dir/run_trusted_pmix_tests_pr_test.sh" \
     "$script_dir/pmix_tests_pr_artifacts.py" \
-    "$repo_root/pmix_python_binding/reframe/pmix_tests_pr_python_smoke_test.py" <<'PY'
+    "$repo_root/pmix_python_binding/reframe/pmix_tests_pr_hello_world_test.py" <<'PY'
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -63,8 +64,8 @@ for forbidden in GITHUB_PR_READ_TOKEN GITHUB_STATUS_TOKEN CI_JOB_TOKEN CI_REPOSI
 done
 printf '%s\0' "$@" > reframe.args
 env -0 > reframe.env
-cat "$PMIX_TESTS_SOURCE_DIR/python/server.py" \
-    "$PMIX_TESTS_SOURCE_DIR/python/client.py" > consumed-source.txt
+cat "$PMIX_TESTS_SOURCE_DIR/prrte/hello_world/build.sh" \
+    "$PMIX_TESTS_SOURCE_DIR/prrte/hello_world/hello.c" > consumed-source.txt
 exit "${MOCK_REFRAME_STATUS:-0}"
 '''
 
@@ -76,7 +77,10 @@ class Case:
         self.root = Path(temporary.name) / f"case-{case_count}"
         self.ci = self.root / "ci"
         self.adapter = self.root / "pmix_python_binding/reframe"
-        self.source = self.root / "ci-pr-execution/pmix-tests/python"
+        self.source = (
+            self.root /
+            "ci-pr-execution/pmix-tests/prrte/hello_world"
+        )
         self.tools = self.root / "fixed-tools"
         self.pythonpath = self.root / "fixed-reframe-pythonpath"
         self.ci.mkdir(parents=True)
@@ -106,8 +110,8 @@ class Case:
         shutil.copy2(records_source, self.ci / records_source.name)
         shutil.copy2(adapter_source, self.adapter / adapter_source.name)
         (self.root / "sysconfig.yaml").write_text("systems: []\n")
-        (self.source / "server.py").write_text("server selected source\n")
-        (self.source / "client.py").write_text("client selected source\n")
+        (self.source / "build.sh").write_text("build selected source\n")
+        (self.source / "hello.c").write_text("hello selected source\n")
         self.environment = {
             "PATH": "/usr/bin:/bin",
             "HOME": str(self.root / "home"),
@@ -143,14 +147,14 @@ with tempfile.TemporaryDirectory() as temporary_name:
     check(args == [
         "-C", str(case.root / "sysconfig.yaml"),
         "-c", str(case.adapter / adapter_source.name),
-        "-r", "--system=frontier:batch", "-n", "^PMIxTestsPRPythonSmokeTest$",
+        "-r", "--system=frontier:batch", "-n", "^PMIxTestsPRHelloWorldTest$",
         "--keep-stage-files", "--prefix", str(case.root / "ci-pr-execution/reframe"),
         "--report-file", str(case.root / "ci-pr-execution/reframe/run-report.json"),
     ], "trusted ReFrame command changed")
     consumed = (case.root / "consumed-source.txt").read_text()
-    check("server selected source" in consumed and "client selected source" in consumed,
-          "ReFrame did not receive both exact checkout files")
-    passed("fixed installed tools select only the exact PR smoke check and source")
+    check("build selected source" in consumed and "hello selected source" in consumed,
+          "ReFrame did not receive both exact hello-world source files")
+    passed("fixed installed tools select only the exact PR hello-world check and source")
 
     reframe_environment = (case.root / "reframe.env").read_bytes()
     for secret_name in (
@@ -192,7 +196,7 @@ with tempfile.TemporaryDirectory() as temporary_name:
               f"{secret_name} reached ReFrame")
     passed("known credentials are rejected before Python validation or ReFrame")
 
-    for filename in ("server.py", "client.py"):
+    for filename in ("build.sh", "hello.c"):
         case = Case()
         target = case.root / f"{filename}.target"
         target.write_text("preserve\n")
@@ -202,24 +206,59 @@ with tempfile.TemporaryDirectory() as temporary_name:
         check(completed.returncode == 2 and not (case.root / "reframe.args").exists(),
               f"symlinked {filename} reached ReFrame")
         check(target.read_text() == "preserve\n", f"symlink target changed: {filename}")
-    passed("symlinked server.py and client.py are rejected before ReFrame")
+    passed("symlinked hello-world build and source files are rejected before ReFrame")
 
 text = adapter_source.read_text()
 for required in (
-    'self.job.options = ["--export=NIL"]',
-    '"python", "server.py"', '"python", "client.py"',
-    '"client-under-test.py"', 'CLIENT_EXIT_CODE=',
-    'pmix-tests-pr-client-started.env',
-    'pmix-tests-pr-client-completed.env',
-    'subprocess.run(',
-    "-c 'import pmix'", "PYTHON_PREFLIGHT_EXIT_CODE=0",
+    'self.job.options = ["--export=NIL", "--nodes=1"]',
+    '"prrte", "hello_world"',
+    'num_tasks = 2', 'num_tasks_per_node = 2', 'time_limit = "5m"',
+    '/bin/bash ./build.sh',
+    'exec prterun --host "${{nodes[0]}}:2" -n 2 --map-by ppr:2:node ./hello',
     'pmix-tests-pr-run-started.env', 'pmix-tests-pr-run-completed.env',
-    'f"{python_bin}:/usr/bin:/bin"',
+    'PMIX_TESTS_PR_RUN_EVIDENCE_VERSION=4',
+    '"WORKLOAD_EXIT_CODE=$workload_status"',
+    '"PMIX_COMMIT=$pmix_commit"',
     '"HOME": self.stagedir', '"TMPDIR": f"{self.stagedir}/pmix-tests-pr-tmp"',
+    'sn.assert_eq(self.job.exitcode, 0)',
+    'sn.assert_not_found(r"ERROR:", self.stdout)',
+    'sn.assert_not_found(r"ERROR:", self.stderr)',
 ):
     check(required in text, f"adapter lost required behavior: {required}")
 check("--export=NONE" not in text, "adapter retained Slurm get-user-env mode")
-passed("Slurm uses export=NIL and the adapter supplies fixed workload variables")
+start_write = text.index("/bin/mv -f -- \"$start_tmp\"")
+build_call = text.index("/bin/bash ./build.sh", start_write)
+launch_call = text.index("exec prterun", build_call)
+status_capture = text.index("workload_status=$?", launch_call)
+completion_write = text.index(
+    '"WORKLOAD_EXIT_CODE=$workload_status"', status_capture
+)
+final_exit = text.index('exit "$workload_status"', completion_write)
+check(start_write < build_call < launch_call < status_capture <
+      completion_write < final_exit,
+      "start/build/launch/completion evidence ordering changed")
+for forbidden in (
+    "client-under-test", "CLIENT_EXIT_CODE", "PYTHON_PREFLIGHT",
+    "PYTHONUNBUFFERED", "WORKLOAD_TIMED_OUT", "SERVER_EXIT_CODE",
+    "run_pmix_tests_pr_workload", "pterm", "sleep 5", "prte --no-ready-msg",
+):
+    check(forbidden not in text, f"adapter retained obsolete behavior: {forbidden}")
+passed("the adapter uses one foreground build/launch and atomic completion evidence")
+
+hello_output = (
+    "1/2 [1/2] Hello World from frontier00002 (pid 22)\n"
+    "0/2 [0/2] Hello World from frontier00002 (pid 21)\n"
+)
+line_pattern = re.compile(
+    r"(?m)^([01])/2 \[([01])/2\] Hello World from "
+    r"\S+ \(pid [1-9][0-9]*\)$"
+)
+matches = line_pattern.findall(hello_output)
+check(len(matches) == 2
+      and {int(rank) for rank, _ in matches} == {0, 1}
+      and {int(local_rank) for _, local_rank in matches} == {0, 1},
+      "unordered two-rank hello-world output was not accepted")
+passed("sanity semantics accept exactly the unordered ranks and local ranks 0 and 1")
 
 runner_text = runner_source.read_text()
 for forbidden in ("pip install", "-m venv", "pip --upgrade"):

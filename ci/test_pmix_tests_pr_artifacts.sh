@@ -5,7 +5,7 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 repo_root=$(cd -- "$script_dir/.." && pwd -P)
 
 python3.11 - "$script_dir/pmix_tests_pr_artifacts.py" \
-    "$repo_root/pmix_python_binding/reframe/pmix_tests_pr_python_smoke_test.py" <<'PY'
+    "$repo_root/pmix_python_binding/reframe/pmix_tests_pr_hello_world_test.py" <<'PY'
 import copy
 import hashlib
 import json
@@ -23,6 +23,8 @@ other_sha = "89abcdef0123456789abcdef0123456789abcdef"
 execution_id = "0123456789abcdef0123456789abcdef"
 pipeline_id = "456"
 other_pipeline_id = "455"
+pmix_sha = "fedcba9876543210fedcba9876543210fedcba98"
+other_pmix_sha = "76543210fedcba9876543210fedcba9876543210"
 passed_count = 0
 
 
@@ -70,45 +72,33 @@ def preparation(result="ready", head_sha=sha, selected_pipeline=pipeline_id):
     )
 
 
-def evidence(root, *, completed=True, server_status=0, client_started=True,
-             client_completed=True, client_status=0, malformed_client=False,
-             duplicate_client=False):
+def evidence(root, *, completed=True, workload_status="0",
+             completed_pmix_sha=pmix_sha):
     evidence_dir = root / "evidence"
     evidence_dir.mkdir(exist_ok=True)
     common = (
-        "PMIX_TESTS_PR_RUN_EVIDENCE_VERSION=2\n"
+        "PMIX_TESTS_PR_RUN_EVIDENCE_VERSION=4\n"
         f"PR_HEAD_SHA={sha}\n"
         f"EXECUTION_ID={execution_id}\n"
-        "PYTHON_PREFLIGHT_EXIT_CODE=0\n"
+        f"PMIX_COMMIT={pmix_sha}\n"
     )
     (evidence_dir / "pmix-tests-pr-run-started.env").write_text(common)
     if completed:
         (evidence_dir / "pmix-tests-pr-run-completed.env").write_text(
-            common + f"SERVER_EXIT_CODE={server_status}\n"
+            common.replace(
+                f"PMIX_COMMIT={pmix_sha}\n",
+                f"PMIX_COMMIT={completed_pmix_sha}\n",
+            )
+            + f"WORKLOAD_EXIT_CODE={workload_status}\n"
         )
-    client_common = (
-        "PMIX_TESTS_PR_RUN_EVIDENCE_VERSION=2\n"
-        f"PR_HEAD_SHA={sha}\n"
-        f"EXECUTION_ID={execution_id}\n"
-    )
-    if client_started:
-        (evidence_dir / "pmix-tests-pr-client-started.env").write_text(
-            client_common)
-    if client_completed:
-        content = client_common + f"CLIENT_EXIT_CODE={client_status}\n"
-        if malformed_client:
-            content = content.replace("CLIENT_EXIT_CODE=", "CLIENT_STATUS=")
-        (evidence_dir / "pmix-tests-pr-client-completed.env").write_text(content)
-    if duplicate_client:
-        (evidence_dir / "pmix-tests-pr-client-duplicate").write_text("duplicate\n")
     return evidence_dir
 
 
 def report(result="pass", fail_phase=None, *, duplicate=False, jobid="12345",
            job_exitcode=0, filename=None):
     case = {
-        "name": "PMIxTestsPRPythonSmokeTest",
-        "unique_name": "PMIxTestsPRPythonSmokeTest",
+        "name": "PMIxTestsPRHelloWorldTest",
+        "unique_name": "PMIxTestsPRHelloWorldTest",
         "filename": str(adapter if filename is None else filename),
         "fixture": False,
         "system": "frontier",
@@ -144,8 +134,7 @@ def report(result="pass", fail_phase=None, *, duplicate=False, jobid="12345",
 
 
 def classify(root, document, status, *, make_evidence=True, completed=True,
-             server_status=0, client_started=True, client_completed=True,
-             client_status=0, malformed_client=False, duplicate_client=False):
+             workload_status="0", completed_pmix_sha=pmix_sha):
     report_path = root / "run-report.json"
     if document is not None:
         if isinstance(document, bytes):
@@ -159,10 +148,8 @@ def classify(root, document, status, *, make_evidence=True, completed=True,
             report_path.write_text(json.dumps(document))
     if make_evidence:
         evidence(
-            root, completed=completed, server_status=server_status,
-            client_started=client_started, client_completed=client_completed,
-            client_status=client_status, malformed_client=malformed_client,
-            duplicate_client=duplicate_client)
+            root, completed=completed, workload_status=workload_status,
+            completed_pmix_sha=completed_pmix_sha)
     completed_process = run(
         root, "classify-report", "--preparation", "preparation.env",
         "--report", "run-report.json", "--evidence-directory", "evidence",
@@ -230,52 +217,63 @@ with tempfile.TemporaryDirectory() as temporary:
     passed("head identity must match the originally selected SHA")
 
     root = base / "checkout"
-    (root / "checkout/python").mkdir(parents=True)
-    for name in ("server.py", "client.py"):
-        (root / f"checkout/python/{name}").write_text("source\n")
+    (root / "checkout/prrte/hello_world").mkdir(parents=True)
+    (root / "checkout/prrte/hello_world/build.sh").write_text("build\n")
+    (root / "checkout/prrte/hello_world/hello.c").write_text("source\n")
     completed_process = run(root, "validate-checkout", "--checkout", "checkout")
     check(completed_process.returncode == 0, "safe checkout was rejected")
-    passed("a real checkout root, python ancestor, and regular source files are accepted")
+    passed("the real hello-world directories and regular source files are accepted")
 
     def unsafe_checkout(label, mutate, argument="checkout"):
         case = base / f"unsafe-{label}"
-        (case / "checkout/python").mkdir(parents=True)
-        (case / "checkout/python/server.py").write_text("server\n")
-        (case / "checkout/python/client.py").write_text("client\n")
+        source = case / "checkout/prrte/hello_world"
+        source.mkdir(parents=True)
+        (source / "build.sh").write_text("build\n")
+        (source / "hello.c").write_text("source\n")
         mutate(case)
         result = run(case, "validate-checkout", "--checkout", argument)
         check(result.returncode == 2, f"unsafe checkout passed: {label}")
 
     unsafe_checkout("root-symlink", lambda case: (
-        (case / "checkout/python/server.py").unlink(),
-        (case / "checkout/python/client.py").unlink(),
-        (case / "checkout/python").rmdir(),
+        (case / "checkout/prrte/hello_world/build.sh").unlink(),
+        (case / "checkout/prrte/hello_world/hello.c").unlink(),
+        (case / "checkout/prrte/hello_world").rmdir(),
+        (case / "checkout/prrte").rmdir(),
         (case / "checkout").rmdir(),
-        (case / "real/python").mkdir(parents=True),
+        (case / "real/prrte/hello_world").mkdir(parents=True),
         (case / "checkout").symlink_to("real", target_is_directory=True),
     ))
-    unsafe_checkout("python-symlink", lambda case: (
-        (case / "checkout/python/server.py").unlink(),
-        (case / "checkout/python/client.py").unlink(),
-        (case / "checkout/python").rmdir(),
+    unsafe_checkout("hello-world-symlink", lambda case: (
+        (case / "checkout/prrte/hello_world/build.sh").unlink(),
+        (case / "checkout/prrte/hello_world/hello.c").unlink(),
+        (case / "checkout/prrte/hello_world").rmdir(),
         (case / "outside").mkdir(),
-        (case / "checkout/python").symlink_to("../outside", target_is_directory=True),
+        (case / "checkout/prrte/hello_world").symlink_to(
+            "../../outside", target_is_directory=True),
     ))
-    for filename in ("server.py", "client.py"):
+    for filename in ("build.sh", "hello.c"):
         unsafe_checkout(filename.replace(".", "-"), lambda case, name=filename: (
-            (case / f"checkout/python/{name}").unlink(),
-            (case / f"checkout/python/{name}").symlink_to(
-                "client.py" if name == "server.py" else "server.py"),
+            (case / f"checkout/prrte/hello_world/{name}").unlink(),
+            (case / f"checkout/prrte/hello_world/{name}").symlink_to(
+                "hello.c" if name == "build.sh" else "build.sh"),
         ))
+    unsafe_checkout("missing-build", lambda case: (
+        (case / "checkout/prrte/hello_world/build.sh").unlink(),
+    ))
+    unsafe_checkout("hello-is-directory", lambda case: (
+        (case / "checkout/prrte/hello_world/hello.c").unlink(),
+        (case / "checkout/prrte/hello_world/hello.c").mkdir(),
+    ))
     unsafe_checkout("path-escape", lambda case: None, "../checkout")
+
     def make_hardlink(case):
         outside = case / "outside-source"
         outside.write_text("outside\n")
-        (case / "checkout/python/server.py").unlink()
-        os.link(outside, case / "checkout/python/server.py")
+        (case / "checkout/prrte/hello_world/build.sh").unlink()
+        os.link(outside, case / "checkout/prrte/hello_world/build.sh")
 
     unsafe_checkout("hardlink", make_hardlink)
-    passed("checkout-root, ancestor, source symlinks, traversal, and hard links are rejected")
+    passed("missing, malformed, linked, and escaping hello-world paths are rejected")
 
     root = base / "classification"
     root.mkdir()
@@ -286,32 +284,57 @@ with tempfile.TemporaryDirectory() as temporary:
     check(values["REPORT_SHA256"] == hashlib.sha256(
         (root / "run-report.json").read_bytes()).hexdigest(),
         "report digest was not recorded")
-    passed("one completed matching ReFrame check with run evidence maps to success")
-
-    client_error_cases = (
-        ("client-nonzero", {"client_status": 1}),
-        ("client-missing", {"client_started": False, "client_completed": False}),
-        ("client-incomplete", {"client_completed": False}),
-        ("client-malformed", {"malformed_client": True}),
-        ("client-duplicate", {"duplicate_client": True}),
+    check(
+        f"PMIX_COMMIT={pmix_sha}\n" in
+        (root / "evidence/pmix-tests-pr-run-started.env").read_text()
+        and f"PMIX_COMMIT={pmix_sha}\n" in
+        (root / "evidence/pmix-tests-pr-run-completed.env").read_text(),
+        "resolved PMIx fixture commit was not retained in run evidence",
     )
-    for label, options in client_error_cases:
+    passed("one completed matching ReFrame check records its PMIx commit and maps to success")
+
+    for label, workload_status in (
+            ("build-failure", 1),
+            ("launcher-rank-failure", 7)):
         root = base / label
         root.mkdir()
         (root / "preparation.env").write_text(preparation())
-        completed_process, values = classify(root, report(), 0, **options)
-        check(completed_process.returncode == 2 and values["RESULT"] == "error",
-              f"{label} became success or failure")
-    passed("nonzero, missing, incomplete, malformed, and duplicate client evidence map to error")
+        completed_process, values = classify(
+            root,
+            report(
+                result="fail", fail_phase="sanity",
+                job_exitcode=workload_status,
+            ),
+            1,
+            workload_status=str(workload_status),
+        )
+        check(completed_process.returncode == 1
+              and values["RESULT"] == "failure",
+              f"{label} did not become a PR test failure")
+    passed("completed nonzero builds and foreground launches map to failure")
 
     root = base / "failure"
     root.mkdir()
     (root / "preparation.env").write_text(preparation())
     completed_process, values = classify(
-        root, report(result="fail", fail_phase="sanity"), 1, server_status=0)
+        root, report(result="fail", fail_phase="sanity"), 1)
     check(completed_process.returncode == 1 and values["RESULT"] == "failure"
           and values["CHECK_RAN"] == "1", "actual executed failure was not failure")
-    passed("a completed selected workload failing in sanity maps to failure")
+    passed("a completed hello-world workload with malformed output maps to failure")
+
+    evidence_error_cases = (
+        ("malformed-workload-status", {"workload_status": "01"}),
+        ("changed-pmix-commit", {"completed_pmix_sha": other_pmix_sha}),
+    )
+    for label, options in evidence_error_cases:
+        root = base / label
+        root.mkdir()
+        (root / "preparation.env").write_text(preparation())
+        completed_process, values = classify(
+            root, report(), 0, **options)
+        check(completed_process.returncode == 2 and values["RESULT"] == "error",
+              f"{label} became success or failure")
+    passed("malformed exit status and inconsistent PMIx evidence fail closed")
 
     error_cases = (
         ("missing-report", None, 2, False, True),
@@ -320,29 +343,27 @@ with tempfile.TemporaryDirectory() as temporary:
         ("fixture-setup", report(result="fail_deps", fail_phase="setup"), 1, True, True),
         ("scheduler", report(result="fail", fail_phase="run", jobid=None), 1, False, True),
         ("timeout", report(result="fail", fail_phase="run_wait"), 1, True, False),
-        ("python-127", report(result="fail", fail_phase="run_wait", job_exitcode=127), 1, True, True),
-        ("loader-126", report(result="fail", fail_phase="run_wait", job_exitcode=126), 1, True, True),
-        ("missing-pmix-binding", report(result="fail", fail_phase="run_wait", job_exitcode=1), 1, False, True),
-        ("run-wait-exit-one", report(result="fail", fail_phase="run_wait", job_exitcode=1), 1, True, True),
+        ("completed-run-wait", report(
+            result="fail", fail_phase="run_wait", job_exitcode=7
+        ), 1, True, True),
+        ("exit-mismatch", report(result="fail", fail_phase="run_wait", job_exitcode=7), 1, True, True),
         ("wrong-adapter", report(filename=base / "attacker.py"), 0, True, True),
     )
     for label, document, status, make_run_evidence, complete in error_cases:
         root = base / label
         root.mkdir()
         (root / "preparation.env").write_text(preparation())
-        server_status = 0
-        if label == "python-127":
-            server_status = 127
-        elif label == "loader-126":
-            server_status = 126
-        elif label == "run-wait-exit-one":
-            server_status = 1
+        workload_status = (
+            "7" if label == "completed-run-wait"
+            else "1" if label == "exit-mismatch"
+            else "0"
+        )
         completed_process, values = classify(
             root, document, status, make_evidence=make_run_evidence,
-            completed=complete, server_status=server_status)
+            completed=complete, workload_status=workload_status)
         check(completed_process.returncode == 2 and values["RESULT"] == "error",
               f"{label} did not map to error")
-    passed("missing/malformed reports, duplicate checks, setup/scheduler/wait failures, timeouts, launch failures, missing bindings, and wrong adapters map to error")
+    passed("missing/malformed reports, fixture or scheduler failures, incomplete timeouts, mismatched statuses, and wrong adapters map to error")
 
     root = base / "final"
     root.mkdir()
@@ -352,7 +373,7 @@ with tempfile.TemporaryDirectory() as temporary:
         f"CI_PIPELINE_ID={pipeline_id}\n"
         f"PR_HEAD_SHA={other_sha}\n"
         "RESULT=success\n"
-        "EXPECTED_CHECK=PMIxTestsPRPythonSmokeTest\n"
+        "EXPECTED_CHECK=PMIxTestsPRHelloWorldTest\n"
         "CHECK_RAN=1\n"
         f"REPORT_SHA256={'a' * 64}\n"
         f"EXECUTION_ID={execution_id}\n"

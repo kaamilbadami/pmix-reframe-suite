@@ -22,10 +22,10 @@ import tempfile
 
 TARGET_REPOSITORY = "kaamilbadami/pmix-tests"
 TRUSTED_AUTHORS = frozenset(("rhc54", "kaamilbadami"))
-EXPECTED_CHECK = "PMIxTestsPRPythonSmokeTest"
+EXPECTED_CHECK = "PMIxTestsPRHelloWorldTest"
 PREPARATION_VERSION = "2"
 RESULT_VERSION = "2"
-RUN_EVIDENCE_VERSION = "2"
+RUN_EVIDENCE_VERSION = "4"
 MAX_RECORD_SIZE = 4096
 MAX_REPORT_SIZE = 8 * 1024 * 1024
 
@@ -71,15 +71,9 @@ START_FIELDS = (
     "PMIX_TESTS_PR_RUN_EVIDENCE_VERSION",
     "PR_HEAD_SHA",
     "EXECUTION_ID",
-    "PYTHON_PREFLIGHT_EXIT_CODE",
+    "PMIX_COMMIT",
 )
-COMPLETE_FIELDS = START_FIELDS + ("SERVER_EXIT_CODE",)
-CLIENT_START_FIELDS = (
-    "PMIX_TESTS_PR_RUN_EVIDENCE_VERSION",
-    "PR_HEAD_SHA",
-    "EXECUTION_ID",
-)
-CLIENT_COMPLETE_FIELDS = CLIENT_START_FIELDS + ("CLIENT_EXIT_CODE",)
+COMPLETE_FIELDS = START_FIELDS + ("WORKLOAD_EXIT_CODE",)
 
 
 class RecordError(Exception):
@@ -363,33 +357,16 @@ def read_evidence(path, fields, sha, execution_id, label):
         raise RecordError("{} SHA is invalid".format(label))
     if values["EXECUTION_ID"] != execution_id:
         raise RecordError("{} execution identifier is invalid".format(label))
-    if values["PYTHON_PREFLIGHT_EXIT_CODE"] != "0":
-        raise RecordError("{} Python preflight did not pass".format(label))
-    if "SERVER_EXIT_CODE" in values:
+    if SHA_RE.fullmatch(values["PMIX_COMMIT"]) is None:
+        raise RecordError("{} PMIx commit is invalid".format(label))
+    if "WORKLOAD_EXIT_CODE" in values:
         try:
-            exit_code = int(values["SERVER_EXIT_CODE"])
+            exit_code = int(values["WORKLOAD_EXIT_CODE"])
         except ValueError as error:
-            raise RecordError("server exit code is invalid") from error
-        if str(exit_code) != values["SERVER_EXIT_CODE"] or not 0 <= exit_code <= 255:
-            raise RecordError("server exit code is invalid")
-    return values
-
-
-def read_client_evidence(path, fields, sha, execution_id, label):
-    values = parse_ordered_record(path, fields, label)
-    if values["PMIX_TESTS_PR_RUN_EVIDENCE_VERSION"] != RUN_EVIDENCE_VERSION:
-        raise RecordError("{} version is invalid".format(label))
-    if values["PR_HEAD_SHA"] != sha:
-        raise RecordError("{} SHA is invalid".format(label))
-    if values["EXECUTION_ID"] != execution_id:
-        raise RecordError("{} execution identifier is invalid".format(label))
-    if "CLIENT_EXIT_CODE" in values:
-        try:
-            exit_code = int(values["CLIENT_EXIT_CODE"])
-        except ValueError as error:
-            raise RecordError("client exit code is invalid") from error
-        if str(exit_code) != values["CLIENT_EXIT_CODE"] or not 0 <= exit_code <= 255:
-            raise RecordError("client exit code is invalid")
+            raise RecordError("workload exit code is invalid") from error
+        if (str(exit_code) != values["WORKLOAD_EXIT_CODE"] or
+                not 0 <= exit_code <= 255):
+            raise RecordError("workload exit code is invalid")
     return values
 
 
@@ -399,43 +376,21 @@ def evidence_state(directory, sha, execution_id):
         raise RecordError("run evidence directory is not a real directory")
     started_path = directory / "pmix-tests-pr-run-started.env"
     completed_path = directory / "pmix-tests-pr-run-completed.env"
-    client_started_path = directory / "pmix-tests-pr-client-started.env"
-    client_completed_path = directory / "pmix-tests-pr-client-completed.env"
-    client_duplicate_path = directory / "pmix-tests-pr-client-duplicate"
-    try:
-        client_duplicate_path.lstat()
-    except FileNotFoundError:
-        pass
-    else:
-        raise RecordError("client wrapper ran more than once")
     try:
         started_path.lstat()
     except FileNotFoundError:
-        return False, None, None
+        return False, None
     started = read_evidence(started_path, START_FIELDS, sha, execution_id,
                             "run-start evidence")
-    del started
     try:
         completed_path.lstat()
     except FileNotFoundError:
-        return True, None, None
+        return True, None
     completed = read_evidence(completed_path, COMPLETE_FIELDS, sha,
                               execution_id, "run-complete evidence")
-    try:
-        client_started_path.lstat()
-    except FileNotFoundError:
-        return True, int(completed["SERVER_EXIT_CODE"]), None
-    read_client_evidence(client_started_path, CLIENT_START_FIELDS, sha,
-                         execution_id, "client-start evidence")
-    try:
-        client_completed_path.lstat()
-    except FileNotFoundError:
-        return True, int(completed["SERVER_EXIT_CODE"]), None
-    client_completed = read_client_evidence(
-        client_completed_path, CLIENT_COMPLETE_FIELDS, sha, execution_id,
-        "client-complete evidence")
-    return (True, int(completed["SERVER_EXIT_CODE"]),
-            int(client_completed["CLIENT_EXIT_CODE"]))
+    if completed["PMIX_COMMIT"] != started["PMIX_COMMIT"]:
+        raise RecordError("run evidence PMIx commits differ")
+    return True, int(completed["WORKLOAD_EXIT_CODE"])
 
 
 def numeric(value):
@@ -443,7 +398,7 @@ def numeric(value):
 
 
 def classify_report(document, evidence_directory, reframe_status,
-                    check_ran, server_exit, client_exit):
+                    check_ran, workload_exit):
     if set(document) != set(("session_info", "runs", "restored_cases")):
         raise RecordError("ReFrame report schema is unexpected")
     session = document["session_info"]
@@ -472,7 +427,7 @@ def classify_report(document, evidence_directory, reframe_status,
     case = matches[0]
     expected_filename = str((Path(__file__).parent.parent /
                              "pmix_python_binding/reframe/"
-                             "pmix_tests_pr_python_smoke_test.py").resolve())
+                             "pmix_tests_pr_hello_world_test.py").resolve())
     try:
         reported_filename = str(Path(case.get("filename", "")).resolve())
     except (OSError, TypeError) as error:
@@ -507,7 +462,7 @@ def classify_report(document, evidence_directory, reframe_status,
             not isinstance(completion_text, str) or not completion_text or
             completion_time < submit_time or not numeric(time_run) or time_run <= 0):
         raise RecordError("ReFrame report lacks completed run timing evidence")
-    if not check_ran or server_exit is None or client_exit is None:
+    if not check_ran or workload_exit is None:
         raise RecordError("the selected workload did not demonstrably complete")
 
     report_result = case.get("result")
@@ -516,17 +471,19 @@ def classify_report(document, evidence_directory, reframe_status,
     if not isinstance(job_exitcode, int) or isinstance(job_exitcode, bool):
         raise RecordError("ReFrame report lacks a valid job exit code")
     if (report_result == "pass" and fail_phase is None and
-            client_exit == 0 and server_exit == 0 and
+            workload_exit == 0 and
             job_exitcode == 0 and reframe_status == 0):
         return "success"
-    # A sanity failure is an ordinary test failure only after both selected
-    # Python programs and the Slurm job completed successfully.  Scheduler,
-    # wait, submission, setup, dependency, timeout, launch, and all other
-    # ambiguous outcomes remain infrastructure errors.
+    # Sanity is where ReFrame 4.10 evaluates both the foreground job exit
+    # status and the hello-world output. A completed nonzero build/launcher
+    # status or malformed output is therefore an ordinary PR test failure
+    # only when the job reports the same concrete status.
     if (report_result == "fail" and fail_phase == "sanity" and
-            client_exit == 0 and server_exit == 0 and
-            job_exitcode == 0 and reframe_status == 1):
+            job_exitcode == workload_exit and
+            reframe_status == 1):
         return "failure"
+    # Scheduler cancellation, timeout, wait, submission, setup, dependency,
+    # and other non-sanity failures remain infrastructure errors.
     raise RecordError("ReFrame outcome is ambiguous or infrastructural")
 
 
@@ -593,12 +550,12 @@ def command_classify(options):
     classification = "error"
     try:
         document, report_digest = read_json_report(options.report)
-        check_ran, server_exit, client_exit = evidence_state(
+        check_ran, workload_exit = evidence_state(
             options.evidence_directory, preparation["PR_HEAD_SHA"],
             options.execution_id)
         classification = classify_report(
             document, options.evidence_directory, reframe_status,
-            check_ran, server_exit, client_exit)
+            check_ran, workload_exit)
     except RecordError:
         classification = "error"
 
@@ -638,14 +595,16 @@ def command_validate_checkout(options):
     if root_metadata.st_mode & 0o022:
         raise RecordError("checkout root has unsafe write permissions")
     root_real = root.resolve(strict=True)
-    for relative, expected_type in (("python", "directory"),
-                                    ("python/server.py", "file"),
-                                    ("python/client.py", "file")):
+    for relative, expected_type in (
+            ("prrte", "directory"),
+            ("prrte/hello_world", "directory"),
+            ("prrte/hello_world/build.sh", "file"),
+            ("prrte/hello_world/hello.c", "file")):
         candidate = root / relative
         _, metadata = inspect_components(candidate, "checkout {}".format(relative))
         if expected_type == "directory":
             if not stat.S_ISDIR(metadata.st_mode):
-                raise RecordError("checkout python path is not a directory")
+                raise RecordError("checkout source path is not a directory")
         else:
             if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
                 raise RecordError("checkout source is not a regular single-link file")

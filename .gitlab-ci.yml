@@ -312,13 +312,12 @@ run-pmix-tests-pr-pilot:
       - ci-pr-execution/checkout-commit.txt
       - ci-pr-execution/test-source.sha256
       - ci-pr-execution/reframe/run-report.json
-      - ci-pr-execution/reframe/stage/frontier/batch/pmix_test/PMIxTestsPRPythonSmokeTest/pmix-tests-pr-run-started.env
-      - ci-pr-execution/reframe/stage/frontier/batch/pmix_test/PMIxTestsPRPythonSmokeTest/pmix-tests-pr-run-completed.env
-      - ci-pr-execution/reframe/stage/frontier/batch/pmix_test/PMIxTestsPRPythonSmokeTest/pmix-tests-pr-client-started.env
-      - ci-pr-execution/reframe/stage/frontier/batch/pmix_test/PMIxTestsPRPythonSmokeTest/pmix-tests-pr-client-completed.env
-      - ci-pr-execution/reframe/stage/frontier/batch/pmix_test/PMIxTestsPRPythonSmokeTest/pmix-tests-pr-client-duplicate
-      - ci-pr-execution/reframe/output/frontier/batch/pmix_test/PMIxTestsPRPythonSmokeTest/rfm_job.out
-      - ci-pr-execution/reframe/output/frontier/batch/pmix_test/PMIxTestsPRPythonSmokeTest/rfm_job.err
+      - ci-pr-execution/reframe/stage/frontier/batch/pmix_test/PMIxTestsPRHelloWorldTest/pmix-tests-pr-run-started.env
+      - ci-pr-execution/reframe/stage/frontier/batch/pmix_test/PMIxTestsPRHelloWorldTest/pmix-tests-pr-run-completed.env
+      - ci-pr-execution/reframe/stage/frontier/batch/pmix_test/PMIxTestsPRHelloWorldTest/rfm_job.out
+      - ci-pr-execution/reframe/stage/frontier/batch/pmix_test/PMIxTestsPRHelloWorldTest/rfm_job.err
+      - ci-pr-execution/reframe/output/frontier/batch/pmix_test/PMIxTestsPRHelloWorldTest/rfm_job.out
+      - ci-pr-execution/reframe/output/frontier/batch/pmix_test/PMIxTestsPRHelloWorldTest/rfm_job.err
 
 finalize-pmix-tests-pr-pilot:
   stage: pr-finalize
