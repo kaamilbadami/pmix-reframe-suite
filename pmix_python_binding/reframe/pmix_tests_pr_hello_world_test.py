@@ -26,6 +26,7 @@ EXECUTION_ID = os.environ.get("PMIX_TESTS_PR_EXECUTION_ID", "")
 class _PMIxTestsPRHelloWorldBase(rfm.RunOnlyRegressionTest):
     valid_systems = ["frontier:batch"]
     valid_prog_environs = ["pmix_test"]
+    modules = ["PrgEnv-amd"]
 
     prrte = fixture(build_prrte, scope="environment")
     pmix = fixture(build_pmix, scope="environment")

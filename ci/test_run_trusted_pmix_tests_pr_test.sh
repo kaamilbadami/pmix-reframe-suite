@@ -213,7 +213,7 @@ for required in (
     'self.job.options = ["--export=NIL", "--nodes=1"]',
     '"prrte", "hello_world"',
     'num_tasks = 2', 'num_tasks_per_node = 2', 'time_limit = "5m"',
-    '/bin/bash ./build.sh',
+    '/bin/bash ./build.sh', 'modules = ["PrgEnv-amd"]',
     'exec prterun --host "${{nodes[0]}}:2" -n 2 --map-by ppr:2:node ./hello',
     'pmix-tests-pr-run-started.env', 'pmix-tests-pr-run-completed.env',
     'PMIX_TESTS_PR_RUN_EVIDENCE_VERSION=4',
