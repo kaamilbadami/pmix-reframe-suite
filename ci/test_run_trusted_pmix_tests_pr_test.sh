@@ -6,7 +6,8 @@ repo_root=$(cd -- "$script_dir/.." && pwd -P)
 
 python3.11 - "$script_dir/run_trusted_pmix_tests_pr_test.sh" \
     "$script_dir/pmix_tests_pr_artifacts.py" \
-    "$repo_root/pmix_python_binding/reframe/pmix_tests_pr_hello_world_test.py" <<'PY'
+    "$repo_root/pmix_python_binding/reframe/pmix_tests_pr_hello_world_test.py" \
+    "$repo_root/sysconfig.yaml" <<'PY'
 import os
 from pathlib import Path
 import re
@@ -14,11 +15,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import yaml
 
 
 runner_source = Path(sys.argv[1]).resolve()
 records_source = Path(sys.argv[2]).resolve()
 adapter_source = Path(sys.argv[3]).resolve()
+config_source = Path(sys.argv[4]).resolve()
 real_python = shutil.which("python3.11")
 sha = "0123456789abcdef0123456789abcdef01234567"
 execution_id = "0123456789abcdef0123456789abcdef"
@@ -244,6 +247,23 @@ for forbidden in (
 ):
     check(forbidden not in text, f"adapter retained obsolete behavior: {forbidden}")
 passed("the adapter uses one foreground build/launch and atomic completion evidence")
+
+config = yaml.safe_load(config_source.read_text())
+systems = config.get("systems", [])
+frontier_systems = [
+    system for system in systems
+    if system.get("name") == "frontier"
+]
+
+check(
+    len(frontier_systems) == 1,
+    "Frontier system configuration is missing or duplicated",
+)
+check(
+    frontier_systems[0].get("modules_system") == "lmod",
+    "Frontier does not use the Lmod module system",
+)
+passed("Frontier uses Lmod for trusted PR module loading")
 
 hello_output = (
     "1/2 [1/2] Hello World from frontier00002 (pid 22)\n"

@@ -2,6 +2,7 @@ systems:
 - name: frontier
   descr: Frontier system.
   hostnames: ['frontier\d+']
+  modules_system: lmod
   partitions:
   - name: batch
     descr: Use nodes from the Slurm partition containing MI250X nodes
