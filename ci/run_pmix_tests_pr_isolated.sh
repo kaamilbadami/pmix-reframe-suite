@@ -77,9 +77,9 @@ export LC_ALL=C.UTF-8
 export SHELL=/bin/bash
 export USER=gitlab-ci
 export LOGNAME=gitlab-ci
-export PMIX_PYTHON=/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python
-export RFM_BIN=/ccs/home/kbadami/.local/bin/reframe
-export PYTHONPATH=/ccs/home/kbadami/.local/lib/python3.11/site-packages
+export PMIX_PYTHON=/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python
+export RFM_BIN=/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/reframe-4.10/bin/reframe
+export PYTHONPATH=/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/reframe-4.10/lib/python3.11/site-packages
 unset PMIX_TESTS_PR_SANITIZED_STAGE
 
 [[ -x $PMIX_PYTHON && -x $RFM_BIN ]] || {

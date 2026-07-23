@@ -23,8 +23,8 @@ cd -- "$repo_root"
 
 records=ci/pmix_tests_pr_artifacts.py
 expected_source=$repo_root/ci-pr-execution/pmix-tests
-expected_pmix_python=/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python
-expected_rfm_bin=/ccs/home/kbadami/.local/bin/reframe
+expected_pmix_python=/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python
+expected_rfm_bin=/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/reframe-4.10/bin/reframe
 [[ ${PMIX_TESTS_SOURCE_DIR:-} == "$expected_source" ]] || {
     printf '%s\n' 'error: PMIX_TESTS_SOURCE_DIR is not the fixed checkout' >&2
     exit 2
@@ -45,7 +45,7 @@ expected_rfm_bin=/ccs/home/kbadami/.local/bin/reframe
     printf '%s\n' 'error: RFM_BIN is not the fixed ReFrame executable' >&2
     exit 2
 }
-[[ ${PYTHONPATH:-} == /ccs/home/kbadami/.local/lib/python3.11/site-packages ]] || {
+[[ ${PYTHONPATH:-} == /lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/reframe-4.10/lib/python3.11/site-packages ]] || {
     printf '%s\n' 'error: ReFrame Python path is not the fixed installation' >&2
     exit 2
 }

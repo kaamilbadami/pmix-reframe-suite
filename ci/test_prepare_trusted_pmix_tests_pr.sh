@@ -98,7 +98,7 @@ class Case:
         python_path = self.bin / "fixed-python"
         python_path.symlink_to(shutil.which("python3.11"))
         wrapper_text = wrapper_source.read_text().replace(
-            "/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python",
+            "/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python",
             str(python_path),
         )
         (self.ci / wrapper_source.name).write_text(wrapper_text)

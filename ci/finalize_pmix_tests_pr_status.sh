@@ -15,7 +15,7 @@ result_record=$2
 script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" && pwd -P)
 records=$script_dir/pmix_tests_pr_artifacts.py
 reporter=$script_dir/report_pmix_tests_pr_status.sh
-python_bin=/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python
+python_bin=/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python
 
 [[ -f $records && ! -L $records ]] || {
     printf '%s\n' 'error: trusted artifact parser is unavailable' >&2

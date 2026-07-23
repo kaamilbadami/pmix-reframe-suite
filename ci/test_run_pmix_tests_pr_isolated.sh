@@ -89,12 +89,13 @@ set -euo pipefail
     ):
         check(required in values, f"safe allowlisted variable missing: {required}")
     check(values["PMIX_PYTHON"] ==
-          "/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python",
+          "/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python",
           "PMIX_PYTHON is not the fixed installation")
-    check(values["RFM_BIN"] == "/ccs/home/kbadami/.local/bin/reframe",
+    check(values["RFM_BIN"] ==
+          "/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/reframe-4.10/bin/reframe",
           "RFM_BIN is not the fixed installation")
     check(values["PYTHONPATH"] ==
-          "/ccs/home/kbadami/.local/lib/python3.11/site-packages",
+          "/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/reframe-4.10/lib/python3.11/site-packages",
           "ReFrame Python path is not fixed")
     check(values["CI_PIPELINE_ID"] == "456",
           "current pipeline identity did not cross the clean boundary")

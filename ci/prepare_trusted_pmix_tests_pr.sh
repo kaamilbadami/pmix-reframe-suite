@@ -44,7 +44,7 @@ fetcher=ci/fetch_pmix_tests_pr.py
 checker=ci/check_trusted_pmix_tests_pr.py
 records=ci/pmix_tests_pr_artifacts.py
 reporter=ci/report_pmix_tests_pr_status.sh
-python_bin=/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python
+python_bin=/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python
 for helper in "$metadata_wrapper" "$fetcher" "$checker" "$records" "$reporter"; do
     [[ -f $helper && ! -L $helper ]] || fail 'a trusted preparation helper is unavailable'
 done

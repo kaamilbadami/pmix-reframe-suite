@@ -192,6 +192,15 @@ the original preparation SHA. GitHub and GitLab credential variables are
 removed before approved PR code executes, but the shared service-account
 filesystem remains within the approved-author trust assumption.
 
+Trusted CI tools are installed in project-controlled shared storage under
+`/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools`. The pilot uses the
+fixed PMIx Python 3.10.20 interpreter at
+`pmix-py310/bin/python`, the fixed ReFrame 4.10.0 executable at
+`reframe-4.10/bin/reframe`, and ReFrame's Python packages at
+`reframe-4.10/lib/python3.11/site-packages`. These installations are
+readable and executable, but not writable, by the `gen243` group and are
+usable from the credential-scrubbed `env -i` execution environment.
+
 `checkout.env`, `checkout-commit.txt`, and `test-source.sha256` are diagnostic
 artifacts for operators, not trusted security evidence. The final decision uses
 only the strict preparation and execution-result records. A complete GitLab

@@ -93,12 +93,13 @@ class Case:
 
         runner_text = runner_source.read_text()
         runner_text = runner_text.replace(
-            "/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python",
+            "/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python",
             str(self.pmix_python),
         ).replace(
-            "/ccs/home/kbadami/.local/bin/reframe", str(self.rfm_bin),
+            "/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/reframe-4.10/bin/reframe",
+            str(self.rfm_bin),
         ).replace(
-            "/ccs/home/kbadami/.local/lib/python3.11/site-packages",
+            "/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/reframe-4.10/lib/python3.11/site-packages",
             str(self.pythonpath),
         )
         (self.ci / runner_source.name).write_text(runner_text)

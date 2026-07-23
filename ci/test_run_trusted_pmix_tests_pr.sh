@@ -191,7 +191,7 @@ class Case:
         python_path = self.bin / "python"
         git_path = self.bin / "git"
         wrapper_text = wrapper_source.read_text().replace(
-            "/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python",
+            "/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python",
             str(python_path),
         ).replace("/usr/bin/git", str(git_path))
         (self.ci / wrapper_source.name).write_text(wrapper_text)

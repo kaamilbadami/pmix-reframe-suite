@@ -34,7 +34,7 @@ done
 
 records=ci/pmix_tests_pr_artifacts.py
 test_runner=ci/run_trusted_pmix_tests_pr_test.sh
-python_bin=/lustre/orion/scratch/kbadami/gen243/reframe_practice/pmix-py310/bin/python
+python_bin=/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python
 preparation_record=ci-pr-preparation/preparation.env
 checkout_dir=$output_dir/pmix-tests
 result_record=$output_dir/result.env
