@@ -11,8 +11,12 @@ systems:
     # If you care about GPU binding or cores per task, you must set it here, it is not handled by tests
     # Tests only handle -N/-n/--ntasks-per-node
     access: ['-A gen243 -p batch']
+    # Rebuild Frontier's system-owned OLCF and Cray PE/Lmod state before
+    # ReFrame emits any environment module commands. This is required by
+    # trusted jobs that deliberately use `sbatch --export=NIL`.
+    prepare_cmds:
+    - '. /etc/profile.d/olcf-env.sh && . /etc/bash.bashrc.local'
     environs: ['pmix_test']
 
 environments:
 - name: pmix_test
-

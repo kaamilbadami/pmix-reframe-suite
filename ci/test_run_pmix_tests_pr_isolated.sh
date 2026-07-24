@@ -151,10 +151,16 @@ set -euo pipefail
 source_text = source.read_text()
 check("exec /usr/bin/env -i" in source_text,
       "production launcher does not use absolute env -i")
+olcf_init = source_text.index(". /etc/profile.d/olcf-env.sh")
+cray_pe_init = source_text.index(". /etc/bash.bashrc.local", olcf_init)
+module_load = source_text.index("module load", cray_pe_init)
+check(olcf_init < cray_pe_init < module_load,
+      "system-owned OLCF/Cray PE initialization does not precede module loading")
+passed("trusted launcher initializes OLCF then Cray PE before loading modules")
 for forbidden_name in (
     "GITHUB_PR_READ_TOKEN", "GITHUB_STATUS_TOKEN", "CI_JOB_TOKEN",
     "CI_REPOSITORY_URL", "CI_JOB_JWT", "PROTECTED", "CRAY*", "PE_*",
-    "LMOD*", "MODULE*", '"PATH=$PATH"', "LD_LIBRARY_PATH|",
+    "LMOD*", "MODULE*", "MODULEPATH=", '"PATH=$PATH"', "LD_LIBRARY_PATH|",
 ):
     check(forbidden_name not in source_text,
           f"production allowlist names a protected variable: {forbidden_name}")

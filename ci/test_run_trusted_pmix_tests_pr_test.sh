@@ -223,6 +223,7 @@ for required in (
     '"WORKLOAD_EXIT_CODE=$workload_status"',
     '"PMIX_COMMIT=$pmix_commit"',
     '"HOME": self.stagedir', '"TMPDIR": f"{self.stagedir}/pmix-tests-pr-tmp"',
+    '"${LD_LIBRARY_PATH:-}"',
     'sn.assert_eq(self.job.exitcode, 0)',
     'sn.assert_not_found(r"ERROR:", self.stdout)',
     'sn.assert_not_found(r"ERROR:", self.stderr)',
@@ -264,6 +265,112 @@ check(
     "Frontier does not use the Lmod module system",
 )
 passed("Frontier uses Lmod for trusted PR module loading")
+
+frontier_partitions = [
+    partition
+    for partition in frontier_systems[0].get("partitions", [])
+    if partition.get("name") == "batch"
+]
+check(
+    len(frontier_partitions) == 1,
+    "Frontier batch partition is missing or duplicated",
+)
+frontier_init = (
+    ". /etc/profile.d/olcf-env.sh && . /etc/bash.bashrc.local"
+)
+check(
+    frontier_partitions[0].get("prepare_cmds") == [frontier_init],
+    "Frontier batch preparation does not use the trusted system initializer",
+)
+passed("Frontier system initialization is configured before ReFrame module loading")
+
+fixed_reframe = Path(
+    "/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/"
+    "reframe-4.10/bin/reframe"
+)
+with tempfile.TemporaryDirectory() as ordering_temporary:
+    ordering_root = Path(ordering_temporary)
+    ordering_check = ordering_root / "frontier_ordering_check.py"
+    ordering_check.write_text(
+        """\
+import reframe as rfm
+import reframe.utility.sanity as sn
+from reframe.core.builtins import run_before, sanity_function
+
+
+@rfm.simple_test
+class FrontierTrustedOrderingCheck(rfm.RunOnlyRegressionTest):
+    valid_systems = ["frontier:batch"]
+    valid_prog_environs = ["pmix_test"]
+    modules = ["PrgEnv-amd"]
+    executable = "/bin/bash"
+    executable_opts = ["./build.sh"]
+    env_vars = {
+        "LD_LIBRARY_PATH": "/trusted/fixture/lib:${LD_LIBRARY_PATH:-}",
+    }
+
+    @run_before("run")
+    def configure_job(self):
+        self.job.options = ["--export=NIL"]
+
+    @sanity_function
+    def validate(self):
+        return sn.assert_true(1)
+"""
+    )
+    ordering_prefix = ordering_root / "reframe"
+    ordering_run = subprocess.run(
+        [
+            str(fixed_reframe),
+            "-C", str(config_source),
+            "-c", str(ordering_check),
+            "--dry-run",
+            "--system=frontier:batch",
+            "-n", "^FrontierTrustedOrderingCheck$",
+            "--prefix", str(ordering_prefix),
+            "--report-file", str(ordering_root / "run-report.json"),
+        ],
+        env={
+            **os.environ,
+            "PYTHONPATH": (
+                "/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/"
+                "reframe-4.10/lib/python3.11/site-packages"
+            ),
+        },
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    check(
+        ordering_run.returncode == 0,
+        "focused ReFrame ordering dry-run failed: "
+        + ordering_run.stdout.decode(errors="replace")
+        + ordering_run.stderr.decode(errors="replace"),
+    )
+    ordering_script = (
+        ordering_prefix / "stage/frontier/batch/pmix_test/"
+        "FrontierTrustedOrderingCheck/rfm_job.sh"
+    ).read_text()
+    init_position = ordering_script.index(frontier_init)
+    load_position = ordering_script.index(
+        "module load PrgEnv-amd", init_position
+    )
+    library_position = ordering_script.index(
+        "export LD_LIBRARY_PATH=/trusted/fixture/lib:${LD_LIBRARY_PATH:-}",
+        load_position,
+    )
+    build_position = ordering_script.index(
+        "/bin/bash ./build.sh", library_position
+    )
+    check(
+        init_position < load_position < library_position < build_position,
+        "generated command order is not system init, module load, "
+        "system library preservation, build",
+    )
+passed(
+    "generated job initializes Frontier before module load, preserves its "
+    "library path, and then builds"
+)
 
 hello_output = (
     "1/2 [1/2] Hello World from frontier00002 (pid 22)\n"

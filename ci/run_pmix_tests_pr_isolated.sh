@@ -52,19 +52,39 @@ if [[ ${PMIX_TESTS_PR_SANITIZED_STAGE:-} != 1 ]]; then
         'SHELL=/bin/bash' \
         'USER=gitlab-ci' \
         'LOGNAME=gitlab-ci' \
-        'MODULEPATH=/opt/cray/pe/lmod/modulefiles/core:/opt/cray/pe/lmod/modulefiles/craype-targets/default:/opt/cray/pe/modulefiles/Core:/sw/frontier/modulefiles:/opt/cray/modulefiles' \
         "CI_PIPELINE_ID=$CI_PIPELINE_ID" \
         'PMIX_TESTS_PR_SANITIZED_STAGE=1' \
         /bin/bash --noprofile --norc "$script_dir/run_pmix_tests_pr_isolated.sh"
 fi
 
-# This code runs only after env -i.  Fixed Lmod initialization and exact
-# Frontier programming-environment modules are loaded without sourcing user or
-# site login profiles and without exposing the original GitLab job environment.
-# The workload and ReFrame executables themselves are fixed, existing installs;
-# this workflow performs no package download or installation.
+# This code runs only after env -i. Rebuild the OLCF overlay and Cray PE/Lmod
+# state from their system-owned entry points; do not preserve a caller or
+# repository copy of MODULEPATH. No user login profile participates.
+#
+# The OLCF initializer must come first: besides installing Frontier's Lmod
+# hooks, it exports the base PATH needed by subprocesses in the Cray PE
+# initializer when the incoming environment is otherwise empty.
+#
+# These vendor/site shell fragments predate `errexit` and `nounset`: they
+# intentionally probe command status and inspect optional variables. Restore
+# the trusted launcher's strict mode immediately after sourcing them.
+set +eu
 # shellcheck disable=SC1091
-source /opt/cray/pe/lmod/lmod/init/bash
+. /etc/profile.d/olcf-env.sh
+olcf_init_status=$?
+# shellcheck disable=SC1091
+. /etc/bash.bashrc.local
+cray_pe_init_status=$?
+set -eu
+if (( olcf_init_status != 0 || cray_pe_init_status != 0 )); then
+    printf '%s\n' 'error: Frontier system module initialization failed' >&2
+    exit 2
+fi
+
+# Exact Frontier programming-environment modules are then loaded without
+# exposing the original GitLab job environment. The workload and ReFrame
+# executables themselves are fixed, existing installs; this workflow performs
+# no package download or installation.
 module load \
     craype-x86-trento \
     PrgEnv-cray/8.6.0 \

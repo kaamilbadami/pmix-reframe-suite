@@ -115,10 +115,13 @@ exit "$workload_status"
             f"{self.libevent.stagedir}/bin:"
             f"{inherited_path}"
         )
+        # With --export=NIL, this expands only the library path established by
+        # the trusted system initialization and PrgEnv-amd module above.
         ld_library_path = (
             f"{self.prrte.stagedir}/lib:"
             f"{self.pmix.stagedir}/lib:"
-            f"{self.libevent.stagedir}/lib"
+            f"{self.libevent.stagedir}/lib:"
+            "${LD_LIBRARY_PATH:-}"
         )
         self.env_vars = {
             "PATH": path,
