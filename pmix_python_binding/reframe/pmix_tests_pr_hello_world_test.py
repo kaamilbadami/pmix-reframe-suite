@@ -60,7 +60,6 @@ class _PMIxTestsPRHelloWorldBase(rfm.RunOnlyRegressionTest):
                 f"cp -- {shlex.quote(pmix_commit_record)} "
                 "./pmix-fixture-commit.env"
             ),
-            "mkdir -m 700 -- ./pmix-tests-pr-tmp",
         ]
 
         run_script = f"""
@@ -75,6 +74,68 @@ if (( ${{#pmix_commit_lines[@]}} != 1 )) ||
     exit 2
 fi
 pmix_commit=${{pmix_commit_lines[0]}}
+
+if [[ ! ${{SLURM_JOB_ID:-}} =~ ^[1-9][0-9]*$ ]]; then
+    printf '%s\\n' 'error: canonical Slurm job ID is unavailable' >&2
+    exit 2
+fi
+node_tmp_root=/tmp
+if [[ ! -d $node_tmp_root || -L $node_tmp_root ]] ||
+   [[ $(/usr/bin/stat -c %a -- "$node_tmp_root") != 1777 ]]; then
+    printf '%s\\n' 'error: Frontier node-local /tmp is not trustworthy' >&2
+    exit 2
+fi
+node_tmp_fstype=$(/usr/bin/stat -f -c %T -- "$node_tmp_root")
+case $node_tmp_fstype in
+    tmpfs|xfs|ext2/ext3|ext4|btrfs) ;;
+    *)
+        printf 'error: /tmp is not on an approved node-local filesystem: %s\\n' \\
+            "$node_tmp_fstype" >&2
+        exit 2
+        ;;
+esac
+
+readonly expected_runtime_dir="/tmp/pmix-tests-pr-${{SLURM_JOB_ID}}-{EXECUTION_ID}"
+readonly runtime_dir=$expected_runtime_dir
+readonly current_uid=$(/usr/bin/id -u)
+if [[ -L $runtime_dir || -e $runtime_dir ]]; then
+    printf '%s\\n' 'error: trusted runtime directory already exists' >&2
+    exit 2
+fi
+/usr/bin/mkdir -m 700 -- "$runtime_dir"
+
+cleanup_runtime_dir()
+{{
+    cleanup_status=$?
+    trap - EXIT
+    if [[ $runtime_dir == "$expected_runtime_dir" &&
+          $runtime_dir == "/tmp/pmix-tests-pr-${{SLURM_JOB_ID}}-{EXECUTION_ID}" &&
+          -d $runtime_dir && ! -L $runtime_dir &&
+          $(/usr/bin/stat -c %u -- "$runtime_dir") == "$current_uid" ]]; then
+        /usr/bin/rm -rf --one-file-system -- "$runtime_dir" ||
+            cleanup_status=2
+    fi
+    if [[ -L $runtime_dir || -e $runtime_dir ]]; then
+        printf 'error: trusted runtime directory cleanup failed: %s\\n' \\
+            "$runtime_dir" >&2
+        cleanup_status=2
+    else
+        printf 'PMIX_TESTS_PR_RUNTIME_CLEANED=%s\\n' "$runtime_dir"
+    fi
+    exit "$cleanup_status"
+}}
+trap cleanup_runtime_dir EXIT
+
+if [[ ! -d $runtime_dir || -L $runtime_dir ]] ||
+   [[ $(/usr/bin/stat -c %a -- "$runtime_dir") != 700 ]] ||
+   [[ $(/usr/bin/stat -c %u -- "$runtime_dir") != "$current_uid" ]]; then
+    printf '%s\\n' 'error: trusted runtime directory validation failed' >&2
+    exit 2
+fi
+export TMPDIR=$runtime_dir
+printf 'PMIX_TESTS_PR_RUNTIME_TMPDIR=%s\\n' "$TMPDIR"
+printf 'PMIX_TESTS_PR_RUNTIME_FSTYPE=%s\\n' "$node_tmp_fstype"
+
 start_tmp=pmix-tests-pr-run-started.env.tmp
 complete_tmp=pmix-tests-pr-run-completed.env.tmp
 printf '%s\\n' \\
@@ -90,9 +151,16 @@ set -euo pipefail
 test_dir=$1
 cd -- "$test_dir"
 /bin/bash ./build.sh
+if [[ ! -d $TMPDIR || -L $TMPDIR ]] ||
+   [[ $(/usr/bin/stat -c %a -- "$TMPDIR") != 700 ]] ||
+   [[ $(/usr/bin/stat -c %u -- "$TMPDIR") != $(/usr/bin/id -u) ]]; then
+    printf "%s\\n" "error: trusted runtime directory changed during build" >&2
+    exit 2
+fi
 mapfile -t nodes < <(/usr/bin/scontrol show hostnames "$SLURM_JOB_NODELIST")
 (( ${{#nodes[@]}} == 1 ))
-exec prterun --host "${{nodes[0]}}:2" -n 2 --map-by ppr:2:node ./hello
+exec prterun --tmpdir "$TMPDIR" --host "${{nodes[0]}}:2" \\
+    -n 2 --map-by ppr:2:node ./hello
 ' pmix-tests-pr-hello-world {shlex.quote(test_dir)}
 workload_status=$?
 set -e
@@ -127,7 +195,6 @@ exit "$workload_status"
             "PATH": path,
             "LD_LIBRARY_PATH": ld_library_path,
             "HOME": self.stagedir,
-            "TMPDIR": f"{self.stagedir}/pmix-tests-pr-tmp",
             "LANG": "C.UTF-8",
             "LC_ALL": "C.UTF-8",
             "PMIX": self.pmix.stagedir,

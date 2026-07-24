@@ -217,20 +217,41 @@ for required in (
     '"prrte", "hello_world"',
     'num_tasks = 2', 'num_tasks_per_node = 2', 'time_limit = "5m"',
     '/bin/bash ./build.sh', 'modules = ["PrgEnv-amd"]',
-    'exec prterun --host "${{nodes[0]}}:2" -n 2 --map-by ppr:2:node ./hello',
+    'exec prterun --tmpdir "$TMPDIR" --host "${{nodes[0]}}:2"',
     'pmix-tests-pr-run-started.env', 'pmix-tests-pr-run-completed.env',
     'PMIX_TESTS_PR_RUN_EVIDENCE_VERSION=4',
     '"WORKLOAD_EXIT_CODE=$workload_status"',
     '"PMIX_COMMIT=$pmix_commit"',
-    '"HOME": self.stagedir', '"TMPDIR": f"{self.stagedir}/pmix-tests-pr-tmp"',
+    '"HOME": self.stagedir',
     '"${LD_LIBRARY_PATH:-}"',
+    'node_tmp_root=/tmp',
+    'tmpfs|xfs|ext2/ext3|ext4|btrfs',
+    'readonly expected_runtime_dir="/tmp/pmix-tests-pr-',
+    'if [[ -L $runtime_dir || -e $runtime_dir ]]',
+    '/usr/bin/mkdir -m 700 -- "$runtime_dir"',
+    'trap cleanup_runtime_dir EXIT',
+    'export TMPDIR=$runtime_dir',
+    '/usr/bin/rm -rf --one-file-system -- "$runtime_dir"',
     'sn.assert_eq(self.job.exitcode, 0)',
     'sn.assert_not_found(r"ERROR:", self.stdout)',
     'sn.assert_not_found(r"ERROR:", self.stderr)',
 ):
     check(required in text, f"adapter lost required behavior: {required}")
 check("--export=NONE" not in text, "adapter retained Slurm get-user-env mode")
-start_write = text.index("/bin/mv -f -- \"$start_tmp\"")
+check(
+    'self.stagedir}/pmix-tests-pr-tmp' not in text,
+    "adapter still places runtime temporary files in the ReFrame stage",
+)
+tmp_check = text.index("node_tmp_root=/tmp")
+collision_check = text.index(
+    "if [[ -L $runtime_dir || -e $runtime_dir ]]", tmp_check
+)
+mkdir_call = text.index(
+    '/usr/bin/mkdir -m 700 -- "$runtime_dir"', collision_check
+)
+trap_install = text.index("trap cleanup_runtime_dir EXIT", mkdir_call)
+tmp_export = text.index("export TMPDIR=$runtime_dir", trap_install)
+start_write = text.index("/bin/mv -f -- \"$start_tmp\"", tmp_export)
 build_call = text.index("/bin/bash ./build.sh", start_write)
 launch_call = text.index("exec prterun", build_call)
 status_capture = text.index("workload_status=$?", launch_call)
@@ -238,9 +259,12 @@ completion_write = text.index(
     '"WORKLOAD_EXIT_CODE=$workload_status"', status_capture
 )
 final_exit = text.index('exit "$workload_status"', completion_write)
-check(start_write < build_call < launch_call < status_capture <
-      completion_write < final_exit,
-      "start/build/launch/completion evidence ordering changed")
+check(
+    tmp_check < collision_check < mkdir_call < trap_install < tmp_export <
+    start_write < build_call < launch_call < status_capture <
+    completion_write < final_exit,
+    "node-local setup/start/build/launch/completion ordering changed",
+)
 for forbidden in (
     "client-under-test", "CLIENT_EXIT_CODE", "PYTHON_PREFLIGHT",
     "PYTHONUNBUFFERED", "WORKLOAD_TIMED_OUT", "SERVER_EXIT_CODE",
@@ -290,43 +314,19 @@ fixed_reframe = Path(
 )
 with tempfile.TemporaryDirectory() as ordering_temporary:
     ordering_root = Path(ordering_temporary)
-    ordering_check = ordering_root / "frontier_ordering_check.py"
-    ordering_check.write_text(
-        """\
-import reframe as rfm
-import reframe.utility.sanity as sn
-from reframe.core.builtins import run_before, sanity_function
-
-
-@rfm.simple_test
-class FrontierTrustedOrderingCheck(rfm.RunOnlyRegressionTest):
-    valid_systems = ["frontier:batch"]
-    valid_prog_environs = ["pmix_test"]
-    modules = ["PrgEnv-amd"]
-    executable = "/bin/bash"
-    executable_opts = ["./build.sh"]
-    env_vars = {
-        "LD_LIBRARY_PATH": "/trusted/fixture/lib:${LD_LIBRARY_PATH:-}",
-    }
-
-    @run_before("run")
-    def configure_job(self):
-        self.job.options = ["--export=NIL"]
-
-    @sanity_function
-    def validate(self):
-        return sn.assert_true(1)
-"""
-    )
+    ordering_source = ordering_root / "trusted-source/prrte/hello_world"
+    ordering_source.mkdir(parents=True)
+    (ordering_source / "build.sh").write_text("#!/bin/bash\nexit 0\n")
+    (ordering_source / "hello.c").write_text("int main(void) { return 0; }\n")
     ordering_prefix = ordering_root / "reframe"
     ordering_run = subprocess.run(
         [
             str(fixed_reframe),
             "-C", str(config_source),
-            "-c", str(ordering_check),
+            "-c", str(adapter_source),
             "--dry-run",
             "--system=frontier:batch",
-            "-n", "^FrontierTrustedOrderingCheck$",
+            "-n", "^PMIxTestsPRHelloWorldTest$",
             "--prefix", str(ordering_prefix),
             "--report-file", str(ordering_root / "run-report.json"),
         ],
@@ -336,6 +336,9 @@ class FrontierTrustedOrderingCheck(rfm.RunOnlyRegressionTest):
                 "/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/"
                 "reframe-4.10/lib/python3.11/site-packages"
             ),
+            "PMIX_TESTS_SOURCE_DIR": str(ordering_root / "trusted-source"),
+            "PMIX_TESTS_PR_HEAD_SHA": sha,
+            "PMIX_TESTS_PR_EXECUTION_ID": execution_id,
         },
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -349,27 +352,90 @@ class FrontierTrustedOrderingCheck(rfm.RunOnlyRegressionTest):
     )
     ordering_script = (
         ordering_prefix / "stage/frontier/batch/pmix_test/"
-        "FrontierTrustedOrderingCheck/rfm_job.sh"
+        "PMIxTestsPRHelloWorldTest/rfm_job.sh"
     ).read_text()
+    ordering_syntax = subprocess.run(
+        ["/bin/bash", "-n"],
+        input=ordering_script.encode(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    check(
+        ordering_syntax.returncode == 0,
+        "generated trusted job has invalid Bash syntax: "
+        + ordering_syntax.stderr.decode(errors="replace"),
+    )
     init_position = ordering_script.index(frontier_init)
     load_position = ordering_script.index(
         "module load PrgEnv-amd", init_position
     )
     library_position = ordering_script.index(
-        "export LD_LIBRARY_PATH=/trusted/fixture/lib:${LD_LIBRARY_PATH:-}",
+        "export LD_LIBRARY_PATH=",
         load_position,
     )
+    tmp_check_position = ordering_script.index(
+        "node_tmp_root=/tmp", library_position
+    )
+    mkdir_position = ordering_script.index(
+        '/usr/bin/mkdir -m 700 -- "$runtime_dir"', tmp_check_position
+    )
+    trap_position = ordering_script.index(
+        "trap cleanup_runtime_dir EXIT", mkdir_position
+    )
+    tmp_export_position = ordering_script.index(
+        "export TMPDIR=$runtime_dir", trap_position
+    )
     build_position = ordering_script.index(
-        "/bin/bash ./build.sh", library_position
+        "/bin/bash ./build.sh", tmp_export_position
+    )
+    launch_position = ordering_script.index(
+        'exec prterun --tmpdir "$TMPDIR"', build_position
     )
     check(
-        init_position < load_position < library_position < build_position,
+        init_position < load_position < library_position <
+        tmp_check_position < mkdir_position < trap_position <
+        tmp_export_position < build_position < launch_position,
         "generated command order is not system init, module load, "
-        "system library preservation, build",
+        "system library preservation, secure node-local setup, build, launch",
+    )
+    for required in (
+        "#SBATCH --export=NIL",
+        "#SBATCH --output=rfm_job.out",
+        "#SBATCH --error=rfm_job.err",
+        'readonly expected_runtime_dir="/tmp/pmix-tests-pr-',
+        'if [[ -L $runtime_dir || -e $runtime_dir ]]',
+        '/usr/bin/rm -rf --one-file-system -- "$runtime_dir"',
+        'start_tmp=pmix-tests-pr-run-started.env.tmp',
+        'complete_tmp=pmix-tests-pr-run-completed.env.tmp',
+        "PMIX_TESTS_PR_RUNTIME_CLEANED=",
+    ):
+        check(required in ordering_script,
+              f"generated job lost trusted runtime behavior: {required}")
+    check(
+        "pmix-tests-pr-tmp" not in ordering_script,
+        "generated job still directs runtime temporary files to its stage",
+    )
+    check(
+        "$TMPDIR/pmix-tests-pr-run" not in ordering_script,
+        "generated job directs reports or provenance into node-local storage",
+    )
+    for forbidden in (
+        "$HOME/.bashrc", "$HOME/.bash_profile", "$HOME/.profile",
+        "~/.bashrc", "~/.bash_profile", "~/.profile",
+    ):
+        check(
+            forbidden not in ordering_script,
+            f"generated job sources user startup file: {forbidden}",
+        )
+    check(
+        ordering_script.count("export TMPDIR=") == 1 and
+        "export TMPDIR=$runtime_dir" in ordering_script,
+        "generated job inherits or exports an untrusted temporary directory",
     )
 passed(
     "generated job initializes Frontier before module load, preserves its "
-    "library path, and then builds"
+    "library path, securely prepares node-local runtime storage, and then builds"
 )
 
 hello_output = (
