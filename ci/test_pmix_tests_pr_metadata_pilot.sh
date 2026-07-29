@@ -322,10 +322,10 @@ check(parent["collect-reconcile-pmix-child-pipeline-pilot"]["rules"] == [
 passed("existing PMIx child-pipeline pilot rules remain intact")
 
 suite_rules = parent["pmix-python-suite"]["rules"]
-check(suite_rules[0] == execution_exclusion, "normal PMIx suite lacks execution-pilot exclusion")
-check(suite_rules[1] == {
+check(execution_exclusion in suite_rules, "normal PMIx suite lacks execution-pilot exclusion")
+check({
     "if": '$PMIX_TESTS_PR_PILOT == "1"', "when": "never",
-}, "normal PMIx suite lacks the PR-pilot exclusion")
+} in suite_rules, "normal PMIx suite lacks the PR-pilot exclusion")
 passed("normal and scheduled PMIx suite work is excluded by the pilot flag")
 
 for forbidden_network in ("curl ", "wget ", "http://", "https://", "urllib", "socket"):

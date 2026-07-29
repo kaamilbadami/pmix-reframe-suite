@@ -16,6 +16,10 @@ class fetch_pmix(rfm.RunOnlyRegressionTest):
         str,
         value=os.environ.get('PMIX_COMMIT', '')
     )
+    trusted_source = variable(
+        str,
+        value=os.environ.get('PMIX_TRUSTED_SOURCE_DIR', '')
+    )
     executable = '/bin/bash'
     local = True
 
@@ -27,47 +31,90 @@ class fetch_pmix(rfm.RunOnlyRegressionTest):
     def prepare_download(self):
         branch = shlex.quote(self.branch)
         requested_commit = shlex.quote(self.commit)
+        trusted_source = shlex.quote(self.trusted_source)
         script = f"""
 set -euo pipefail
 PMIX_REQUESTED_BRANCH={branch}
 PMIX_REQUESTED_COMMIT={requested_commit}
+PMIX_TRUSTED_SOURCE={trusted_source}
 PMIX_BRANCH="origin/$PMIX_REQUESTED_BRANCH"
 PMIX_BRANCH_REF="refs/remotes/$PMIX_BRANCH"
 
-if ! git check-ref-format "refs/heads/$PMIX_REQUESTED_BRANCH" >/dev/null; then
-    printf 'ERROR: invalid PMIx branch name: %s\\n' \
-        "$PMIX_REQUESTED_BRANCH" >&2
-    exit 1
-fi
-
 rm -rf pmix-git
-git --no-pager clone --no-checkout https://github.com/openpmix/openpmix.git pmix-git
-git --no-pager -C pmix-git fetch --no-tags origin \
-    "+refs/heads/$PMIX_REQUESTED_BRANCH:$PMIX_BRANCH_REF"
-PMIX_BRANCH_SHA=$(git --no-pager -C pmix-git rev-parse --verify \
-    "$PMIX_BRANCH_REF^{{commit}}")
-
-if test -z "$PMIX_REQUESTED_COMMIT"; then
-    PMIX_MODE=latest
-    PMIX_SHA=$PMIX_BRANCH_SHA
+if test -n "$PMIX_TRUSTED_SOURCE"; then
+    if [[ ! $PMIX_REQUESTED_COMMIT =~ ^[0-9a-f]{{40}}$ ]]; then
+        printf '%s\\n' \
+            'ERROR: trusted PMIx source requires a lowercase exact commit' >&2
+        exit 1
+    fi
+    if [[ $PMIX_TRUSTED_SOURCE != /* || ! -d $PMIX_TRUSTED_SOURCE ||
+          -L $PMIX_TRUSTED_SOURCE ]]; then
+        printf '%s\\n' 'ERROR: trusted PMIx source path is invalid' >&2
+        exit 1
+    fi
+    PMIX_SHA=$(git --no-pager -C "$PMIX_TRUSTED_SOURCE" rev-parse \
+        --verify HEAD)
+    if [[ $PMIX_SHA != "$PMIX_REQUESTED_COMMIT" ]] ||
+       git --no-pager -C "$PMIX_TRUSTED_SOURCE" symbolic-ref -q HEAD \
+           >/dev/null ||
+       [[ -n $(git --no-pager -C "$PMIX_TRUSTED_SOURCE" status \
+           --porcelain=v1 --untracked-files=all) ]]; then
+        printf '%s\\n' 'ERROR: trusted PMIx checkout identity is invalid' >&2
+        exit 1
+    fi
+    PMIX_ORIGIN=$(git --no-pager -C "$PMIX_TRUSTED_SOURCE" \
+        remote get-url origin)
+    if [[ $PMIX_ORIGIN != https://github.com/openpmix/openpmix.git ]]; then
+        printf '%s\\n' 'ERROR: trusted PMIx checkout origin is invalid' >&2
+        exit 1
+    fi
+    if git --no-pager -C "$PMIX_TRUSTED_SOURCE" ls-files \
+           --error-unmatch .gitmodules >/dev/null 2>&1 ||
+       git --no-pager -C "$PMIX_TRUSTED_SOURCE" ls-files --stage |
+           awk '$1 == "160000" {{ found=1 }} END {{ exit !found }}'; then
+        printf '%s\\n' 'ERROR: trusted PMIx source contains submodules' >&2
+        exit 1
+    fi
+    cp -a -- "$PMIX_TRUSTED_SOURCE" pmix-git
+    PMIX_MODE=trusted-pr
+    PMIX_BRANCH=refs/pull/validated/head
 else
-    PMIX_MODE=exact
-    if ! PMIX_SHA=$(git --no-pager -C pmix-git rev-parse --verify \
-        --end-of-options "$PMIX_REQUESTED_COMMIT^{{commit}}"); then
-        printf 'ERROR: requested PMIx commit is invalid or does not exist: %s\\n' \
-            "$PMIX_REQUESTED_COMMIT" >&2
+    if ! git check-ref-format "refs/heads/$PMIX_REQUESTED_BRANCH" \
+            >/dev/null; then
+        printf 'ERROR: invalid PMIx branch name: %s\\n' \
+            "$PMIX_REQUESTED_BRANCH" >&2
         exit 1
     fi
-    if ! git --no-pager -C pmix-git merge-base --is-ancestor \
-        "$PMIX_SHA" "$PMIX_BRANCH_SHA"; then
-        printf 'ERROR: requested PMIx commit %s is not part of %s\\n' \
-            "$PMIX_REQUESTED_COMMIT" "$PMIX_BRANCH" >&2
-        exit 1
+
+    git --no-pager clone --no-checkout \
+        https://github.com/openpmix/openpmix.git pmix-git
+    git --no-pager -C pmix-git fetch --no-tags origin \
+        "+refs/heads/$PMIX_REQUESTED_BRANCH:$PMIX_BRANCH_REF"
+    PMIX_BRANCH_SHA=$(git --no-pager -C pmix-git rev-parse --verify \
+        "$PMIX_BRANCH_REF^{{commit}}")
+
+    if test -z "$PMIX_REQUESTED_COMMIT"; then
+        PMIX_MODE=latest
+        PMIX_SHA=$PMIX_BRANCH_SHA
+    else
+        PMIX_MODE=exact
+        if ! PMIX_SHA=$(git --no-pager -C pmix-git rev-parse --verify \
+            --end-of-options "$PMIX_REQUESTED_COMMIT^{{commit}}"); then
+            printf 'ERROR: requested PMIx commit is invalid or does not exist: %s\\n' \
+                "$PMIX_REQUESTED_COMMIT" >&2
+            exit 1
+        fi
+        if ! git --no-pager -C pmix-git merge-base --is-ancestor \
+            "$PMIX_SHA" "$PMIX_BRANCH_SHA"; then
+            printf 'ERROR: requested PMIx commit %s is not part of %s\\n' \
+                "$PMIX_REQUESTED_COMMIT" "$PMIX_BRANCH" >&2
+            exit 1
+        fi
     fi
+    git --no-pager -C pmix-git checkout --detach "$PMIX_SHA"
+    git --no-pager -C pmix-git submodule update --init --recursive
 fi
 
-git --no-pager -C pmix-git checkout --detach "$PMIX_SHA"
-git --no-pager -C pmix-git submodule update --init --recursive
 printf 'PMIX_MODE=%s\\nPMIX_COMMIT=%s\\nPMIX_BRANCH=%s\\nPMIX_REQUESTED_COMMIT=%s\\n' \
     "$PMIX_MODE" "$PMIX_SHA" "$PMIX_BRANCH" "$PMIX_REQUESTED_COMMIT" \
     > pmix-commit.env

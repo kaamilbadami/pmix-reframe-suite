@@ -11,6 +11,11 @@ the 11-check listing without running the ReFrame checks.
 Required environment variables:
   PMIX_PYTHON  Python executable selected for the PMIx build
   RFM_BIN      ReFrame executable
+
+Optional trusted-runner variables:
+  PMIX_RFM_CONFIG_FILE  ReFrame config (default: sysconfig.yaml)
+  PMIX_RFM_PREFIX       Isolated ReFrame output prefix
+  PMIX_RFM_REPORT_FILE  JSON report path for an executing run
 EOF
 }
 
@@ -102,11 +107,22 @@ printf '\nPython unit tests:\n'
 "$PMIX_PYTHON" -m unittest discover \
     -s pmix_python_binding/unit_tests -p 'test_*.py'
 
-rfm_common=(-C sysconfig.yaml -c pmix_python_binding/reframe)
+rfm_config=${PMIX_RFM_CONFIG_FILE:-sysconfig.yaml}
+[[ -f $rfm_config && ! -L $rfm_config ]] || {
+    printf 'error: ReFrame configuration is unavailable: %s\n' \
+        "$rfm_config" >&2
+    exit 2
+}
+rfm_common=(-C "$rfm_config" -c pmix_python_binding/reframe)
 rfm_system=(--system=frontier:batch)
+rfm_output=()
+if [[ -n ${PMIX_RFM_PREFIX:-} ]]; then
+    rfm_output+=(--prefix "$PMIX_RFM_PREFIX")
+fi
 
 printf '\nReFrame check listing:\n'
-if listing_output=$("$RFM_BIN" "${rfm_common[@]}" -l "${rfm_system[@]}" 2>&1); then
+if listing_output=$("$RFM_BIN" "${rfm_common[@]}" -l "${rfm_system[@]}" \
+        "${rfm_output[@]}" 2>&1); then
     printf '%s\n' "$listing_output"
 else
     status=$?
@@ -131,4 +147,9 @@ if [[ "$mode" == list-only ]]; then
     exit 0
 fi
 
-"$RFM_BIN" "${rfm_common[@]}" -r "${rfm_system[@]}" --keep-stage-files
+rfm_report=()
+if [[ -n ${PMIX_RFM_REPORT_FILE:-} ]]; then
+    rfm_report+=(--report-file "$PMIX_RFM_REPORT_FILE")
+fi
+"$RFM_BIN" "${rfm_common[@]}" -r "${rfm_system[@]}" \
+    "${rfm_output[@]}" "${rfm_report[@]}" --keep-stage-files

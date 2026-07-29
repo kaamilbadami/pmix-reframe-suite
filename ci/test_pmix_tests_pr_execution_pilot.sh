@@ -155,7 +155,18 @@ unrelated = set(jobs) - trust_jobs
 check(unrelated, "no unrelated jobs found for exclusion audit")
 for name in sorted(unrelated):
     rules = jobs[name].get("rules")
-    check(rules and rules[0] == execution_exclusion,
+    schedule_only_openpmix = (
+        rules and all(
+            rule.get("when") == "never" or (
+                '$CI_PIPELINE_SOURCE == "schedule"' in rule.get("if", "")
+                and '$OPENPMIX_PR_AUTODISCOVERY == "1"' in
+                    rule.get("if", "")
+            )
+            for rule in rules
+        )
+    )
+    check(rules and (
+          execution_exclusion in rules or schedule_only_openpmix),
           f"unrelated job can run under execution pilot: {name}")
 passed("normal suite, metadata pilot, and every unrelated pilot are excluded")
 

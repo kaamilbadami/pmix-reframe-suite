@@ -208,6 +208,64 @@ pipeline cancellation can prevent the always-run finalization job from running
 and therefore leave the GitHub status pending; a separate cleanup mechanism is
 future work.
 
+### Internal OpenPMIx source PR workflow
+
+The repository also contains a separate internal workflow for exact pull
+request heads in `openpmix/openpmix`. Start it manually with
+`OPENPMIX_PR_INTERNAL=1` and a canonical `OPENPMIX_PR_NUMBER`. It records
+results only as GitLab artifacts: it never posts pending or final GitHub
+statuses and never reads or updates `.ci-state/pmix-master.env`.
+
+`ci/fetch_openpmix_pr.py` accepts only a canonical positive PR number and reads
+the fixed GitHub API endpoint for `openpmix/openpmix`. The corresponding policy
+helper requires an open, non-draft PR authored by exactly `rhc54` or
+`kaamilbadami`, with a lowercase 40-character head SHA and the exact
+`openpmix/openpmix` base repository. Accepted source repositories are:
+
+- `openpmix/openpmix` for either allowlisted author; and
+- the verified `rhc54/openpmix` fork for `rhc54`.
+
+The unverified `kaamilbadami/openpmix` source is deliberately not accepted.
+Head-repository metadata is retained for policy checks, but clone URLs are
+neither recorded nor used.
+
+`ci/prepare_trusted_openpmix_pr.sh` fetches and validates the authoritative
+metadata twice. It first publishes a fail-closed preparation record, then
+requires the SHA, author, and head repository to remain unchanged before
+atomically replacing that record with a ready preparation. The ordered,
+closed-schema records implemented by `ci/openpmix_pr_artifacts.py` bind
+preparation, checkout, execution, and final data to the PR number, author, base repository,
+head repository, exact SHA, source policy, and numeric GitLab pipeline ID.
+
+The three GitLab jobs preserve the trust boundaries used by the earlier
+`pmix-tests` pilot:
+
+1. preparation has the GitHub read token and publishes only a ready record
+   after authoritative revalidation;
+2. execution crosses `env -i`, rebuilds only system-owned Frontier
+   initialization, fetches the fixed `refs/pull/<number>/head` ref from
+   `https://github.com/openpmix/openpmix.git`, rejects submodule metadata and
+   gitlinks, and verifies a detached, clean checkout at the prepared SHA; and
+3. finalization uses a fresh suite clone and consumes only the strict
+   preparation and result records.
+
+The OpenPMIx PR's build system is credential-untrusted. The isolated execution
+passes its verified source tree into the existing exact-PMIx fixture and
+Autotools build path, then runs the five suite-owned Python unit tests and the
+existing 11 ReFrame checks. Submitted ReFrame scripts use
+`sbatch --export=NIL`, system-owned OLCF and Cray initialization, and a
+job-specific mode-0700 directory on node-local `/tmp` for PMIx and PRRTE
+runtime files. The test workload, libevent version, and PRRTE version remain
+selected by this trusted suite, not by the OpenPMIx PR.
+
+Optional automatic discovery is implemented but disabled unless an existing
+GitLab schedule explicitly sets `OPENPMIX_PR_AUTODISCOVERY=1`. It queries open
+upstream PR metadata, applies the same author/source policy, suppresses
+`(PR number, head SHA)` pairs already represented by a current or completed
+child pipeline, and generates one isolated three-job child per new head.
+Discovery uses no normal PMIx cache or last-known-good state. No schedule or
+webhook is enabled by repository code.
+
 ## Artifacts and generated files
 
 Normal ReFrame runs may create these generated directories at the repository root:

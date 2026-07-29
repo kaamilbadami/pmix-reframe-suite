@@ -1,0 +1,24 @@
+{
+  "id": 90004028,
+  "number": 4028,
+  "state": "open",
+  "draft": false,
+  "user": {
+    "id": 78130,
+    "login": "rhc54"
+  },
+  "head": {
+    "sha": "5f08dede7495ce1b332691b3ac7eaf6478a979b9",
+    "repo": {
+      "id": 750101,
+      "full_name": "rhc54/openpmix",
+      "clone_url": "https://example.invalid/must-not-be-used.git"
+    }
+  },
+  "base": {
+    "repo": {
+      "id": 151901,
+      "full_name": "openpmix/openpmix"
+    }
+  }
+}

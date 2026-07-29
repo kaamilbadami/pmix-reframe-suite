@@ -1,0 +1,116 @@
+# Reusable three-job internal OpenPMIx PR workflow. It is reachable only from
+# an explicitly selected web pipeline or an isolated generated child pipeline.
+.openpmix-pr-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $OPENPMIX_PR_INTERNAL == "1"'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $OPENPMIX_PR_INTERNAL == "1"'
+    - when: never
+
+.openpmix-pr-always-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $OPENPMIX_PR_INTERNAL == "1"'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $OPENPMIX_PR_INTERNAL == "1"'
+      when: always
+    - when: never
+
+prepare-openpmix-pr:
+  stage: pr-prepare
+  extends:
+    - .frontier-shell-runner
+    - .openpmix-pr-rules
+  timeout: 10m
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    GIT_LFS_SKIP_SMUDGE: "1"
+  script:
+    - |
+      set +x
+      set -euo pipefail
+      [[ ${OPENPMIX_PR_NUMBER:-} =~ ^[1-9][0-9]*$ ]] || {
+          printf '%s\n' 'error: OPENPMIX_PR_NUMBER must be canonical' >&2
+          exit 2
+      }
+      [[ -n ${GITHUB_PR_READ_TOKEN:-} ]] || {
+          printf '%s\n' 'error: GITHUB_PR_READ_TOKEN is required' >&2
+          exit 2
+      }
+      if [[ -n ${OPENPMIX_PR_EXPECTED_SHA:-} ]]; then
+          /bin/bash ci/prepare_trusted_openpmix_pr.sh \
+              "$OPENPMIX_PR_NUMBER" "$OPENPMIX_PR_EXPECTED_SHA"
+      else
+          /bin/bash ci/prepare_trusted_openpmix_pr.sh \
+              "$OPENPMIX_PR_NUMBER"
+      fi
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-openpmix-pr-preparation/preparation.env
+
+run-openpmix-pr:
+  stage: test
+  extends:
+    - .frontier-shell-runner
+    - .openpmix-pr-always-rules
+  timeout: 3h
+  resource_group: pmix-python-suite-frontier
+  variables:
+    GITHUB_PR_READ_TOKEN: ""
+    GITHUB_STATUS_TOKEN: ""
+    GIT_SUBMODULE_STRATEGY: none
+    GIT_LFS_SKIP_SMUDGE: "1"
+  needs:
+    - job: prepare-openpmix-pr
+      artifacts: true
+  script:
+    - |
+      set +x
+      set -euo pipefail
+      /bin/bash ci/run_openpmix_pr_isolated.sh
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-openpmix-pr-execution/result.env
+      - ci-openpmix-pr-execution/evidence/
+      - ci-openpmix-pr-execution/reframe/run-report.json
+      - ci-openpmix-pr-execution/reframe/output/
+      - ci-openpmix-pr-execution/reframe/stage/**/rfm_job.sh
+      - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.sh
+      - ci-openpmix-pr-execution/reframe/stage/**/rfm_job.out
+      - ci-openpmix-pr-execution/reframe/stage/**/rfm_job.err
+      - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.out
+      - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.err
+      - ci-openpmix-pr-execution/reframe/stage/**/PMIX_COMMIT
+      - ci-openpmix-pr-execution/reframe/stage/**/pmix-commit.env
+
+finalize-openpmix-pr:
+  stage: pr-finalize
+  extends:
+    - .frontier-shell-runner
+    - .openpmix-pr-always-rules
+  timeout: 10m
+  variables:
+    GIT_STRATEGY: clone
+    GIT_SUBMODULE_STRATEGY: none
+    GIT_LFS_SKIP_SMUDGE: "1"
+    GITHUB_PR_READ_TOKEN: ""
+    GITHUB_STATUS_TOKEN: ""
+  needs:
+    - job: prepare-openpmix-pr
+      artifacts: true
+    - job: run-openpmix-pr
+      artifacts: true
+  script:
+    - |
+      set +x
+      set -euo pipefail
+      /bin/bash ci/finalize_openpmix_pr_result.sh \
+          ci-openpmix-pr-preparation/preparation.env \
+          ci-openpmix-pr-execution/result.env
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-openpmix-pr-final/final-result.env

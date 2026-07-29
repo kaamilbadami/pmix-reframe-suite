@@ -3,6 +3,12 @@
 .ci-venv/
 .ci-state/
 ci-artifacts/
+ci-openpmix-pr-preparation/
+ci-openpmix-pr-execution/
+ci-openpmix-pr-final/
+.ci-openpmix-pr-execution-home/
+.ci-openpmix-pr-execution-tmp/
+.ci-openpmix-pr-discovery/
 __pycache__/
 *.py[cod]
 output/

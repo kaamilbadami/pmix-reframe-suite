@@ -297,6 +297,10 @@ execution_exclusion = {
     "if": '$PMIX_TESTS_PR_EXECUTION_PILOT == "1"',
     "when": "never",
 }
+openpmix_pr_exclusion = {
+    "if": '$OPENPMIX_PR_INTERNAL == "1"',
+    "when": "never",
+}
 pilot_rules = [execution_exclusion, {"if": pilot_rule}, {"when": "never"}]
 
 generation = parent["generate-pmix-child-pipeline-pilot"]
@@ -310,6 +314,7 @@ pr_metadata_pilot_exclusion = {
 assert generation["rules"] == pilot_rules
 assert trigger["rules"] == pilot_rules
 assert suite["rules"] == [
+    openpmix_pr_exclusion,
     execution_exclusion,
     pr_metadata_pilot_exclusion,
     {"if": artifact_probe_rule, "when": "never"},

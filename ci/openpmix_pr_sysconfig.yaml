@@ -1,0 +1,84 @@
+systems:
+- name: frontier
+  descr: Frontier system for credential-isolated OpenPMIx PR testing.
+  hostnames: ['frontier\d+']
+  modules_system: lmod
+  partitions:
+  - name: batch
+    descr: Hardened Frontier Slurm partition
+    scheduler: slurm
+    launcher: local
+    access:
+    - '-A gen243 -p batch'
+    - '--export=NIL'
+    prepare_cmds:
+    - |
+      set -euo pipefail
+      . /etc/profile.d/olcf-env.sh
+      . /etc/bash.bashrc.local
+      if [[ -n ${SLURM_JOB_ID:-} ]]; then
+          [[ $SLURM_JOB_ID =~ ^[1-9][0-9]*$ ]] || {
+              printf '%s\n' 'error: canonical Slurm job ID is unavailable' >&2
+              exit 2
+          }
+          node_tmp_root=/tmp
+          [[ -d $node_tmp_root && ! -L $node_tmp_root ]] || {
+              printf '%s\n' 'error: Frontier node-local /tmp is unavailable' >&2
+              exit 2
+          }
+          [[ $(/usr/bin/stat -c %a -- "$node_tmp_root") == 1777 ]] || {
+              printf '%s\n' 'error: Frontier node-local /tmp mode is unsafe' >&2
+              exit 2
+          }
+          node_tmp_fstype=$(/usr/bin/stat -f -c %T -- "$node_tmp_root")
+          case $node_tmp_fstype in
+              tmpfs|xfs|ext2/ext3|ext4|btrfs) ;;
+              *)
+                  printf 'error: unapproved node-local filesystem: %s\n' \
+                      "$node_tmp_fstype" >&2
+                  exit 2
+                  ;;
+          esac
+          readonly openpmix_runtime_dir="/tmp/frontier-openpmix-pr-${SLURM_JOB_ID}"
+          readonly openpmix_runtime_uid=$(/usr/bin/id -u)
+          [[ ! -L $openpmix_runtime_dir && ! -e $openpmix_runtime_dir ]] || {
+              printf '%s\n' 'error: OpenPMIx runtime directory already exists' >&2
+              exit 2
+          }
+          /usr/bin/mkdir -m 700 -- "$openpmix_runtime_dir"
+          cleanup_openpmix_runtime()
+          {
+              cleanup_status=$?
+              trap - EXIT
+              if [[ $openpmix_runtime_dir == \
+                        "/tmp/frontier-openpmix-pr-${SLURM_JOB_ID}" &&
+                    -d $openpmix_runtime_dir &&
+                    ! -L $openpmix_runtime_dir &&
+                    $(/usr/bin/stat -c %u -- "$openpmix_runtime_dir") == \
+                        "$openpmix_runtime_uid" ]]; then
+                  /usr/bin/rm -rf --one-file-system -- \
+                      "$openpmix_runtime_dir" || cleanup_status=2
+              fi
+              [[ ! -L $openpmix_runtime_dir &&
+                 ! -e $openpmix_runtime_dir ]] || cleanup_status=2
+              exit "$cleanup_status"
+          }
+          trap cleanup_openpmix_runtime EXIT
+          [[ $(/usr/bin/stat -c %a -- "$openpmix_runtime_dir") == 700 &&
+             $(/usr/bin/stat -c %u -- "$openpmix_runtime_dir") == \
+                 "$openpmix_runtime_uid" ]] || {
+              printf '%s\n' 'error: OpenPMIx runtime directory is unsafe' >&2
+              exit 2
+          }
+          export TMPDIR=$openpmix_runtime_dir
+          export PMIX_MCA_tmpdir_base=$openpmix_runtime_dir
+          export PMIX_MCA_pmix_tmpdir_base=$openpmix_runtime_dir
+          export PRTE_MCA_tmpdir_base=$openpmix_runtime_dir
+          export PRTE_MCA_prte_tmpdir_base=$openpmix_runtime_dir
+          printf 'OPENPMIX_PR_RUNTIME_DIR=%s\n' "$openpmix_runtime_dir"
+          printf 'OPENPMIX_PR_RUNTIME_FSTYPE=%s\n' "$node_tmp_fstype"
+      fi
+    environs: ['pmix_test']
+
+environments:
+- name: pmix_test

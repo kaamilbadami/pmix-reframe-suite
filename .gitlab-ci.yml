@@ -10,6 +10,7 @@ include:
     ref: main
     file:
       - /runners.yml
+  - local: ci/openpmix_pr_jobs.yml
 
 variables:
   OLCF_SERVICE_ACCOUNT: "gen243_auser"
@@ -20,6 +21,50 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - when: never
+
+generate-openpmix-pr-pipelines:
+  stage: pilot-generate
+  extends:
+    - .frontier-shell-runner
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $OPENPMIX_PR_AUTODISCOVERY == "1"'
+    - when: never
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    GIT_LFS_SKIP_SMUDGE: "1"
+  script:
+    - |
+      set +x
+      set -euo pipefail
+      [[ -n ${GITHUB_PR_READ_TOKEN:-} ]] || {
+          printf '%s\n' 'error: GITHUB_PR_READ_TOKEN is required' >&2
+          exit 2
+      }
+      /usr/bin/rm -rf --one-file-system -- .ci-openpmix-pr-discovery
+      [[ ! -L .ci-openpmix-pr-discovery &&
+         ! -e .ci-openpmix-pr-discovery ]] || exit 2
+      /usr/bin/mkdir -m 700 -- .ci-openpmix-pr-discovery
+      python3 ci/discover_eligible_openpmix_prs.py \
+          --output .ci-openpmix-pr-discovery/eligible.jsonl
+      python3 ci/generate_openpmix_pr_child_pipeline.py \
+          .ci-openpmix-pr-discovery/eligible.jsonl \
+          .ci-openpmix-pr-discovery/pipeline.yml
+  artifacts:
+    expire_in: 1 day
+    paths:
+      - .ci-openpmix-pr-discovery/eligible.jsonl
+      - .ci-openpmix-pr-discovery/pipeline.yml
+
+trigger-openpmix-pr-pipelines:
+  stage: pilot-trigger
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $OPENPMIX_PR_AUTODISCOVERY == "1"'
+    - when: never
+  trigger:
+    include:
+      - artifact: .ci-openpmix-pr-discovery/pipeline.yml
+        job: generate-openpmix-pr-pipelines
+    strategy: mirror
 
 generate-pmix-child-pipeline-pilot:
   stage: pilot-generate
@@ -366,6 +411,8 @@ pmix-python-suite:
   resource_group: pmix-python-suite-frontier
 
   rules:
+    - if: '$OPENPMIX_PR_INTERNAL == "1"'
+      when: never
     - if: '$PMIX_TESTS_PR_EXECUTION_PILOT == "1"'
       when: never
     - if: '$PMIX_TESTS_PR_PILOT == "1"'

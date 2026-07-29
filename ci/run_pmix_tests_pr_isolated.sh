@@ -1,25 +1,51 @@
 #!/bin/bash
-# Scrub the GitLab job environment before trusted-author PR execution.
+# Scrub the GitLab job environment before either PR execution workflow.
 #
-# This is credential hygiene, not an OS sandbox.  Only approved same-repository
-# authors are eligible, and their code is trusted under the Frontier service
-# account for this MVP.  Supporting arbitrary PR code would require a separate
-# account, container boundary, or equivalent stronger isolation.
+# This is credential hygiene, not an OS sandbox.  The OpenPMIx workflow treats
+# the allowlisted PR's build system as untrusted with respect to credentials;
+# it still runs under the Frontier service account. Strong containment would
+# require a separate account, container boundary, or equivalent isolation.
 set +x
 set -euo pipefail
 
-if (( $# != 0 )); then
-    printf 'usage: %s\n' "${0##*/}" >&2
+workflow=${FRONTIER_PR_WORKFLOW:-pmix-tests-pr}
+if (( $# == 1 )); then
+    [[ $1 == openpmix-pr ]] || {
+        printf 'usage: %s [openpmix-pr]\n' "${0##*/}" >&2
+        exit 2
+    }
+    workflow=$1
+elif (( $# != 0 )); then
+    printf 'usage: %s [openpmix-pr]\n' "${0##*/}" >&2
     exit 2
 fi
+case $workflow in
+    pmix-tests-pr|openpmix-pr) ;;
+    *)
+        printf '%s\n' 'error: unsupported isolated Frontier workflow' >&2
+        exit 2
+        ;;
+esac
 
 script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" && pwd -P)
 repo_root=$(cd -- "$script_dir/.." && pwd -P)
-home_dir=$repo_root/.ci-pr-execution-home
-tmp_dir=$repo_root/.ci-pr-execution-tmp
-output_dir=$repo_root/ci-pr-execution
+if [[ $workflow == pmix-tests-pr ]]; then
+    home_dir=$repo_root/.ci-pr-execution-home
+    tmp_dir=$repo_root/.ci-pr-execution-tmp
+    output_dir=$repo_root/ci-pr-execution
+    sanitized_stage=${PMIX_TESTS_PR_SANITIZED_STAGE:-}
+    marker_assignment=PMIX_TESTS_PR_SANITIZED_STAGE=1
+    trusted_entrypoint=$script_dir/run_trusted_pmix_tests_pr.sh
+else
+    home_dir=$repo_root/.ci-openpmix-pr-execution-home
+    tmp_dir=$repo_root/.ci-openpmix-pr-execution-tmp
+    output_dir=$repo_root/ci-openpmix-pr-execution
+    sanitized_stage=${OPENPMIX_PR_SANITIZED_STAGE:-}
+    marker_assignment=OPENPMIX_PR_SANITIZED_STAGE=1
+    trusted_entrypoint=$script_dir/run_trusted_openpmix_pr.sh
+fi
 
-if [[ ${PMIX_TESTS_PR_SANITIZED_STAGE:-} != 1 ]]; then
+if [[ $sanitized_stage != 1 ]]; then
     # Clear the always-uploaded result location before any clean-boundary setup
     # can fail.  rm removes a symlink entry itself and does not follow it.
     /usr/bin/rm -rf --one-file-system -- "$output_dir"
@@ -53,7 +79,8 @@ if [[ ${PMIX_TESTS_PR_SANITIZED_STAGE:-} != 1 ]]; then
         'USER=gitlab-ci' \
         'LOGNAME=gitlab-ci' \
         "CI_PIPELINE_ID=$CI_PIPELINE_ID" \
-        'PMIX_TESTS_PR_SANITIZED_STAGE=1' \
+        "FRONTIER_PR_WORKFLOW=$workflow" \
+        "$marker_assignment" \
         /bin/bash --noprofile --norc "$script_dir/run_pmix_tests_pr_isolated.sh"
 fi
 
@@ -100,11 +127,12 @@ export LOGNAME=gitlab-ci
 export PMIX_PYTHON=/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python
 export RFM_BIN=/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/reframe-4.10/bin/reframe
 export PYTHONPATH=/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/reframe-4.10/lib/python3.11/site-packages
-unset PMIX_TESTS_PR_SANITIZED_STAGE
+unset PMIX_TESTS_PR_SANITIZED_STAGE OPENPMIX_PR_SANITIZED_STAGE
+unset FRONTIER_PR_WORKFLOW
 
 [[ -x $PMIX_PYTHON && -x $RFM_BIN ]] || {
     printf '%s\n' 'error: fixed Frontier Python or ReFrame executable is unavailable' >&2
     exit 2
 }
 
-exec /bin/bash "$script_dir/run_trusted_pmix_tests_pr.sh"
+exec /bin/bash "$trusted_entrypoint"

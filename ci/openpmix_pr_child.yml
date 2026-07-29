@@ -1,0 +1,20 @@
+stages:
+  - pr-prepare
+  - test
+  - pr-finalize
+
+include:
+  - project: ci/resources/templates
+    ref: main
+    file:
+      - /runners.yml
+  - local: ci/openpmix_pr_jobs.yml
+
+variables:
+  OLCF_SERVICE_ACCOUNT: "gen243_auser"
+  FF_GIT_URLS_WITHOUT_TOKENS: "1"
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $OPENPMIX_PR_INTERNAL == "1"'
+    - when: never
