@@ -65,6 +65,7 @@ def print_info(*args, **kwargs):
     fstring = str(args[0])
     rest = args[1:]
     info = kwargs.pop("info", None)
+    emit_stdout = kwargs.pop("emit_stdout", True)
     if info is None:
         machine = "run_script"
     else:
@@ -75,7 +76,7 @@ def print_info(*args, **kwargs):
     #  Remove 'flush' if it exists. We will control that var
     kwargs.pop("flush", None)
 
-    if debug:
+    if debug and emit_stdout:
         print(new_string, *rest, **kwargs, flush=True)
 
     messages.append(new_string)
@@ -186,7 +187,8 @@ def iof_cb(iofhdlr:int, channel:int,
            source:dict, payload:dict, info:list):
     messages = payload['bytes'][:int(payload['size'])].decode('UTF-8').strip()
     for message in messages.split("\n"):
-        print_info(message, info=source)
+        # PRRTE already emits the child stream; retain only the callback log.
+        print_info(message, info=source, emit_stdout=False)
 
 errors = dict()
 def log_error(rc,app):

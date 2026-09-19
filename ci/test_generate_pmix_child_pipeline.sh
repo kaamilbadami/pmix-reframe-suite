@@ -166,9 +166,20 @@ done
     "$multiple_output") == 3 ]] ||
     fail 'not every job preserves exact PRRTE source provenance'
 [[ $(grep -Fc \
-    '      - stage/frontier/batch/pmix_test/PMIxPython*CompatTest/' \
+    '      - stage/frontier/batch/pmix_test/PMIxPython*Compat*Test/' \
     "$multiple_output") == 3 ]] ||
     fail 'not every job preserves PMIx Python compatibility test artifacts'
+for test_name in \
+    PMIxPythonMixedThreadCompatTest \
+    PMIxPythonTargetedCompatTest \
+    PMIxPythonWorkerThreadsCompat1Test \
+    PMIxPythonWorkerThreadsCompat2Test; do
+    case "$test_name" in
+        PMIxPython*Compat*Test) ;;
+        *) fail "compatibility artifact glob misses $test_name" ;;
+    esac
+done
+pass 'compatibility artifact glob includes all four controller tests'
 [[ $(grep -Fc 'when: always' "$multiple_output") == 3 ]] ||
     fail 'not every job preserves artifacts on all outcomes'
 [[ $(grep -Fc 'expire_in: 14 days' "$multiple_output") == 3 ]] ||
@@ -279,7 +290,7 @@ for sha in (lower_sha, upper_sha, third_sha):
                 "stage/frontier/batch/pmix_test/"
                 "fetch_prrte_*/prrte-source.env",
                 "stage/frontier/batch/pmix_test/"
-                "PMIxPython*CompatTest/",
+                "PMIxPython*Compat*Test/",
             ],
         },
     }
