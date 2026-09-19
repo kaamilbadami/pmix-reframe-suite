@@ -165,6 +165,10 @@ done
     '      - stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env' \
     "$multiple_output") == 3 ]] ||
     fail 'not every job preserves exact PRRTE source provenance'
+[[ $(grep -Fc \
+    '      - stage/frontier/batch/pmix_test/PMIxPython*CompatTest/' \
+    "$multiple_output") == 3 ]] ||
+    fail 'not every job preserves PMIx Python compatibility test artifacts'
 [[ $(grep -Fc 'when: always' "$multiple_output") == 3 ]] ||
     fail 'not every job preserves artifacts on all outcomes'
 [[ $(grep -Fc 'expire_in: 14 days' "$multiple_output") == 3 ]] ||
@@ -274,6 +278,8 @@ for sha in (lower_sha, upper_sha, third_sha):
                 f"ci-results/{sha.lower()}.env",
                 "stage/frontier/batch/pmix_test/"
                 "fetch_prrte_*/prrte-source.env",
+                "stage/frontier/batch/pmix_test/"
+                "PMIxPython*CompatTest/",
             ],
         },
     }
