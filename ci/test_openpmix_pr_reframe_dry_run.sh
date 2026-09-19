@@ -37,7 +37,7 @@ mapfile -t job_scripts < <(
 (( ${#job_scripts[@]} == 14 )) ||
     { printf 'not ok - expected 14 run scripts, found %d\n' \
         "${#job_scripts[@]}" >&2; exit 1; }
-slurm_count=$(rg -l -- '--export=NIL' "${job_scripts[@]}" | wc -l)
+slurm_count=$(grep -l -- '--export=NIL' "${job_scripts[@]}" | wc -l)
 (( slurm_count == 11 )) ||
     { printf 'not ok - expected 11 Slurm scripts with --export=NIL, found %d\n' \
         "$slurm_count" >&2; exit 1; }
@@ -50,19 +50,19 @@ mapfile -t generated_scripts < <(
 (( ${#generated_scripts[@]} == 17 )) ||
     { printf 'not ok - expected 17 generated scripts, found %d\n' \
         "${#generated_scripts[@]}" >&2; exit 1; }
-runtime_count=$(rg -l \
+runtime_count=$(grep -E -l \
     'frontier-openpmix-pr-|PMIX_MCA_tmpdir_base|PRTE_MCA_tmpdir_base' \
     "${generated_scripts[@]}" | wc -l)
 (( runtime_count == 17 )) ||
     { printf 'not ok - node-local runtime protection missing from generated scripts\n' >&2; exit 1; }
-init_count=$(rg -l \
+init_count=$(grep -E -l \
     '/etc/profile.d/olcf-env.sh.*|/etc/bash.bashrc.local' \
     "${generated_scripts[@]}" | wc -l)
 (( init_count == 17 )) ||
     { printf 'not ok - system initialization missing from generated scripts\n' >&2; exit 1; }
 printf '%s\n' 'ok - generated scripts preserve system initialization and node-local runtime storage'
 
-if rg -n 'GITHUB|CI_JOB_TOKEN|OPENPMIX_PR_PROTECTED_SENTINEL' \
+if grep -E -n 'GITHUB|CI_JOB_TOKEN|OPENPMIX_PR_PROTECTED_SENTINEL' \
         "${generated_scripts[@]}" >/dev/null; then
     printf '%s\n' 'not ok - protected variable appeared in generated script' >&2
     exit 1
