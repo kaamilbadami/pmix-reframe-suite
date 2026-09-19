@@ -148,6 +148,9 @@ generate-pmix-child-pipeline-pilot:
 
 trigger-pmix-child-pipeline-pilot:
   stage: pilot-trigger
+  variables:
+    PRRTE_BRANCH: "v5.0"
+    PRRTE_COMMIT: "22820a01e17547dbf1c4f9628eac327f193caa45"
   rules:
     - if: '$PMIX_TESTS_PR_EXECUTION_PILOT == "1"'
       when: never

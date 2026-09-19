@@ -78,6 +78,20 @@ PRRTE and libevent remain selectable by version, for example:
 -S fetch_prrte.version=4.1.0 -S fetch_libevent.version=2.1.12
 ```
 
+PRRTE 4.1.0 remains the default release-tarball source. To build an exact
+upstream PRRTE commit instead, provide its branch and lowercase full commit
+SHA. The fetch fixture verifies that the commit is an ancestor of the selected
+remote branch, checks it out detached, initializes its submodules, and records
+the resolved source in `prrte-source.env`:
+
+```bash
+export PRRTE_BRANCH=v5.0
+export PRRTE_COMMIT=22820a01e17547dbf1c4f9628eac327f193caa45
+```
+
+Git checkouts run `autogen.pl` before configure. Release tarballs retain the
+existing extraction and build path and do not run `autogen.pl`.
+
 ## PMIx Python CI suite
 
 The CI suite runs the PMIx event utility unit tests, confirms that ReFrame discovers exactly 11 checks, and then runs all checks on `frontier:batch`.

@@ -161,6 +161,10 @@ for sha in "$lower_sha" "$upper_sha" "$third_sha"; do
     [[ $(grep -Fxc "      - $result_path" "$multiple_output") == 1 ]] ||
         fail "job does not have exactly its lowercase result path: $sha"
 done
+[[ $(grep -Fc \
+    '      - stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env' \
+    "$multiple_output") == 3 ]] ||
+    fail 'not every job preserves exact PRRTE source provenance'
 [[ $(grep -Fc 'when: always' "$multiple_output") == 3 ]] ||
     fail 'not every job preserves artifacts on all outcomes'
 [[ $(grep -Fc 'expire_in: 14 days' "$multiple_output") == 3 ]] ||
@@ -266,7 +270,11 @@ for sha in (lower_sha, upper_sha, third_sha):
         "artifacts": {
             "when": "always",
             "expire_in": "14 days",
-            "paths": [f"ci-results/{sha.lower()}.env"],
+            "paths": [
+                f"ci-results/{sha.lower()}.env",
+                "stage/frontier/batch/pmix_test/"
+                "fetch_prrte_*/prrte-source.env",
+            ],
         },
     }
 assert multiple == expected_multiple
@@ -348,6 +356,11 @@ assert trigger["trigger"] == {
     }],
     "strategy": "mirror",
 }
+assert trigger["variables"] == {
+    "PRRTE_BRANCH": "v5.0",
+    "PRRTE_COMMIT": "22820a01e17547dbf1c4f9628eac327f193caa45",
+}
+assert "forward" not in trigger["trigger"]
 assert "resource_group" not in generation
 assert "resource_group" not in trigger
 assert "script" not in trigger

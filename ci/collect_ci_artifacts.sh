@@ -27,7 +27,8 @@ for path in \
     stage/frontier/batch/pmix_test/build_pmix_*/rfm_build.err \
     stage/frontier/batch/pmix_test/build_pmix_*/pmix-git/config.log \
     stage/frontier/batch/pmix_test/build_pmix_*/python-site-packages \
-    stage/frontier/batch/pmix_test/fetch_pmix_*/pmix-commit.env
+    stage/frontier/batch/pmix_test/fetch_pmix_*/pmix-commit.env \
+    stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env
 do
     [[ -e $path || -L $path ]] || continue
     mkdir -p -- "$artifact_dir/$(dirname -- "$path")"

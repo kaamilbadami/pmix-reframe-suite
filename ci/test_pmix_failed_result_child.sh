@@ -138,6 +138,10 @@ assert generation["artifacts"] == {
 }
 assert normal_trigger == {
     "stage": "pilot-trigger",
+    "variables": {
+        "PRRTE_BRANCH": "v5.0",
+        "PRRTE_COMMIT": "22820a01e17547dbf1c4f9628eac327f193caa45",
+    },
     "rules": normal_pilot_rules,
     "trigger": {
         "include": [{
