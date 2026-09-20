@@ -55,6 +55,12 @@ class PMIxPythonMappingPPRL3CacheTest(
     # Advertise enough slots for ppr:8:l3cache on Frontier.
     slots_per_node = variable(int, value=64)
 
+    # Preserve topology-child evidence when the mapping test fails.
+    keep_files = [
+        'l3_topology_*',
+        'topology_*_l3*'
+    ]
+
     # Default resources. The post-init hook recalculates these values.
     num_tasks = 64
     num_tasks_per_node = 64

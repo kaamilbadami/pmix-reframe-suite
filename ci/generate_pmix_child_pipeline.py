@@ -63,6 +63,7 @@ pmix-__SHA__:
       - ci-results/__RESULT_SHA__.env
       - stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env
       - stage/frontier/batch/pmix_test/PMIxPython*Compat*Test/
+      - stage/frontier/batch/pmix_test/PMIxPythonMappingPPRL3CacheTest/
 """
 
 

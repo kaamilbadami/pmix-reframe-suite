@@ -154,7 +154,8 @@ cleanup_dvm()
 
     PRTE_PID=""
 
-    rm -f dvm.uri topology_*_l3* process_*_l3* started_*_l3*
+    # Preserve topology proofs and partial output for failure diagnosis.
+    rm -f dvm.uri process_*_l3* started_*_l3*
 }
 
 

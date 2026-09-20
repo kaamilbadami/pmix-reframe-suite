@@ -169,6 +169,10 @@ done
     '      - stage/frontier/batch/pmix_test/PMIxPython*Compat*Test/' \
     "$multiple_output") == 3 ]] ||
     fail 'not every job preserves PMIx Python compatibility test artifacts'
+[[ $(grep -Fc \
+    '      - stage/frontier/batch/pmix_test/PMIxPythonMappingPPRL3CacheTest/' \
+    "$multiple_output") == 3 ]] ||
+    fail 'not every job preserves PMIx Python L3-cache test artifacts'
 for test_name in \
     PMIxPythonMixedThreadCompatTest \
     PMIxPythonTargetedCompatTest \
@@ -291,6 +295,8 @@ for sha in (lower_sha, upper_sha, third_sha):
                 "fetch_prrte_*/prrte-source.env",
                 "stage/frontier/batch/pmix_test/"
                 "PMIxPython*Compat*Test/",
+                "stage/frontier/batch/pmix_test/"
+                "PMIxPythonMappingPPRL3CacheTest/",
             ],
         },
     }
