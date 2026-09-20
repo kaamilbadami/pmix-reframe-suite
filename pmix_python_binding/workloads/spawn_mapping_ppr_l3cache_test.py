@@ -8,6 +8,11 @@ from collections import Counter
 import pmix
 
 
+TOPOLOGY_PROOF_TIMEOUT_SECONDS = 60
+PROCESS_PROOF_TIMEOUT_SECONDS = 15
+PROOF_POLL_INTERVAL_SECONDS = 0.1
+
+
 # Expected command:
 # python spawn_mapping_ppr_l3cache_test.py HOSTS PROCESSES_PER_L3CACHE
 if len(sys.argv) != 3:
@@ -79,11 +84,18 @@ if init_result[0] != 0:
     raise SystemExit("init failed")
 
 
-def wait_for_files(pattern, expected_count, description):
-    """Wait up to 15 seconds for the requested proof files."""
+def wait_for_files(
+    pattern,
+    expected_count,
+    description,
+    timeout_seconds
+):
+    """Wait up to timeout_seconds for the requested proof files."""
     proof_files = []
+    wait_started = time.monotonic()
+    attempts = int(timeout_seconds / PROOF_POLL_INTERVAL_SECONDS)
 
-    for attempt in range(150):
+    for attempt in range(attempts + 1):
         proof_files = sorted(glob.glob(pattern))
 
         if len(proof_files) == expected_count:
@@ -94,6 +106,9 @@ def wait_for_files(pattern, expected_count, description):
             )
             return proof_files
 
+        if attempt == attempts:
+            break
+
         if attempt % 10 == 0:
             print(
                 f"waiting for {description} files: "
@@ -101,7 +116,34 @@ def wait_for_files(pattern, expected_count, description):
                 flush=True
             )
 
-        time.sleep(0.1)
+        time.sleep(PROOF_POLL_INTERVAL_SECONDS)
+
+    elapsed_seconds = time.monotonic() - wait_started
+
+    print(
+        f"timed out waiting for {description} files: "
+        f"timeout={timeout_seconds}s, elapsed={elapsed_seconds:.1f}s, "
+        f"found={len(proof_files)}/{expected_count}",
+        flush=True
+    )
+
+    if pattern == topology_pattern:
+        for artifact_pattern in (
+            "l3_topology_*.started",
+            "l3_topology_*.status",
+            "l3_topology_*.stderr",
+            "l3_topology_*.tmp",
+            "topology_*_l3.tmp"
+        ):
+            artifact_present = bool(glob.glob(os.path.join(
+                proof_directory,
+                artifact_pattern
+            )))
+            print(
+                f"timeout artifact {artifact_pattern}: "
+                f"present={artifact_present}",
+                flush=True
+            )
 
     if pattern == process_pattern:
         started_files = sorted(glob.glob(started_pattern))
@@ -305,7 +347,8 @@ try:
     topology_files = wait_for_files(
         topology_pattern,
         len(expected_hosts),
-        "topology proof"
+        "topology proof",
+        TOPOLOGY_PROOF_TIMEOUT_SECONDS
     )
 
     topology_domains = {}
@@ -479,7 +522,8 @@ try:
     process_files = wait_for_files(
         process_pattern,
         num_processes,
-        "process proof"
+        "process proof",
+        PROCESS_PROOF_TIMEOUT_SECONDS
     )
 
     cache_counts = Counter()

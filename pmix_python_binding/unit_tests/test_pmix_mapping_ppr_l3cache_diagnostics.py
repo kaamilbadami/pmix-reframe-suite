@@ -33,7 +33,45 @@ def topology_command(proof_directory):
     )
 
 
+def assigned_value(name):
+    tree = ast.parse(WORKLOAD.read_text(encoding="utf-8"))
+    assignment = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == name
+            for target in node.targets
+        )
+    )
+
+    return ast.literal_eval(assignment.value)
+
+
 class TestL3TopologyDiagnostics(unittest.TestCase):
+
+    def test_topology_proof_timeout_is_60_seconds(self):
+        self.assertEqual(
+            assigned_value("TOPOLOGY_PROOF_TIMEOUT_SECONDS"),
+            60
+        )
+
+        tree = ast.parse(WORKLOAD.read_text(encoding="utf-8"))
+        topology_wait = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "wait_for_files"
+            and isinstance(node.args[0], ast.Name)
+            and node.args[0].id == "topology_pattern"
+        )
+        timeout_argument = topology_wait.args[3]
+        self.assertIsInstance(timeout_argument, ast.Name)
+        self.assertEqual(
+            timeout_argument.id,
+            "TOPOLOGY_PROOF_TIMEOUT_SECONDS"
+        )
 
     def run_topology_command(self, inject_read_failure=False):
         with tempfile.TemporaryDirectory(
