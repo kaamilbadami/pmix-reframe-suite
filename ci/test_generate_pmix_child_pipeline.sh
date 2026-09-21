@@ -11,6 +11,7 @@ trap 'rm -rf -- "$test_dir"' EXIT
 lower_sha=0123456789abcdef0123456789abcdef01234567
 upper_sha=89ABCDEF0123456789ABCDEF0123456789ABCDEF
 third_sha=fedcba9876543210fedcba9876543210fedcba98
+absent_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 pass_count=0
 
 fail() {
@@ -137,6 +138,48 @@ python3 "$generator" "$multiple_input" "$multiple_output"
     fail 'generator did not create one job per SHA'
 pass 'generator creates one job per SHA'
 
+equivalent_output="$test_dir/multiple-equivalent.yml"
+python3 "$generator" "$multiple_input" "$equivalent_output"
+cmp -s -- "$multiple_output" "$equivalent_output" ||
+    fail 'generation without --fail-commit changed normal output'
+pass 'generation without --fail-commit remains byte-for-byte equivalent'
+
+for invalid_fail_commit in \
+    0123456789abcdef \
+    master \
+    " $lower_sha" \
+    "$lower_sha " \
+    0123456789abcdef0123456789abcdef0123456g
+do
+    expect_failure "malformed failure SHA is rejected: $invalid_fail_commit" \
+        "$multiple_input" "$test_dir/invalid-failure.yml" \
+        --fail-commit "$invalid_fail_commit"
+done
+pass 'malformed failure SHAs are rejected'
+
+expect_failure 'failure SHA absent from the discovered range is rejected' \
+    "$multiple_input" "$test_dir/absent-failure.yml" \
+    --fail-commit "$absent_sha"
+
+failure_output="$test_dir/middle-failure.yml"
+python3 "$generator" "$multiple_input" "$failure_output" \
+    --fail-commit "${upper_sha,,}"
+[[ $(grep -Fc 'Intentional multi-commit pilot failure' "$failure_output") == 1 ]] ||
+    fail 'intentional failure was not generated exactly once'
+[[ $(grep -Fc 'bash ci/run_exact_pmix_commit.sh' "$failure_output") == 2 ]] ||
+    fail 'non-selected jobs did not retain exactly two normal runners'
+[[ $(grep -Fc 'bash ci/write_pmix_commit_result.sh ci-results' \
+    "$failure_output") == 3 ]] ||
+    fail 'failure generation changed per-job result writers'
+[[ $(grep -Fc 'when: always' "$failure_output") == 3 ]] ||
+    fail 'failure generation changed always-retained artifacts'
+for sha in "$lower_sha" "$upper_sha" "$third_sha"; do
+    result_path="ci-results/${sha,,}.env"
+    [[ $(grep -Fxc "      - $result_path" "$failure_output") == 1 ]] ||
+        fail "failure generation changed result artifact path: $sha"
+done
+pass 'selected failure retains every result writer and exact result artifact'
+
 lower_line=$(grep -n "^pmix-$lower_sha:" "$multiple_output" | cut -d: -f1)
 upper_line=$(grep -n "^pmix-$upper_sha:" "$multiple_output" | cut -d: -f1)
 third_line=$(grep -n "^pmix-$third_sha:" "$multiple_output" | cut -d: -f1)
@@ -229,7 +272,7 @@ cmp -s -- "$test_dir/preserved-before" "$preserved_output" ||
 pass 'existing output is preserved after failure'
 
 if python3 -c 'import yaml' >/dev/null 2>&1; then
-    python3 - "$empty_output" "$multiple_output" <<'PY'
+    python3 - "$empty_output" "$multiple_output" "$failure_output" <<'PY'
 import pathlib
 import sys
 import yaml
@@ -240,6 +283,7 @@ third_sha = "fedcba9876543210fedcba9876543210fedcba98"
 
 empty = yaml.safe_load(pathlib.Path(sys.argv[1]).read_text())
 multiple = yaml.safe_load(pathlib.Path(sys.argv[2]).read_text())
+failure = yaml.safe_load(pathlib.Path(sys.argv[3]).read_text())
 
 header = {
     "stages": ["test"],
@@ -301,11 +345,29 @@ for sha in (lower_sha, upper_sha, third_sha):
         },
     }
 assert multiple == expected_multiple
+
+expected_failure_script = """\
+set -euo pipefail
+printf 'Intentional multi-commit pilot failure for OpenPMIx commit: %s\\n' "$PMIX_COMMIT" >&2
+exit 1
+"""
+expected_failure = dict(expected_multiple)
+expected_failure[f"pmix-{upper_sha}"] = {
+    **expected_multiple[f"pmix-{upper_sha}"],
+    "script": [expected_failure_script],
+}
+assert failure == expected_failure
+assert failure[f"pmix-{lower_sha}"]["script"] == [expected_script]
+assert failure[f"pmix-{third_sha}"]["script"] == [expected_script]
+assert "module load" not in expected_failure_script
+assert "pip install" not in expected_failure_script
+assert "reframe" not in expected_failure_script.lower()
+assert "run_exact_pmix_commit" not in expected_failure_script
 PY
 else
     printf '# YAML parser unavailable; parse validation skipped\n'
 fi
-pass 'parsed generated YAML matches the expected real and no-op structures'
+pass 'parsed YAML gives only the selected middle SHA the immediate failure'
 
 if python3 -c 'import yaml' >/dev/null 2>&1; then
     python3 - "$parent_ci" <<'PY'
@@ -397,6 +459,8 @@ for forbidden in (
 ):
     assert forbidden not in generation_script
 assert "PMIX_CHILD_PIPELINE_BASE_SHA" not in parent.get("variables", {})
+fail_selector = "PMIX_CHILD_PIPELINE_FAIL_COMMIT"
+assert fail_selector not in parent.get("variables", {})
 assert "${PMIX_CHILD_PIPELINE_BASE_SHA:-}" in generation_script
 assert (
     "[[ ! $PMIX_CHILD_PIPELINE_BASE_SHA =~ ^[0-9A-Fa-f]{40}$ ]]"
@@ -450,6 +514,17 @@ assert checksum_guard.index("error: the manual pilot modified") < checksum_guard
 )
 assert "Pilot discovery baseline: official cached state" in generation_script
 assert "Pilot discovery baseline override: %s" in generation_script
+assert generation_script.count(fail_selector) == 2
+assert "${PMIX_CHILD_PIPELINE_FAIL_COMMIT:-}" in generation_script
+assert re.search(
+    r'generator_args\+=\(\n\s+--fail-commit '
+    r'"\$PMIX_CHILD_PIPELINE_FAIL_COMMIT"\n\s+\)',
+    generation_script,
+)
+for job_name, job in parent.items():
+    if job_name == "generate-pmix-child-pipeline-pilot" or not isinstance(job, dict):
+        continue
+    assert fail_selector not in yaml.safe_dump(job)
 for line in generation_script.splitlines():
     assert not re.search(
         r"\b(?:cp|mv|sed)\b.*\.ci-state/pmix-master\.env", line
@@ -470,18 +545,21 @@ for job in parent.values():
         assert "PMIX_CHILD_PIPELINE_BASE_SHA" not in "\n".join(
             job.get("script", [])
         )
+        assert fail_selector not in "\n".join(job.get("script", []))
 PY
 else
     for required_text in \
         'generate-pmix-child-pipeline-pilot:' \
         'trigger-pmix-child-pipeline-pilot:' \
         '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"' \
+        '${PMIX_CHILD_PIPELINE_FAIL_COMMIT:-}' \
+        '--fail-commit "$PMIX_CHILD_PIPELINE_FAIL_COMMIT"' \
         'policy: pull' \
         'artifact: ci-generated/pmix-child-pipeline.yml' \
         'job: generate-pmix-child-pipeline-pilot' \
         'strategy: mirror'
     do
-        grep -Fq "$required_text" "$parent_ci" ||
+        grep -Fq -- "$required_text" "$parent_ci" ||
             fail "parent CI is missing: $required_text"
     done
 fi

@@ -123,9 +123,16 @@ generate-pmix-child-pipeline-pilot:
           "$discovery_state" \
           ci-generated/pmix-untested-commits.txt
 
-      python3 ci/generate_pmix_child_pipeline.py \
-          ci-generated/pmix-untested-commits.txt \
+      generator_args=(
+          ci-generated/pmix-untested-commits.txt
           ci-generated/pmix-child-pipeline.yml
+      )
+      if [[ -n ${PMIX_CHILD_PIPELINE_FAIL_COMMIT:-} ]]; then
+          generator_args+=(
+              --fail-commit "$PMIX_CHILD_PIPELINE_FAIL_COMMIT"
+          )
+      fi
+      python3 ci/generate_pmix_child_pipeline.py "${generator_args[@]}"
 
       official_state_checksum_after=$(sha256sum -- .ci-state/pmix-master.env)
       if [[ $official_state_checksum_before != "$official_state_checksum_after" ]]; then

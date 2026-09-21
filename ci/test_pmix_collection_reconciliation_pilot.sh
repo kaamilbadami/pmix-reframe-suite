@@ -292,6 +292,21 @@ check(generation["artifacts"]["paths"] == [
     "ci-generated/pmix-untested-commits.txt",
     "ci-generated/pmix-child-pipeline.yml",
 ], "generation artifact names changed")
+fail_selector = "PMIX_CHILD_PIPELINE_FAIL_COMMIT"
+generation_script = "\n".join(generation["script"])
+check(fail_selector not in parent.get("variables", {}),
+      "failure selector became a global CI variable")
+check(generation_script.count(fail_selector) == 2,
+      "pilot generation does not consume the selector exactly once")
+check("${PMIX_CHILD_PIPELINE_FAIL_COMMIT:-}" in generation_script,
+      "pilot generation does not guard an empty selector")
+check('--fail-commit "$PMIX_CHILD_PIPELINE_FAIL_COMMIT"' in generation_script,
+      "pilot generation does not pass the exact selector")
+for job_name, candidate in parent.items():
+    if job_name == "generate-pmix-child-pipeline-pilot" or not isinstance(candidate, dict):
+        continue
+    check(fail_selector not in json.dumps(candidate),
+          f"failure selector escaped into {job_name}")
 check(job["script"] == [
     "bash ci/run_pmix_collection_reconciliation_pilot.sh "
     "ci-generated/pmix-untested-commits.txt ci-pilot-results"

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import os
 from pathlib import Path
 import re
@@ -66,6 +67,32 @@ pmix-__SHA__:
       - stage/frontier/batch/pmix_test/PMIxPythonMappingPPRL3CacheTest/
 """
 
+FAILED_COMMIT_JOB = """\
+pmix-__SHA__:
+  stage: test
+  extends:
+    - .frontier-shell-runner
+  timeout: 1h
+  resource_group: pmix-python-suite-frontier
+  variables:
+    PMIX_COMMIT: "__SHA__"
+  script:
+    - |
+      set -euo pipefail
+      printf 'Intentional multi-commit pilot failure for OpenPMIx commit: %s\\n' "$PMIX_COMMIT" >&2
+      exit 1
+  after_script:
+    - bash ci/write_pmix_commit_result.sh ci-results
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-results/__RESULT_SHA__.env
+      - stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env
+      - stage/frontier/batch/pmix_test/PMIxPython*Compat*Test/
+      - stage/frontier/batch/pmix_test/PMIxPythonMappingPPRL3CacheTest/
+"""
+
 
 def fail(message, status=1):
     print(f"error: {message}", file=sys.stderr)
@@ -95,11 +122,17 @@ def read_shas(input_path):
     return shas
 
 
-def render_pipeline(shas):
-    jobs = [
-        COMMIT_JOB.replace("__SHA__", sha).replace("__RESULT_SHA__", sha.lower())
-        for sha in shas
-    ]
+def render_pipeline(shas, fail_commit=None):
+    jobs = []
+    for sha in shas:
+        template = COMMIT_JOB
+        if fail_commit is not None and sha.lower() == fail_commit:
+            template = FAILED_COMMIT_JOB
+        jobs.append(
+            template.replace("__SHA__", sha).replace(
+                "__RESULT_SHA__", sha.lower()
+            )
+        )
     if not jobs:
         jobs = [NOOP_JOB]
     return "\n".join([HEADER, *jobs])
@@ -126,16 +159,18 @@ def atomic_write(output_path, content):
         fail(f"could not write output YAML: {output_path}: {error}")
 
 
-def main():
-    if len(sys.argv) != 3:
-        print(
-            "usage: generate_pmix_child_pipeline.py INPUT_SHA_FILE OUTPUT_YAML",
-            file=sys.stderr,
-        )
-        return 2
+def parse_arguments(arguments=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_sha_file", type=Path)
+    parser.add_argument("output_yaml", type=Path)
+    parser.add_argument("--fail-commit")
+    return parser.parse_args(arguments)
 
-    input_path = Path(sys.argv[1])
-    output_path = Path(sys.argv[2])
+
+def main(arguments=None):
+    options = parse_arguments(arguments)
+    input_path = options.input_sha_file
+    output_path = options.output_yaml
     if not input_path.is_file():
         fail(f"input SHA file is missing: {input_path}")
     if not output_path.parent.is_dir():
@@ -145,7 +180,17 @@ def main():
     if input_path.resolve() == output_path.resolve():
         fail("input SHA file and output YAML must be different files")
 
-    atomic_write(output_path, render_pipeline(read_shas(input_path)))
+    shas = read_shas(input_path)
+    fail_commit = options.fail_commit
+    if fail_commit is not None:
+        if SHA_PATTERN.fullmatch(fail_commit) is None:
+            fail("--fail-commit must be exactly 40 hexadecimal characters")
+        matches = [sha for sha in shas if sha.lower() == fail_commit.lower()]
+        if len(matches) != 1:
+            fail("--fail-commit must match exactly one discovered commit")
+        fail_commit = matches[0].lower()
+
+    atomic_write(output_path, render_pipeline(shas, fail_commit))
     return 0
 
 
