@@ -22,6 +22,20 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - when: never
 
+test-shared-state-write:
+  stage: test
+  extends:
+    - .frontier-shell-runner
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+    - when: never
+  script:
+    - id
+    - touch /lustre/orion/gen243/world-shared/kbadami/openpmix-ci/ci-write-test.txt
+    - ls -l /lustre/orion/gen243/world-shared/kbadami/openpmix-ci/ci-write-test.txt
+    - rm /lustre/orion/gen243/world-shared/kbadami/openpmix-ci/ci-write-test.txt
+
 generate-openpmix-pr-pipelines:
   stage: pilot-generate
   extends:
