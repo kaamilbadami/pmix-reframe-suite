@@ -414,7 +414,6 @@ assert suite["rules"] == [
     {"if": failed_result_rule, "when": "never"},
     {"if": pilot_rule, "when": "never"},
     {"if": '$CI_PIPELINE_SOURCE == "web"'},
-    {"if": '$CI_PIPELINE_SOURCE == "schedule"'},
     {"when": "never"},
 ]
 assert parent["workflow"]["rules"] == [

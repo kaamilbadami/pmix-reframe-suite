@@ -51,10 +51,14 @@ print("ok - automatic discovery is disabled by default and owns no scheduled PMI
 normal_rules = parent["pmix-python-suite"]["rules"]
 assert {"if": '$OPENPMIX_PR_INTERNAL == "1"', "when": "never"} in normal_rules
 assert {"if": '$CI_PIPELINE_SOURCE == "web"'} in normal_rules
-assert {"if": '$CI_PIPELINE_SOURCE == "schedule"'} in normal_rules
+assert {"if": '$CI_PIPELINE_SOURCE == "schedule"'} not in normal_rules
 assert parent["pmix-python-suite"]["cache"]["key"] == "pmix-master-state-v2"
 assert ".ci-state/pmix-master.env" in parent["pmix-python-suite"]["cache"]["paths"]
-print("ok - normal manual and scheduled PMIx suite rules and state remain intact")
+assert parent["pmix-python-suite"]["cache"]["policy"] == "pull"
+assert "cache" not in parent["apply-pmix-reconciled-state-scheduled"]
+assert "--authoritative-state" in str(
+    parent["apply-pmix-reconciled-state-scheduled"]["script"])
+print("ok - manual cache is read-only and scheduled application owns Lustre state")
 
 all_openpmix = jobs_text + child_text + str(
     parent["generate-openpmix-pr-pipelines"]) + str(

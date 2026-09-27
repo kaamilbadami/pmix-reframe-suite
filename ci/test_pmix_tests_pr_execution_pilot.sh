@@ -40,7 +40,8 @@ run = parent["run-pmix-tests-pr-pilot"]
 finalize = parent["finalize-pmix-tests-pr-pilot"]
 
 check(parent["stages"] == [
-    "pilot-generate", "pilot-trigger", "pr-prepare", "test", "pr-finalize"
+    "pilot-generate", "pilot-trigger", "pr-prepare", "test", "pmix-collect",
+    "pmix-reconcile", "pmix-apply", "pr-finalize"
 ], "three-job trust-boundary stages changed")
 check(prepare["stage"] == "pr-prepare" and run["stage"] == "test"
       and finalize["stage"] == "pr-finalize", "job ordering changed")
@@ -155,18 +156,15 @@ unrelated = set(jobs) - trust_jobs
 check(unrelated, "no unrelated jobs found for exclusion audit")
 for name in sorted(unrelated):
     rules = jobs[name].get("rules")
-    schedule_only_openpmix = (
+    schedule_only = (
         rules and all(
-            rule.get("when") == "never" or (
-                '$CI_PIPELINE_SOURCE == "schedule"' in rule.get("if", "")
-                and '$OPENPMIX_PR_AUTODISCOVERY == "1"' in
-                    rule.get("if", "")
-            )
+            rule.get("when") == "never" or
+            '$CI_PIPELINE_SOURCE == "schedule"' in rule.get("if", "")
             for rule in rules
         )
     )
     check(rules and (
-          execution_exclusion in rules or schedule_only_openpmix),
+          execution_exclusion in rules or schedule_only),
           f"unrelated job can run under execution pilot: {name}")
 passed("normal suite, metadata pilot, and every unrelated pilot are excluded")
 

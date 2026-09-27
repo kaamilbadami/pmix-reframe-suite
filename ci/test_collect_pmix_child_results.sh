@@ -53,6 +53,7 @@ class Router:
         self.trigger_duplicate = False
         self.trigger_missing = False
         self.trigger_pages = False
+        self.trigger_name = "trigger-pmix-child-pipeline-pilot"
         self.jobs_pages = False
         self.jobs = [
             {"id": 302, "name": f"pmix-{commit_b}", "pipeline": {"id": 200}},
@@ -109,7 +110,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self.send(404)
                 return
             match = {
-                "name": "trigger-pmix-child-pipeline-pilot",
+                "name": router.trigger_name,
                 "downstream_pipeline": {"id": int(child_id), "status": "failed"},
             }
             unrelated = {"name": "unrelated", "downstream_pipeline": None}
@@ -223,7 +224,7 @@ def parse_report(output):
 
 
 def run_case(commits, configure=None, env_update=None, parent=parent_id,
-             output_setup=None):
+             output_setup=None, collector_args=None):
     router.reset()
     if configure:
         configure()
@@ -244,7 +245,7 @@ def run_case(commits, configure=None, env_update=None, parent=parent_id,
             "--commits", str(commit_file),
             "--parent-pipeline-id", parent,
             "--output", str(output),
-        ],
+        ] + list(collector_args or []),
         env=environment(env_update),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -296,6 +297,32 @@ try:
     }], "single-item report changed")
     assert_safe(temporary, root, completed)
     passed("one commit is collected by exact job and artifact path")
+
+    def scheduled_trigger():
+        router.trigger_name = "trigger-pmix-child-pipeline-scheduled"
+
+    temporary, root, commits, output, completed, report = run_case(
+        [commit_a],
+        scheduled_trigger,
+        collector_args=[
+            "--trigger-job-name", "trigger-pmix-child-pipeline-scheduled",
+        ],
+    )
+    check(completed.returncode == 0, "configured scheduled trigger was not found")
+    check(report["items"][0]["result"] == "collected",
+          "configured trigger changed artifact collection")
+    assert_safe(temporary, root, completed)
+    passed("a configured scheduled trigger name preserves pilot-compatible collection")
+
+    for invalid_name in ("", "bad trigger", "/invalid", "x" * 256):
+        temporary, root, commits, output, completed, report = run_case(
+            [commit_a],
+            collector_args=["--trigger-job-name", invalid_name],
+        )
+        check(completed.returncode == 6, "invalid trigger job name was accepted")
+        check(not router.requests, "invalid trigger job name made an HTTP request")
+        assert_safe(temporary, root, completed, expect_primary_token=False)
+    passed("invalid trigger job names fail locally before API access")
 
     temporary, root, commits, output, completed, report = run_case(
         [commit_a, commit_b]

@@ -36,7 +36,8 @@ JSON_LIMIT = 10 * 1024 * 1024
 ARTIFACT_LIMIT = 64 * 1024
 ID_PATTERN = re.compile(r"[1-9][0-9]*")
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
-TRIGGER_JOB_NAME = "trigger-pmix-child-pipeline-pilot"
+JOB_NAME_PATTERN = re.compile(r"[A-Za-z0-9_.:-]{1,255}")
+DEFAULT_TRIGGER_JOB_NAME = "trigger-pmix-child-pipeline-pilot"
 REPORT_NAME = "collection-report.json"
 FORBIDDEN_LOCAL_COMPONENT = ".ci" + "-state"
 AUTHENTICATION_HEADERS = frozenset({
@@ -166,6 +167,7 @@ def parse_arguments(arguments: Optional[List[str]] = None) -> argparse.Namespace
     parser.add_argument("--commits", required=True, type=Path)
     parser.add_argument("--parent-pipeline-id", required=True)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--trigger-job-name", default=DEFAULT_TRIGGER_JOB_NAME)
     return parser.parse_args(arguments)
 
 
@@ -313,7 +315,9 @@ def next_page(headers: object, current: int) -> Optional[int]:
     return page
 
 
-def discover_child(client: GitLabGetClient, parent_id: str) -> Tuple[str, str, str]:
+def discover_child(
+    client: GitLabGetClient, parent_id: str, trigger_job_name: str
+) -> Tuple[str, str, str]:
     for endpoint in ("trigger_jobs", "bridges"):
         page = 1
         matches = []
@@ -333,7 +337,7 @@ def discover_child(client: GitLabGetClient, parent_id: str) -> Tuple[str, str, s
             for record in records:
                 if not isinstance(record, dict) or not isinstance(record.get("name"), str):
                     return "malformed_api_response", endpoint, ""
-                if record["name"] != TRIGGER_JOB_NAME:
+                if record["name"] != trigger_job_name:
                     continue
                 downstream = record.get("downstream_pipeline")
                 if not isinstance(downstream, dict) or not valid_json_id(downstream.get("id")):
@@ -502,6 +506,8 @@ def collect(arguments: Optional[List[str]] = None) -> int:
             raise LocalInputError("invalid GitLab configuration")
         if not valid_id(options.parent_pipeline_id):
             raise LocalInputError("invalid parent pipeline ID")
+        if JOB_NAME_PATTERN.fullmatch(options.trigger_job_name) is None:
+            raise LocalInputError("invalid trigger job name")
 
         report["items"] = [
             {"commit": commit, "http_status": None, "job_id": None, "result": "not_attempted"}
@@ -514,7 +520,7 @@ def collect(arguments: Optional[List[str]] = None) -> int:
 
         client = GitLabGetClient(api_url, project_id, token)
         discovery, endpoint, child_id = discover_child(
-            client, options.parent_pipeline_id
+            client, options.parent_pipeline_id, options.trigger_job_name
         )
         report["parent_discovery_endpoint"] = endpoint
         if discovery != "ok":

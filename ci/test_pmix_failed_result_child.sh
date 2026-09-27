@@ -161,7 +161,6 @@ artifact_probe_rule = (
 legacy_suite_rules = [
     {"if": normal_pilot_rule, "when": "never"},
     {"if": '$CI_PIPELINE_SOURCE == "web"'},
-    {"if": '$CI_PIPELINE_SOURCE == "schedule"'},
     {"when": "never"},
 ]
 assert suite["rules"] == [
@@ -178,7 +177,8 @@ assert parent["workflow"]["rules"] == [
     {"when": "never"},
 ]
 assert parent["stages"] == [
-    "pilot-generate", "pilot-trigger", "pr-prepare", "test", "pr-finalize"
+    "pilot-generate", "pilot-trigger", "pr-prepare", "test", "pmix-collect",
+    "pmix-reconcile", "pmix-apply", "pr-finalize"
 ]
 suite_script = "\n".join(suite["script"])
 assert suite_script.count("bash ci/test_pmix_failed_result_child.sh") == 1

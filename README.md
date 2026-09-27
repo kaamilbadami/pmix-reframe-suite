@@ -153,14 +153,19 @@ The startup workloads locate `prte` and `pterm` through `PRTE_DIR`, `PATH`, or t
 
 The tracked workflow accepts only two pipeline sources:
 
-- A manual pipeline started from the GitLab web interface always runs the complete PMIx Python suite.
-- An hourly scheduled pipeline evaluates the OpenPMIx and suite state before deciding whether to run the complete suite.
+- A manual pipeline started from the GitLab web interface always runs the complete PMIx Python suite without changing the production known-good state.
+- An hourly scheduled pipeline tests every OpenPMIx commit after the saved known-good commit and advances that state only through the contiguous successful prefix.
 
 Merge-request and push pipelines are not enabled by `.gitlab-ci.yml`.
 
-### Scheduled-pipeline gating
+### Scheduled multi-commit pipeline
 
-Before an hourly scheduled run, `ci/should_run_pmix_suite.sh` queries the current SHA of OpenPMIx `master` and compares it with the cached state from the last successful complete run. The state records:
+The scheduled pipeline reads its authoritative known-good state from the
+persistent Lustre file selected by `PMIX_AUTHORITATIVE_STATE_FILE`. The checked-in
+default is
+`/lustre/orion/gen243/world-shared/kbadami/openpmix-ci/pmix-master.env`; a CI
+variable may override it. GitLab cache is not used as the scheduled checkpoint.
+The authoritative file has the existing strict schema:
 
 ```text
 PMIX_COMMIT=<OpenPMIx SHA>
@@ -168,18 +173,40 @@ SUITE_COMMIT=<pmix-reframe-suite SHA>
 LAST_SUCCESS_EPOCH=<UTC epoch>
 ```
 
-The complete suite runs when any of the following is true:
+The existing one-line `last_good_commit.txt` seed is not this schema and must not
+be silently reinterpreted. Before enabling the schedule, an operator must create
+`pmix-master.env` with the seeded OpenPMIx SHA plus the correct suite SHA and
+last-success epoch from the prior validated state. Missing, malformed, unsafe, or
+inaccessible state is a hard failure; the scheduled path does not initialize
+itself from the current master tip. Discovery fetches OpenPMIx history and writes
+every commit in `known-good..master`, oldest to newest, excluding the known-good
+base. An empty range produces a no-op child pipeline and leaves state unchanged.
 
-- no valid successful-run state is available;
-- the OpenPMIx SHA changed;
-- the suite SHA changed;
-- both SHAs changed;
-- at least 86,400 seconds have passed since the last successful complete run; or
-- the saved timestamp is in the future.
+For a nonempty range, a generated child pipeline runs one existing exact-commit PMIx Python suite job per SHA. Every job uses the `pmix-python-suite-frontier` resource group and always publishes a strict result record. Result collection is allowed to continue after failed child jobs or incomplete artifact retrieval so that reconciliation can identify a safe prefix.
 
-The scheduled pipeline intentionally skips the complete suite only when both SHAs are unchanged and the last successful complete run is less than 24 hours old. A new state is saved only after a successful full run, so the hourly schedule also provides at least one daily health run when neither repository changes.
+Reconciliation compares the byte-exact discovery baseline with a fresh read of
+the Lustre state, validates ordered result records, and stops at the first failed,
+canceled, unknown, missing, or malformed result. It emits artifacts only: a
+report and, when at least one leading commit succeeded, a proposed state. A later
+success never crosses an earlier blocker. Collector and reconciliation status
+markers are removed before reuse and are accepted only when their pipeline ID
+and suite SHA match the current pipeline.
 
-Manual and scheduled pipelines report pending and final commit status to GitHub. A Frontier resource group prevents overlapping PMIx suite jobs.
+A separate serialized application job locks and re-reads the authoritative file,
+requires it to remain byte-identical to the discovery baseline, validates the
+report and proposal against the ordered commit list, and atomically applies only
+the reported successful-prefix boundary. It writes and fsyncs a same-directory
+temporary, renames it over the authoritative file, and fsyncs the directory when
+the filesystem supports that operation. For example, `A=success`, `B=success`,
+`C=failed`, and `D=success` advances known-good through `B`. The next scheduled
+run starts from `B`, so `C` is retried. A stale pipeline fails without overwriting
+newer state, and only this final scheduled job can invoke state application.
+
+The ordinary web suite remains available for manual complete-suite execution,
+but its cache is read-only and it cannot advance authoritative scheduled state.
+The opt-in manual multi-commit pilot also remains proposal-only. Scheduled
+multi-commit execution does not post GitHub status. A Frontier resource group
+prevents overlapping PMIx suite and state-application jobs.
 
 ### Manual trusted-author `pmix-tests` PR pilot
 

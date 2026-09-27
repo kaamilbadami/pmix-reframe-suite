@@ -3,6 +3,9 @@ stages:
   - pilot-trigger
   - pr-prepare
   - test
+  - pmix-collect
+  - pmix-reconcile
+  - pmix-apply
   - pr-finalize
 
 include:
@@ -15,26 +18,13 @@ include:
 variables:
   OLCF_SERVICE_ACCOUNT: "gen243_auser"
   FF_GIT_URLS_WITHOUT_TOKENS: "1"
+  PMIX_AUTHORITATIVE_STATE_FILE: "/lustre/orion/gen243/world-shared/kbadami/openpmix-ci/pmix-master.env"
 
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - when: never
-
-test-shared-state-write:
-  stage: test
-  extends:
-    - .frontier-shell-runner
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "web"'
-      when: manual
-    - when: never
-  script:
-    - id
-    - touch /lustre/orion/gen243/world-shared/kbadami/openpmix-ci/ci-write-test.txt
-    - ls -l /lustre/orion/gen243/world-shared/kbadami/openpmix-ci/ci-write-test.txt
-    - rm /lustre/orion/gen243/world-shared/kbadami/openpmix-ci/ci-write-test.txt
 
 generate-openpmix-pr-pipelines:
   stage: pilot-generate
@@ -218,6 +208,256 @@ collect-reconcile-pmix-child-pipeline-pilot:
       - ci-pilot-results/collection/*.env
       - ci-pilot-results/reconciliation/reconciliation.env
       - ci-pilot-results/reconciliation/proposed-pmix-master.env
+
+generate-pmix-child-pipeline-scheduled:
+  stage: pilot-generate
+  extends:
+    - .frontier-shell-runner
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - when: never
+
+  script:
+    - |
+      set -euo pipefail
+
+      state_file=${PMIX_AUTHORITATIVE_STATE_FILE:?PMIX_AUTHORITATIVE_STATE_FILE is required}
+      output_dir=ci-scheduled
+      baseline_state="$output_dir/baseline-pmix-master.env"
+
+      mkdir -p -- "$output_dir"
+      python3 ci/apply_reconciled_pmix_state.py snapshot \
+          --state "$state_file" \
+          --output "$baseline_state"
+
+      bash ci/discover_untested_pmix_commits.sh \
+          "$baseline_state" \
+          "$output_dir/pmix-untested-commits.txt"
+      python3 ci/generate_pmix_child_pipeline.py \
+          "$output_dir/pmix-untested-commits.txt" \
+          "$output_dir/pmix-child-pipeline.yml"
+
+  artifacts:
+    expire_in: 14 days
+    paths:
+      - ci-scheduled/baseline-pmix-master.env
+      - ci-scheduled/pmix-untested-commits.txt
+      - ci-scheduled/pmix-child-pipeline.yml
+
+trigger-pmix-child-pipeline-scheduled:
+  stage: pilot-trigger
+  variables:
+    PRRTE_BRANCH: "v5.0"
+    PRRTE_COMMIT: "22820a01e17547dbf1c4f9628eac327f193caa45"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - when: never
+  trigger:
+    include:
+      - artifact: ci-scheduled/pmix-child-pipeline.yml
+        job: generate-pmix-child-pipeline-scheduled
+    strategy: mirror
+
+collect-pmix-child-results-scheduled:
+  stage: pmix-collect
+  extends:
+    - .frontier-shell-runner
+
+  timeout: 15m
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: always
+    - when: never
+
+  needs:
+    - job: generate-pmix-child-pipeline-scheduled
+      artifacts: true
+    - job: trigger-pmix-child-pipeline-scheduled
+      artifacts: false
+
+  script:
+    - |
+      set -euo pipefail
+
+      python3 ci/pmix_scheduled_status.py clean \
+          --directory ci-scheduled
+
+      collector_status=0
+      python3 ci/collect_pmix_child_results.py \
+          --commits ci-scheduled/pmix-untested-commits.txt \
+          --parent-pipeline-id "$CI_PIPELINE_ID" \
+          --output ci-scheduled/collection \
+          --trigger-job-name trigger-pmix-child-pipeline-scheduled || \
+          collector_status=$?
+
+      python3 ci/pmix_scheduled_status.py publish \
+          --directory ci-scheduled \
+          --kind collector \
+          --status "$collector_status" \
+          --pipeline-id "$CI_PIPELINE_ID" \
+          --suite-commit "$CI_COMMIT_SHA"
+
+      case $collector_status in
+          0|3)
+              exit 0
+              ;;
+          4|5|6)
+              exit "$collector_status"
+              ;;
+          *)
+              printf 'error: collector returned unexpected status %s\n' \
+                  "$collector_status" >&2
+              exit 1
+              ;;
+      esac
+
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-scheduled/collector-status.env
+      - ci-scheduled/collection/collection-report.json
+      - ci-scheduled/collection/*.env
+
+reconcile-pmix-child-results-scheduled:
+  stage: pmix-reconcile
+  extends:
+    - .frontier-shell-runner
+
+  timeout: 15m
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: always
+    - when: never
+
+  needs:
+    - job: generate-pmix-child-pipeline-scheduled
+      artifacts: true
+    - job: collect-pmix-child-results-scheduled
+      artifacts: true
+
+  script:
+    - |
+      set -euo pipefail
+
+      python3 ci/pmix_scheduled_status.py clean \
+          --directory ci-scheduled \
+          --kind reconciliation
+      collector_status=$(python3 ci/pmix_scheduled_status.py verify \
+          --directory ci-scheduled \
+          --kind collector \
+          --pipeline-id "$CI_PIPELINE_ID" \
+          --suite-commit "$CI_COMMIT_SHA")
+      case $collector_status in
+          0|3)
+              ;;
+          *)
+              printf 'error: hard collector status prevents reconciliation: %s\n' \
+                  "$collector_status" >&2
+              exit 1
+              ;;
+      esac
+
+      state_file=${PMIX_AUTHORITATIVE_STATE_FILE:?PMIX_AUTHORITATIVE_STATE_FILE is required}
+      current_state=ci-scheduled/current-pmix-master.env
+      if [[ -L $current_state ]] ||
+         [[ -e $current_state && ! -f $current_state ]]; then
+          printf 'error: current-state snapshot is unsafe: %s\n' \
+              "$current_state" >&2
+          exit 1
+      fi
+      rm -f -- "$current_state"
+      python3 ci/apply_reconciled_pmix_state.py snapshot \
+          --state "$state_file" \
+          --output "$current_state"
+
+      reconciliation_status=0
+      python3 ci/reconcile_pmix_results.py \
+          --baseline-state ci-scheduled/baseline-pmix-master.env \
+          --current-state "$current_state" \
+          --commits ci-scheduled/pmix-untested-commits.txt \
+          --results ci-scheduled/collection \
+          --suite-commit "$CI_COMMIT_SHA" \
+          --output ci-scheduled/reconciliation || reconciliation_status=$?
+
+      python3 ci/pmix_scheduled_status.py publish \
+          --directory ci-scheduled \
+          --kind reconciliation \
+          --status "$reconciliation_status" \
+          --pipeline-id "$CI_PIPELINE_ID" \
+          --suite-commit "$CI_COMMIT_SHA"
+
+      case $reconciliation_status in
+          0|3)
+              exit "$reconciliation_status"
+              ;;
+          4|5)
+              exit "$reconciliation_status"
+              ;;
+          *)
+              printf 'error: reconciler returned unexpected status %s\n' \
+                  "$reconciliation_status" >&2
+              exit 1
+              ;;
+      esac
+
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-scheduled/current-pmix-master.env
+      - ci-scheduled/reconciliation-status.env
+      - ci-scheduled/reconciliation/reconciliation.env
+      - ci-scheduled/reconciliation/proposed-pmix-master.env
+
+apply-pmix-reconciled-state-scheduled:
+  stage: pmix-apply
+  extends:
+    - .frontier-shell-runner
+
+  timeout: 15m
+  resource_group: pmix-python-suite-frontier
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: always
+    - when: never
+
+  needs:
+    - job: generate-pmix-child-pipeline-scheduled
+      artifacts: true
+    - job: reconcile-pmix-child-results-scheduled
+      artifacts: true
+
+  script:
+    - |
+      set -euo pipefail
+
+      reconciliation_status=$(python3 ci/pmix_scheduled_status.py verify \
+          --directory ci-scheduled \
+          --kind reconciliation \
+          --pipeline-id "$CI_PIPELINE_ID" \
+          --suite-commit "$CI_COMMIT_SHA")
+      case $reconciliation_status in
+          0|3)
+              ;;
+          *)
+              printf 'error: reconciliation status prevents state application: %s\n' \
+                  "$reconciliation_status" >&2
+              exit 1
+              ;;
+      esac
+
+      python3 ci/apply_reconciled_pmix_state.py apply \
+          --baseline-state ci-scheduled/baseline-pmix-master.env \
+          --authoritative-state "$PMIX_AUTHORITATIVE_STATE_FILE" \
+          --commits ci-scheduled/pmix-untested-commits.txt \
+          --report ci-scheduled/reconciliation/reconciliation.env \
+          --proposal ci-scheduled/reconciliation/proposed-pmix-master.env \
+          --suite-commit "$CI_COMMIT_SHA"
 
 trigger-pmix-failed-result-pilot:
   stage: pilot-trigger
@@ -448,14 +688,13 @@ pmix-python-suite:
     - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "web"'
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - when: never
 
   cache:
     key: pmix-master-state-v2
     paths:
       - .ci-state/pmix-master.env
-    policy: pull-push
+    policy: pull
 
   script:
     - |
@@ -475,6 +714,9 @@ pmix-python-suite:
     - bash ci/test_pmix_failed_result_child.sh
     - bash ci/test_probe_pmix_child_artifacts.sh
     - bash ci/test_write_pmix_commit_result.sh
+    - bash ci/test_apply_reconciled_pmix_state.sh
+    - bash ci/test_pmix_scheduled_status.sh
+    - bash ci/test_pmix_scheduled_pipeline.sh
 
     - |
       decision_file=".ci-state/pmix-decision.env"
@@ -507,18 +749,6 @@ pmix-python-suite:
       "${RFM_BIN}" --version
 
       bash ci/run_exact_pmix_commit.sh
-
-      state_file=".ci-state/pmix-master.env"
-      mkdir -p "$(dirname -- "$state_file")"
-      state_tmp=$(mktemp "${state_file}.tmp.XXXXXX")
-      trap 'rm -f -- "$state_tmp"' EXIT
-      last_success_epoch=$(date -u +%s)
-      printf 'PMIX_COMMIT=%s\nSUITE_COMMIT=%s\nLAST_SUCCESS_EPOCH=%s\n' \
-          "$PMIX_COMMIT" "$CI_COMMIT_SHA" "$last_success_epoch" > "$state_tmp"
-      mv -f -- "$state_tmp" "$state_file"
-      trap - EXIT
-      printf 'Saved successful PMIx suite state: OpenPMIx=%s suite=%s UTC_epoch=%s\n' \
-          "$PMIX_COMMIT" "$CI_COMMIT_SHA" "$last_success_epoch"
 
   after_script:
     - |

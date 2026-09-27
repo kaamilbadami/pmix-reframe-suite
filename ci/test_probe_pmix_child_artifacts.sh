@@ -859,7 +859,6 @@ try:
         {"if": failed_rule, "when": "never"},
         {"if": normal_rule, "when": "never"},
         {"if": '$CI_PIPELINE_SOURCE == "web"'},
-        {"if": '$CI_PIPELINE_SOURCE == "schedule"'},
         {"when": "never"},
     ], "production suite probe exclusion or existing rules changed")
     check(parent["workflow"]["rules"] == [
