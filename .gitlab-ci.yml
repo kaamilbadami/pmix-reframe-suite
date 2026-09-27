@@ -494,6 +494,66 @@ probe-pmix-child-artifacts:
     paths:
       - ci-probe-results/
 
+concurrency-preflight-a:
+  stage: test
+  extends:
+    - .frontier-shell-runner
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+    - when: never
+
+  script:
+    - |
+      id
+      hostname
+      pwd
+      realpath .
+      echo "CI_PROJECT_DIR=$CI_PROJECT_DIR"
+      realpath "$CI_PROJECT_DIR"
+      echo "CI_JOB_ID=$CI_JOB_ID"
+      echo "CI_CONCURRENT_ID=$CI_CONCURRENT_ID"
+      echo "CI_CONCURRENT_PROJECT_ID=$CI_CONCURRENT_PROJECT_ID"
+
+      marker="$CI_PROJECT_DIR/concurrency-preflight-$CI_JOB_ID.txt"
+      printf '%s\n' "$CI_JOB_ID" > "$marker"
+      echo "marker=$marker"
+      cat "$marker"
+      sleep 20
+      test "$(cat "$marker")" = "$CI_JOB_ID"
+      rm "$marker"
+
+concurrency-preflight-b:
+  stage: test
+  extends:
+    - .frontier-shell-runner
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+    - when: never
+
+  script:
+    - |
+      id
+      hostname
+      pwd
+      realpath .
+      echo "CI_PROJECT_DIR=$CI_PROJECT_DIR"
+      realpath "$CI_PROJECT_DIR"
+      echo "CI_JOB_ID=$CI_JOB_ID"
+      echo "CI_CONCURRENT_ID=$CI_CONCURRENT_ID"
+      echo "CI_CONCURRENT_PROJECT_ID=$CI_CONCURRENT_PROJECT_ID"
+
+      marker="$CI_PROJECT_DIR/concurrency-preflight-$CI_JOB_ID.txt"
+      printf '%s\n' "$CI_JOB_ID" > "$marker"
+      echo "marker=$marker"
+      cat "$marker"
+      sleep 20
+      test "$(cat "$marker")" = "$CI_JOB_ID"
+      rm "$marker"
+
 validate-pmix-tests-pr-pilot:
   stage: test
   extends:
