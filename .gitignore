@@ -1,6 +1,7 @@
 
 .venv/
 .ci-venv/
+.ci-work/
 .ci-state/
 ci-artifacts/
 ci-openpmix-pr-preparation/

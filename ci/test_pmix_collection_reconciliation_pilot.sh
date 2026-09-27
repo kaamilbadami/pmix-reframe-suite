@@ -358,9 +358,13 @@ for generated_job in generated_jobs:
     commands = "\n".join(generated_job["script"])
     check("ci/test_" not in commands,
           "generated per-commit job runs the helper-test suite")
-    check(generated_job["resource_group"] == "pmix-python-suite-frontier",
-          "generated per-commit serialization changed")
-passed("generated child jobs retain serialization without running helper validation")
+    check("resource_group" not in generated_job,
+          "generated per-commit job retains a resource group")
+    check("parallel" not in generated_job,
+          "generated per-commit job gained an artificial parallel cap")
+    check('${CI_PROJECT_DIR}/.ci-work/${CI_JOB_ID}' in commands,
+          "generated per-commit job lacks its CI_JOB_ID-scoped work root")
+passed("generated child jobs are uncapped, job-isolated, and omit helper validation")
 
 temporary.cleanup()
 print(f"1..{pass_count}")

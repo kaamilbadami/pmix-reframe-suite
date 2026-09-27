@@ -41,19 +41,23 @@ pmix-__SHA__:
   extends:
     - .frontier-shell-runner
   timeout: 1h
-  resource_group: pmix-python-suite-frontier
   variables:
     PMIX_COMMIT: "__SHA__"
   script:
     - |
       set -euo pipefail
       module load miniforge3/23.11.0-0
-      python3 -m venv .ci-venv
-      source .ci-venv/bin/activate
+      export PMIX_JOB_ROOT="${CI_PROJECT_DIR}/.ci-work/${CI_JOB_ID}"
+      export PMIX_VENV="${PMIX_JOB_ROOT}/venv"
+      export PMIX_RFM_PREFIX="${PMIX_JOB_ROOT}/reframe"
+      export PIP_CACHE_DIR="${PMIX_JOB_ROOT}/pip-cache"
+      mkdir -p -- "$PMIX_JOB_ROOT" "$PIP_CACHE_DIR"
+      python3 -m venv "$PMIX_VENV"
+      source "$PMIX_VENV/bin/activate"
       python -m pip install --upgrade pip
       python -m pip install "Cython==3.2.6" "reframe-hpc==4.10.0"
-      export PMIX_PYTHON="${CI_PROJECT_DIR}/.ci-venv/bin/python"
-      export RFM_BIN="${CI_PROJECT_DIR}/.ci-venv/bin/reframe"
+      export PMIX_PYTHON="${PMIX_VENV}/bin/python"
+      export RFM_BIN="${PMIX_VENV}/bin/reframe"
       bash ci/run_exact_pmix_commit.sh
   after_script:
     - bash ci/write_pmix_commit_result.sh ci-results
@@ -62,9 +66,11 @@ pmix-__SHA__:
     expire_in: 14 days
     paths:
       - ci-results/__RESULT_SHA__.env
-      - stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env
-      - stage/frontier/batch/pmix_test/PMIxPython*Compat*Test/
-      - stage/frontier/batch/pmix_test/PMIxPythonMappingPPRL3CacheTest/
+      - .ci-work/$CI_JOB_ID/reframe/output/
+      - .ci-work/$CI_JOB_ID/reframe/perflogs/
+      - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env
+      - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/PMIxPython*Compat*Test/
+      - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/PMIxPythonMappingPPRL3CacheTest/
 """
 
 FAILED_COMMIT_JOB = """\
@@ -73,12 +79,13 @@ pmix-__SHA__:
   extends:
     - .frontier-shell-runner
   timeout: 1h
-  resource_group: pmix-python-suite-frontier
   variables:
     PMIX_COMMIT: "__SHA__"
   script:
     - |
       set -euo pipefail
+      export PMIX_JOB_ROOT="${CI_PROJECT_DIR}/.ci-work/${CI_JOB_ID}"
+      mkdir -p -- "$PMIX_JOB_ROOT"
       printf 'Intentional multi-commit pilot failure for OpenPMIx commit: %s\\n' "$PMIX_COMMIT" >&2
       exit 1
   after_script:
@@ -88,9 +95,11 @@ pmix-__SHA__:
     expire_in: 14 days
     paths:
       - ci-results/__RESULT_SHA__.env
-      - stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env
-      - stage/frontier/batch/pmix_test/PMIxPython*Compat*Test/
-      - stage/frontier/batch/pmix_test/PMIxPythonMappingPPRL3CacheTest/
+      - .ci-work/$CI_JOB_ID/reframe/output/
+      - .ci-work/$CI_JOB_ID/reframe/perflogs/
+      - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env
+      - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/PMIxPython*Compat*Test/
+      - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/PMIxPythonMappingPPRL3CacheTest/
 """
 
 

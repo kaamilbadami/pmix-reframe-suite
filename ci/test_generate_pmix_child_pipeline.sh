@@ -205,17 +205,23 @@ for sha in "$lower_sha" "$upper_sha" "$third_sha"; do
         fail "job does not have exactly its lowercase result path: $sha"
 done
 [[ $(grep -Fc \
-    '      - stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env' \
+    '      - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env' \
     "$multiple_output") == 3 ]] ||
     fail 'not every job preserves exact PRRTE source provenance'
 [[ $(grep -Fc \
-    '      - stage/frontier/batch/pmix_test/PMIxPython*Compat*Test/' \
+    '      - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/PMIxPython*Compat*Test/' \
     "$multiple_output") == 3 ]] ||
     fail 'not every job preserves PMIx Python compatibility test artifacts'
 [[ $(grep -Fc \
-    '      - stage/frontier/batch/pmix_test/PMIxPythonMappingPPRL3CacheTest/' \
+    '      - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/PMIxPythonMappingPPRL3CacheTest/' \
     "$multiple_output") == 3 ]] ||
     fail 'not every job preserves PMIx Python L3-cache test artifacts'
+[[ $(grep -Fc '      - .ci-work/$CI_JOB_ID/reframe/output/' \
+    "$multiple_output") == 3 ]] ||
+    fail 'not every job publishes its job-specific ReFrame output'
+[[ $(grep -Fc '      - .ci-work/$CI_JOB_ID/reframe/perflogs/' \
+    "$multiple_output") == 3 ]] ||
+    fail 'not every job publishes its job-specific ReFrame perflogs'
 for test_name in \
     PMIxPythonMixedThreadCompatTest \
     PMIxPythonTargetedCompatTest \
@@ -243,12 +249,29 @@ grep -Fq 'project: ci/resources/templates' "$multiple_output" &&
     fail 'not every job extends the Frontier runner'
 [[ $(grep -Fc 'timeout: 1h' "$multiple_output") == 3 ]] ||
     fail 'not every job uses the current timeout'
-[[ $(grep -Fc 'resource_group: pmix-python-suite-frontier' \
-    "$multiple_output") == 3 ]] || fail 'resource group is missing'
-pass 'runner include, base, timeout, and resource group are preserved'
+if grep -Eq '^[[:space:]]*(resource_group|parallel):' "$multiple_output" ||
+   grep -Eqi 'concurrency[-_ ]?lane|semaphore' "$multiple_output"; then
+    fail 'generated jobs retain an artificial concurrency cap'
+fi
+pass 'runner include, base, and timeout are preserved without a concurrency cap'
+
+for expected in \
+    'export PMIX_JOB_ROOT="${CI_PROJECT_DIR}/.ci-work/${CI_JOB_ID}"' \
+    'export PMIX_VENV="${PMIX_JOB_ROOT}/venv"' \
+    'export PMIX_RFM_PREFIX="${PMIX_JOB_ROOT}/reframe"' \
+    'export PIP_CACHE_DIR="${PMIX_JOB_ROOT}/pip-cache"' \
+    'python3 -m venv "$PMIX_VENV"' \
+    'source "$PMIX_VENV/bin/activate"' \
+    'export PMIX_PYTHON="${PMIX_VENV}/bin/python"' \
+    'export RFM_BIN="${PMIX_VENV}/bin/reframe"'
+do
+    [[ $(grep -Fc "$expected" "$multiple_output") == 3 ]] ||
+        fail "not every job has its job-specific runtime path: $expected"
+done
+pass 'every exact-commit run uses CI_JOB_ID-scoped work, venv, ReFrame, and pip-cache paths'
 
 if grep -Eqi \
-    '\.ci-state|PMIX_CHILD_PIPELINE_BASE_SHA|should_run_pmix_suite|discover|reconcil|update.*state|state.*update|github|openpmix\.git|ls-remote|git fetch' \
+    '\.ci-state|pmix-master\.env|PMIX_AUTHORITATIVE_STATE_FILE|PMIX_CHILD_PIPELINE_BASE_SHA|should_run_pmix_suite|discover|reconcil|scheduled.*state|state.*scheduled|apply.*state|state.*apply|update.*state|state.*update|github|openpmix\.git|ls-remote|git fetch' \
     "$multiple_output"; then
     fail 'generated jobs contain forbidden state, reconciliation, discovery, or status behavior'
 fi
@@ -312,12 +335,17 @@ assert empty == expected_noop
 expected_script = """\
 set -euo pipefail
 module load miniforge3/23.11.0-0
-python3 -m venv .ci-venv
-source .ci-venv/bin/activate
+export PMIX_JOB_ROOT="${CI_PROJECT_DIR}/.ci-work/${CI_JOB_ID}"
+export PMIX_VENV="${PMIX_JOB_ROOT}/venv"
+export PMIX_RFM_PREFIX="${PMIX_JOB_ROOT}/reframe"
+export PIP_CACHE_DIR="${PMIX_JOB_ROOT}/pip-cache"
+mkdir -p -- "$PMIX_JOB_ROOT" "$PIP_CACHE_DIR"
+python3 -m venv "$PMIX_VENV"
+source "$PMIX_VENV/bin/activate"
 python -m pip install --upgrade pip
 python -m pip install "Cython==3.2.6" "reframe-hpc==4.10.0"
-export PMIX_PYTHON="${CI_PROJECT_DIR}/.ci-venv/bin/python"
-export RFM_BIN="${CI_PROJECT_DIR}/.ci-venv/bin/reframe"
+export PMIX_PYTHON="${PMIX_VENV}/bin/python"
+export RFM_BIN="${PMIX_VENV}/bin/reframe"
 bash ci/run_exact_pmix_commit.sh
 """
 expected_multiple = dict(header)
@@ -326,7 +354,6 @@ for sha in (lower_sha, upper_sha, third_sha):
         "stage": "test",
         "extends": [".frontier-shell-runner"],
         "timeout": "1h",
-        "resource_group": "pmix-python-suite-frontier",
         "variables": {"PMIX_COMMIT": sha},
         "script": [expected_script],
         "after_script": ["bash ci/write_pmix_commit_result.sh ci-results"],
@@ -335,11 +362,13 @@ for sha in (lower_sha, upper_sha, third_sha):
             "expire_in": "14 days",
             "paths": [
                 f"ci-results/{sha.lower()}.env",
-                "stage/frontier/batch/pmix_test/"
+                ".ci-work/$CI_JOB_ID/reframe/output/",
+                ".ci-work/$CI_JOB_ID/reframe/perflogs/",
+                ".ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/"
                 "fetch_prrte_*/prrte-source.env",
-                "stage/frontier/batch/pmix_test/"
+                ".ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/"
                 "PMIxPython*Compat*Test/",
-                "stage/frontier/batch/pmix_test/"
+                ".ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/"
                 "PMIxPythonMappingPPRL3CacheTest/",
             ],
         },
@@ -348,6 +377,8 @@ assert multiple == expected_multiple
 
 expected_failure_script = """\
 set -euo pipefail
+export PMIX_JOB_ROOT="${CI_PROJECT_DIR}/.ci-work/${CI_JOB_ID}"
+mkdir -p -- "$PMIX_JOB_ROOT"
 printf 'Intentional multi-commit pilot failure for OpenPMIx commit: %s\\n' "$PMIX_COMMIT" >&2
 exit 1
 """
@@ -363,6 +394,14 @@ assert "module load" not in expected_failure_script
 assert "pip install" not in expected_failure_script
 assert "reframe" not in expected_failure_script.lower()
 assert "run_exact_pmix_commit" not in expected_failure_script
+for document in (multiple, failure):
+    jobs = {
+        name: value for name, value in document.items()
+        if name.startswith("pmix-")
+    }
+    assert jobs
+    assert all("resource_group" not in job for job in jobs.values())
+    assert all("parallel" not in job for job in jobs.values())
 PY
 else
     printf '# YAML parser unavailable; parse validation skipped\n'
@@ -377,6 +416,8 @@ import sys
 import yaml
 
 parent = yaml.safe_load(pathlib.Path(sys.argv[1]).read_text())
+assert "concurrency-preflight-a" not in parent
+assert "concurrency-preflight-b" not in parent
 failed_result_rule = (
     '$CI_PIPELINE_SOURCE == "web" && $PMIX_FAILED_RESULT_PILOT == "1"'
 )
