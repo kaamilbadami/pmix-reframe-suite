@@ -2,6 +2,7 @@ import glob
 import os
 import shlex
 import sys
+import threading
 import time
 from collections import Counter
 
@@ -9,8 +10,73 @@ import pmix
 
 
 TOPOLOGY_PROOF_TIMEOUT_SECONDS = 60
+TOPOLOGY_COMPLETION_TIMEOUT_SECONDS = 60
 PROCESS_PROOF_TIMEOUT_SECONDS = 15
 PROOF_POLL_INTERVAL_SECONDS = 0.1
+
+
+class TopologyCompletionTracker:
+    """Track completion of one exact topology-probe namespace."""
+
+    def __init__(self):
+        self._completion = threading.Event()
+        self._lock = threading.Lock()
+        self._sources = {}
+        self.namespace = None
+        self.source = None
+
+    def record(self, source):
+        """Retain a completion event, including one received early."""
+        source_copy = dict(source)
+        source_namespace = source_copy.get("nspace")
+
+        if source_namespace is None:
+            return
+
+        with self._lock:
+            self._sources[source_namespace] = source_copy
+
+            if source_namespace == self.namespace:
+                self.source = source_copy
+                self._completion.set()
+
+    def set_namespace(self, namespace):
+        """Select the exact namespace and apply any retained event."""
+        with self._lock:
+            self.namespace = namespace
+            self.source = self._sources.get(namespace)
+
+            if self.source is not None:
+                self._completion.set()
+
+    def wait(self, timeout_seconds):
+        """Wait for completion of the selected namespace."""
+        return self._completion.wait(timeout_seconds)
+
+
+def spawn_after_topology_completion(
+    tool,
+    process_job_info,
+    process_apps,
+    completion_tracker,
+    timeout_seconds
+):
+    """Launch the mapped job only after the topology job completes."""
+    if not completion_tracker.wait(timeout_seconds):
+        raise SystemExit(
+            "timed out waiting for topology namespace completion: "
+            f"namespace={completion_tracker.namespace}, "
+            f"timeout={timeout_seconds}s"
+        )
+
+    print(
+        "topology namespace completion observed:",
+        f"namespace={completion_tracker.namespace}",
+        f"source={completion_tracker.source}",
+        flush=True
+    )
+
+    return tool.spawn(process_job_info, process_apps)
 
 
 # Expected command:
@@ -82,6 +148,32 @@ print("init:", init_result)
 
 if init_result[0] != 0:
     raise SystemExit("init failed")
+
+
+topology_completion = TopologyCompletionTracker()
+
+
+def topology_completion_handler(
+    event_handler,
+    status,
+    source,
+    info,
+    results
+):
+    """Record the requested topology namespace completion event."""
+    topology_completion.record(source)
+
+    return pmix.PMIX_EVENT_ACTION_COMPLETE, None
+
+
+event_handler_result = tool.register_event_handler(
+    [pmix.PMIX_EVENT_JOB_END],
+    [],
+    topology_completion_handler
+)
+
+if event_handler_result[0] != 0:
+    raise SystemExit("topology completion handler registration failed")
 
 
 def wait_for_files(
@@ -329,6 +421,11 @@ try:
             "key": pmix.PMIX_MAPBY,
             "value": "ppr:1:node",
             "val_type": pmix.PMIX_STRING
+        },
+        {
+            "key": pmix.PMIX_NOTIFY_COMPLETION,
+            "value": True,
+            "val_type": pmix.PMIX_BOOL
         }
     ]
 
@@ -343,6 +440,8 @@ try:
 
     if topology_spawn_result[0] != 0:
         raise SystemExit("topology probe spawn failed")
+
+    topology_completion.set_namespace(topology_spawn_result[1])
 
     topology_files = wait_for_files(
         topology_pattern,
@@ -509,9 +608,20 @@ try:
     print("map-by policy:", map_policy)
     print("bind-to policy: core")
 
-    process_spawn_result = tool.spawn(
+    process_spawn_result = spawn_after_topology_completion(
+        tool,
         process_job_info,
-        process_apps
+        process_apps,
+        topology_completion,
+        TOPOLOGY_COMPLETION_TIMEOUT_SECONDS
+    )
+
+    print(
+        "L3 topology completion diagnostic:",
+        f"topology_namespace={topology_completion.namespace}",
+        f"completion_source={topology_completion.source}",
+        f"mapped_spawn_result={process_spawn_result}",
+        flush=True
     )
 
     print("process spawn:", process_spawn_result)
