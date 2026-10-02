@@ -58,6 +58,10 @@ SLOTS_PER_NODE=32
 # Repeat each node-count test five times.
 TRIALS=5
 
+# Bound graceful and forced DVM shutdown so cleanup cannot hang the job.
+DVM_STOP_TIMEOUT_SECONDS=10
+DVM_KILL_GRACE_SECONDS=2
+
 
 # Get every hostname in the Slurm allocation.
 mapfile -t ALLOCATED_HOSTS < <(
@@ -77,24 +81,77 @@ fi
 PRTE_PID=""
 
 
+# Return success while the DVM is running, but not after it becomes a zombie.
+dvm_is_running()
+{
+    local process_state
+
+    [[ -n "$PRTE_PID" ]] || return 1
+
+    process_state=$(ps -o stat= -p "$PRTE_PID" 2>/dev/null) || return 1
+    process_state=${process_state//[[:space:]]/}
+
+    [[ -n "$process_state" && "$process_state" != Z* ]]
+}
+
+
+# Poll for a bounded number of tenths of a second.
+wait_for_dvm_exit()
+{
+    local attempts=$1
+    local attempt
+
+    for ((attempt=1; attempt<=attempts; attempt++))
+    do
+        dvm_is_running || return 0
+        sleep 0.1
+    done
+
+    ! dvm_is_running
+}
+
+
 # Stop the current PRRTE DVM and remove temporary files.
 cleanup_dvm()
 {
+    local cleanup_status=0
+
     if [[ -f dvm.uri ]]
     then
-        "$PRRTE/bin/pterm" \
+        timeout "${DVM_STOP_TIMEOUT_SECONDS}s" \
+            "$PRRTE/bin/pterm" \
             --dvm-uri file:dvm.uri \
             >/dev/null 2>&1 || true
     fi
 
     if [[ -n "$PRTE_PID" ]]
     then
-        wait "$PRTE_PID" 2>/dev/null || true
+        if ! wait_for_dvm_exit $((DVM_STOP_TIMEOUT_SECONDS * 10))
+        then
+            echo "PRRTE DVM did not stop gracefully; sending TERM to PID $PRTE_PID"
+            kill -TERM "$PRTE_PID" 2>/dev/null || true
+        fi
+
+        if ! wait_for_dvm_exit $((DVM_KILL_GRACE_SECONDS * 10))
+        then
+            echo "PRRTE DVM ignored TERM; sending KILL to PID $PRTE_PID"
+            kill -KILL "$PRTE_PID" 2>/dev/null || true
+        fi
+
+        if wait_for_dvm_exit $((DVM_KILL_GRACE_SECONDS * 10))
+        then
+            wait "$PRTE_PID" 2>/dev/null || true
+        else
+            echo "PRRTE DVM PID $PRTE_PID did not exit after KILL"
+            cleanup_status=1
+        fi
     fi
 
     PRTE_PID=""
 
-    rm -f dvm.uri process_*_host
+    rm -f dvm.uri process_*_host*
+
+    return "$cleanup_status"
 }
 
 
@@ -134,7 +191,7 @@ do
 
     LOG_FILE="prte-${node_count}node.log"
 
-    rm -f dvm.uri "$LOG_FILE" process_*_host
+    rm -f dvm.uri "$LOG_FILE" process_*_host*
 
 
     # Start PRRTE on only the selected hosts.
@@ -163,7 +220,7 @@ do
     do
         echo "NODES $node_count TRIAL $trial START"
 
-        rm -f process_*_host
+        rm -f process_*_host*
 
         "$PYTHON" spawn_scaling_multinode_test.py \
             "$NUM_PROCESSES" \
