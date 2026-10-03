@@ -136,31 +136,102 @@ fi
 # Store the running PRRTE process ID.
 PRTE_PID=""
 
+DVM_STOP_TIMEOUT_SECONDS=10
+DVM_KILL_GRACE_SECONDS=5
+
+
+# Return success while the DVM is running, but not after it becomes a zombie.
+dvm_is_running()
+{
+    local process_state
+
+    [[ -n "$PRTE_PID" ]] || return 1
+
+    process_state=$(ps -o stat= -p "$PRTE_PID" 2>/dev/null) || return 1
+    process_state=${process_state//[[:space:]]/}
+
+    [[ -n "$process_state" && "$process_state" != Z* ]]
+}
+
+
+# Poll for a bounded number of tenths of a second.
+wait_for_dvm_exit()
+{
+    local attempts=$1
+    local attempt
+
+    for ((attempt=1; attempt<=attempts; attempt++))
+    do
+        dvm_is_running || return 0
+        sleep 0.1
+    done
+
+    ! dvm_is_running
+}
+
 
 # Stop the current PRRTE DVM and remove temporary files.
 cleanup_dvm()
 {
+    local cleanup_status=0
+
     if [[ -f dvm.uri ]]
     then
-        "$PRRTE/bin/pterm" \
+        timeout --kill-after=5s "${DVM_STOP_TIMEOUT_SECONDS}s" \
+            "$PRRTE/bin/pterm" \
             --dvm-uri file:dvm.uri \
             >/dev/null 2>&1 || true
     fi
 
     if [[ -n "$PRTE_PID" ]]
     then
-        wait "$PRTE_PID" 2>/dev/null || true
+        if ! wait_for_dvm_exit $((DVM_STOP_TIMEOUT_SECONDS * 10))
+        then
+            echo "PRRTE DVM did not stop gracefully; sending TERM to PID $PRTE_PID"
+            kill -TERM "$PRTE_PID" 2>/dev/null || true
+        fi
+
+        if ! wait_for_dvm_exit $((DVM_KILL_GRACE_SECONDS * 10))
+        then
+            echo "PRRTE DVM ignored TERM; sending KILL to PID $PRTE_PID"
+            kill -KILL "$PRTE_PID" 2>/dev/null || true
+        fi
+
+        if wait_for_dvm_exit $((DVM_KILL_GRACE_SECONDS * 10))
+        then
+            wait "$PRTE_PID" 2>/dev/null || true
+        else
+            echo "PRRTE DVM PID $PRTE_PID did not exit after KILL"
+            cleanup_status=1
+        fi
     fi
 
     PRTE_PID=""
 
-    # Preserve topology proofs and partial output for failure diagnosis.
-    rm -f dvm.uri process_*_l3* started_*_l3*
+    # Keep proof and start files for failure diagnosis; later trials remove them.
+    rm -f dvm.uri
+
+    return "$cleanup_status"
 }
 
 
 # Run cleanup if the script exits early.
 trap cleanup_dvm EXIT
+
+
+report_controller_evidence()
+(
+    shopt -s nullglob
+    started_files=(started_*_l3)
+    proof_files=(process_*_l3)
+    trace_files=(l3_mapped_spawn_*.trace)
+    echo "L3 failure evidence: started=${#started_files[@]} proofs=${#proof_files[@]} traces=${#trace_files[@]}"
+    for trace_file in "${trace_files[@]}"
+    do
+        echo "L3 spawn trace: $trace_file"
+        tail -n 80 -- "$trace_file" || true
+    done
+)
 
 
 # Test each node-count subset inside the same allocation.
@@ -230,13 +301,26 @@ do
 
             rm -f topology_*_l3* process_*_l3* started_*_l3*
 
-            timeout \
+            controller_start_seconds=$SECONDS
+            if timeout \
                 --signal=TERM \
                 --kill-after=30s \
                 300s \
                 "$PYTHON" -u spawn_mapping_ppr_l3cache_test.py \
                 "$EXPECTED_HOSTS" \
                 "$processes_per_l3cache"
+            then
+                controller_status=0
+            else
+                controller_status=$?
+            fi
+
+            echo "L3 controller exit: nodes=$node_count ppr=$processes_per_l3cache trial=$trial status=$controller_status elapsed=$((SECONDS - controller_start_seconds))s"
+            if (( controller_status != 0 ))
+            then
+                report_controller_evidence
+                exit "$controller_status"
+            fi
 
             echo \
                 "NODES $node_count PPR $processes_per_l3cache L3CACHE TRIAL $trial PASS"

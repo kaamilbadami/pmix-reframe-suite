@@ -1,5 +1,8 @@
 
 .venv/
+.venv-pmix-validation/
+validation-single-node-*/
+validation-l3-*/
 .ci-venv/
 .ci-work/
 .ci-state/

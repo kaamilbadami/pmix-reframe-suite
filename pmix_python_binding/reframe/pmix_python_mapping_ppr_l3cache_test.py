@@ -58,7 +58,11 @@ class PMIxPythonMappingPPRL3CacheTest(
     # Preserve topology-child evidence when the mapping test fails.
     keep_files = [
         'l3_topology_*',
-        'topology_*_l3*'
+        'topology_*_l3*',
+        'prte-*node-l3cache.log',
+        'process_*_l3*',
+        'started_*_l3*',
+        'l3_mapped_spawn_*.trace'
     ]
 
     # Default resources. The post-init hook recalculates these values.

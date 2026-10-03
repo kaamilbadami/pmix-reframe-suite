@@ -245,7 +245,7 @@ class TestL3TopologyDiagnostics(unittest.TestCase):
 
         registration = next(
             node.value
-            for node in tree.body
+            for node in ast.walk(tree)
             if isinstance(node, ast.Assign)
             and any(
                 isinstance(target, ast.Name)
@@ -271,7 +271,8 @@ class TestL3TopologyDiagnostics(unittest.TestCase):
         tracker = self.completion_tracker()
         tracker.set_namespace("topology-7")
         spawn_after_completion = workload_definition(
-            "spawn_after_topology_completion"
+            "spawn_after_topology_completion",
+            {"spawn_with_diagnostics": lambda tool, info, apps: tool.spawn(info, apps)}
         )
 
         class Tool:
@@ -298,7 +299,8 @@ class TestL3TopologyDiagnostics(unittest.TestCase):
         tracker.record({"nspace": "unrelated-8", "rank": 0})
         tracker.record({"nspace": "topology-7", "rank": 0})
         spawn_after_completion = workload_definition(
-            "spawn_after_topology_completion"
+            "spawn_after_topology_completion",
+            {"spawn_with_diagnostics": lambda tool, info, apps: tool.spawn(info, apps)}
         )
 
         class Tool:
