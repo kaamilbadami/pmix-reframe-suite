@@ -182,7 +182,7 @@ itself from the current master tip. Discovery fetches OpenPMIx history and write
 every commit in `known-good..master`, oldest to newest, excluding the known-good
 base. An empty range produces a no-op child pipeline and leaves state unchanged.
 
-For a nonempty range, a generated child pipeline runs one existing exact-commit PMIx Python suite job per SHA. Every job uses the `pmix-python-suite-frontier` resource group and always publishes a strict result record. Result collection is allowed to continue after failed child jobs or incomplete artifact retrieval so that reconciliation can identify a safe prefix.
+For a nonempty range, a generated child pipeline runs one existing exact-commit PMIx Python suite job per SHA. Child jobs may run concurrently as runner and Slurm capacity permit; they do not use a resource group or an artificial concurrency cap. Each job uses a job-specific workspace, virtual environment, ReFrame prefix, and pip cache, and always publishes a strict result record. Result collection is allowed to continue after failed child jobs or incomplete artifact retrieval so that reconciliation can identify a safe prefix.
 
 Reconciliation compares the byte-exact discovery baseline with a fresh read of
 the Lustre state, validates ordered result records, and stops at the first failed,
@@ -205,8 +205,11 @@ newer state, and only this final scheduled job can invoke state application.
 The ordinary web suite remains available for manual complete-suite execution,
 but its cache is read-only and it cannot advance authoritative scheduled state.
 The opt-in manual multi-commit pilot also remains proposal-only. Scheduled
-multi-commit execution does not post GitHub status. A Frontier resource group
-prevents overlapping PMIx suite and state-application jobs.
+multi-commit execution does not post GitHub status. The ordinary web suite,
+trusted-PR execution jobs, and scheduled state-application job share the
+`pmix-python-suite-frontier` resource group. Generated exact-commit child jobs
+can overlap these jobs; authoritative state application is protected separately
+by its file lock and baseline check.
 
 ### Manual trusted-author `pmix-tests` PR pilot
 
@@ -292,7 +295,7 @@ The three GitLab jobs preserve the trust boundaries used by the earlier
 
 The OpenPMIx PR's build system is credential-untrusted. The isolated execution
 passes its verified source tree into the existing exact-PMIx fixture and
-Autotools build path, then runs the five suite-owned Python unit tests and the
+Autotools build path, then runs the suite-owned Python unit tests and the
 existing 11 ReFrame checks. Submitted ReFrame scripts use
 `sbatch --export=NIL`, system-owned OLCF and Cray initialization, and a
 job-specific mode-0700 directory on node-local `/tmp` for PMIx and PRRTE
