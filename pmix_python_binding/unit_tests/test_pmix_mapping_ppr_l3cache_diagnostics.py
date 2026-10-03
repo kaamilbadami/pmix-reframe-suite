@@ -245,7 +245,7 @@ class TestL3TopologyDiagnostics(unittest.TestCase):
 
         registration = next(
             node.value
-            for node in tree.body
+            for node in ast.walk(tree)
             if isinstance(node, ast.Assign)
             and any(
                 isinstance(target, ast.Name)

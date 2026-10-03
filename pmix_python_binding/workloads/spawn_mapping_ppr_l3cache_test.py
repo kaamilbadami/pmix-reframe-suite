@@ -11,8 +11,93 @@ import pmix
 
 TOPOLOGY_PROOF_TIMEOUT_SECONDS = 60
 TOPOLOGY_COMPLETION_TIMEOUT_SECONDS = 60
-PROCESS_PROOF_TIMEOUT_SECONDS = 15
+PROCESS_COMPLETION_TIMEOUT_SECONDS = 60
+PROCESS_PROOF_TIMEOUT_SECONDS = 30
 PROOF_POLL_INTERVAL_SECONDS = 0.1
+
+
+class SpawnCompletionTracker:
+    """Track completion of one exact spawned namespace."""
+
+    def __init__(self):
+        self._completion = threading.Event()
+        self._lock = threading.Lock()
+        self._events = {}
+        self.namespace = None
+        self.event = None
+
+    def record(self, status, source, info=None, results=None):
+        """Retain a completion event, including one received early."""
+        source_copy = dict(source or {})
+        source_namespace = source_copy.get("nspace")
+
+        if source_namespace is None:
+            return
+
+        event = {
+            "status": status,
+            "source": source_copy,
+            "info": list(info or []),
+            "results": list(results or [])
+        }
+
+        with self._lock:
+            self._events[source_namespace] = event
+
+            if source_namespace == self.namespace:
+                self.event = event
+                self._completion.set()
+
+    def set_namespace(self, namespace):
+        """Select the exact namespace and apply any retained event."""
+        with self._lock:
+            self.namespace = namespace
+            self.event = self._events.get(namespace)
+
+            if self.event is not None:
+                self._completion.set()
+
+    def wait(self, timeout_seconds):
+        """Wait for completion of the selected namespace."""
+        return self._completion.wait(timeout_seconds)
+
+
+def get_pmix_info_value(info, key):
+    """Return an event-info value while normalizing PMIx byte keys."""
+    if isinstance(key, bytes):
+        key = key.decode("ascii")
+
+    return next(
+        (item.get("value") for item in (info or [])
+         if item.get("key") == key),
+        None
+    )
+
+
+def require_successful_job_termination(event):
+    """Fail closed unless JOB_END reports successful job termination."""
+    termination_status = get_pmix_info_value(
+        event.get("info"),
+        pmix.PMIX_JOB_TERM_STATUS
+    )
+
+    if termination_status is None:
+        reason = "spawned namespace completion status was missing"
+    elif termination_status != pmix.PMIX_SUCCESS:
+        reason = (
+            "spawned namespace terminated unsuccessfully: "
+            f"PMIX_JOB_TERM_STATUS={termination_status}"
+        )
+    else:
+        return termination_status
+
+    print(
+        "spawn completion failure:",
+        f"reason={reason}",
+        f"event={event}",
+        flush=True
+    )
+    raise SystemExit(reason)
 
 
 class TopologyCompletionTracker:
@@ -151,6 +236,7 @@ if init_result[0] != 0:
 
 
 topology_completion = TopologyCompletionTracker()
+process_completion = SpawnCompletionTracker()
 
 
 def topology_completion_handler(
@@ -160,20 +246,11 @@ def topology_completion_handler(
     info,
     results
 ):
-    """Record the requested topology namespace completion event."""
+    """Retain both jobs' events for exact-namespace correlation."""
     topology_completion.record(source)
+    process_completion.record(status, source, info, results)
 
     return pmix.PMIX_EVENT_ACTION_COMPLETE, None
-
-
-event_handler_result = tool.register_event_handler(
-    [pmix.PMIX_EVENT_JOB_END],
-    [],
-    topology_completion_handler
-)
-
-if event_handler_result[0] != 0:
-    raise SystemExit("topology completion handler registration failed")
 
 
 def wait_for_files(
@@ -258,6 +335,24 @@ def wait_for_files(
     )
 
 
+def wait_for_mapped_completion_and_proofs(
+    tracker, pattern, expected_count,
+    completion_timeout_seconds=PROCESS_COMPLETION_TIMEOUT_SECONDS,
+    visibility_timeout_seconds=PROCESS_PROOF_TIMEOUT_SECONDS
+):
+    """Require successful mapped-job completion before judging proofs."""
+    if not tracker.wait(completion_timeout_seconds):
+        raise SystemExit(
+            "mapped namespace completion was not observed: "
+            f"namespace={tracker.namespace}"
+        )
+    print("mapped namespace completion observed:", tracker.namespace, flush=True)
+    require_successful_job_termination(tracker.event)
+    return wait_for_files(
+        pattern, expected_count, "process proof", visibility_timeout_seconds
+    )
+
+
 def parse_cpu_list(cpu_list_text):
     """Expand a Linux CPU-list string such as 0-3,8 into a set."""
     cpu_numbers = set()
@@ -294,6 +389,12 @@ def parse_cpu_list(cpu_list_text):
 finalize_result = None
 
 try:
+    event_handler_result = tool.register_event_handler(
+        [pmix.PMIX_EVENT_JOB_END], [], topology_completion_handler
+    )
+    if event_handler_result[0] != pmix.PMIX_SUCCESS:
+        raise SystemExit("topology completion handler registration failed")
+
     # First launch one process per node to discover all L3-cache domains.
     # Diagnostics are best-effort: the EXIT trap preserves the topology
     # command's status even if it cannot write the status artifact.
@@ -602,6 +703,11 @@ try:
             "key": pmix.PMIX_BINDTO,
             "value": "core",
             "val_type": pmix.PMIX_STRING
+        },
+        {
+            "key": pmix.PMIX_NOTIFY_COMPLETION,
+            "value": True,
+            "val_type": pmix.PMIX_BOOL
         }
     ]
 
@@ -629,11 +735,14 @@ try:
     if process_spawn_result[0] != 0:
         raise SystemExit("mapped process spawn failed")
 
-    process_files = wait_for_files(
+    if not process_spawn_result[1]:
+        raise SystemExit("mapped spawn returned no namespace")
+    process_completion.set_namespace(process_spawn_result[1])
+
+    process_files = wait_for_mapped_completion_and_proofs(
+        process_completion,
         process_pattern,
-        num_processes,
-        "process proof",
-        PROCESS_PROOF_TIMEOUT_SECONDS
+        num_processes
     )
 
     cache_counts = Counter()
