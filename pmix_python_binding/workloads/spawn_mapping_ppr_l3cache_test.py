@@ -161,6 +161,7 @@ def spawn_after_topology_completion(
         flush=True
     )
 
+    print("mapped spawn call starting", flush=True)
     return tool.spawn(process_job_info, process_apps)
 
 
