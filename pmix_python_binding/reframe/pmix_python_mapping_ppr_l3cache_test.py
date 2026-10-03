@@ -61,7 +61,8 @@ class PMIxPythonMappingPPRL3CacheTest(
         'topology_*_l3*',
         'prte-*node-l3cache.log',
         'process_*_l3*',
-        'started_*_l3*'
+        'started_*_l3*',
+        'l3_mapped_spawn_*.trace'
     ]
 
     # Default resources. The post-init hook recalculates these values.

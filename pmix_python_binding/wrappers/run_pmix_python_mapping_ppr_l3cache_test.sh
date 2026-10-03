@@ -219,6 +219,21 @@ cleanup_dvm()
 trap cleanup_dvm EXIT
 
 
+report_controller_evidence()
+(
+    shopt -s nullglob
+    started_files=(started_*_l3)
+    proof_files=(process_*_l3)
+    trace_files=(l3_mapped_spawn_*.trace)
+    echo "L3 failure evidence: started=${#started_files[@]} proofs=${#proof_files[@]} traces=${#trace_files[@]}"
+    for trace_file in "${trace_files[@]}"
+    do
+        echo "L3 spawn trace: $trace_file"
+        tail -n 80 -- "$trace_file" || true
+    done
+)
+
+
 # Test each node-count subset inside the same allocation.
 for node_count in "${NODE_COUNT_LIST[@]}"
 do
@@ -303,6 +318,7 @@ do
             echo "L3 controller exit: nodes=$node_count ppr=$processes_per_l3cache trial=$trial status=$controller_status elapsed=$((SECONDS - controller_start_seconds))s"
             if (( controller_status != 0 ))
             then
+                report_controller_evidence
                 exit "$controller_status"
             fi
 

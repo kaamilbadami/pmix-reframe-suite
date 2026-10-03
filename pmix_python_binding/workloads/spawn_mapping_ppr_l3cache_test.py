@@ -139,6 +139,42 @@ class TopologyCompletionTracker:
         return self._completion.wait(timeout_seconds)
 
 
+def spawn_with_diagnostics(tool, job_info, apps, traceback_interval_seconds=30):
+    """Capture all Python thread stacks if the synchronous spawn stalls."""
+    import faulthandler
+    import os
+    import time
+
+    trace_path = f"l3_mapped_spawn_{os.getpid()}.trace"
+    started = time.monotonic()
+    print(
+        "mapped spawn call starting:",
+        f"pid={os.getpid()} trace={trace_path}",
+        flush=True
+    )
+    with open(trace_path, "w") as trace:
+        print(
+            f"controller_pid={os.getpid()} app_entries={len(apps)} "
+            f"requested_processes={sum(app.get('maxprocs', 1) for app in apps)}",
+            file=trace, flush=True
+        )
+        faulthandler.dump_traceback_later(
+            traceback_interval_seconds, repeat=True, file=trace, exit=False
+        )
+        try:
+            result = tool.spawn(job_info, apps)
+        except BaseException as error:
+            print(f"spawn_exception={type(error).__name__}", file=trace, flush=True)
+            raise
+        finally:
+            # Cancel before closing the file, including exception paths.
+            faulthandler.cancel_dump_traceback_later()
+        elapsed = time.monotonic() - started
+        print(f"spawn_result={result!r} elapsed={elapsed:.3f}s", file=trace, flush=True)
+    print("mapped spawn call returned:", f"elapsed={elapsed:.3f}s", flush=True)
+    return result
+
+
 def spawn_after_topology_completion(
     tool,
     process_job_info,
@@ -161,8 +197,7 @@ def spawn_after_topology_completion(
         flush=True
     )
 
-    print("mapped spawn call starting", flush=True)
-    return tool.spawn(process_job_info, process_apps)
+    return spawn_with_diagnostics(tool, process_job_info, process_apps)
 
 
 # Expected command:

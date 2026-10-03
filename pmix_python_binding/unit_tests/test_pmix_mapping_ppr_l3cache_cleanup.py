@@ -96,7 +96,8 @@ class L3CleanupTests(unittest.TestCase):
         script = "\n".join([
             "set -euo pipefail", "node_count=4", "processes_per_l3cache=8",
             "trial=1", 'PYTHON="/mock-python"', 'EXPECTED_HOSTS="nodes"',
-            "timeout() { return 124; }", controller,
+            "timeout() { return 124; }",
+            "report_controller_evidence() { return 0; }", controller,
             'echo "unexpected success"'
         ])
         result = subprocess.run(
