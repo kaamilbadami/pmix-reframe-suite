@@ -151,6 +151,8 @@ The startup workloads locate `prte` and `pterm` through `PRTE_DIR`, `PATH`, or t
 
 ## GitLab pipelines
 
+See [the CI handoff guide](ci/README.md) for scheduled pipeline behavior, CI variables, results, and the Frontier last-known-good state file.
+
 The tracked workflow accepts only two pipeline sources:
 
 - A manual pipeline started from the GitLab web interface always runs the complete PMIx Python suite without changing the production known-good state.
