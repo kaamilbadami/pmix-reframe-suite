@@ -491,8 +491,8 @@ def classify_reframe_report(document, runner_status):
         phase = case.get("fail_phase")
         reason = str(case.get("fail_reason", "")).lower()
         if (any(term in reason for term in (
-                "scheduler", "slurm", "cancel", "timeout", "submission",
-                "job error", "wait")) or phase in ("startup", "cleanup")):
+                "scheduler", "slurm", "submission", "job error",
+                "job cancelled", "job canceled")) or phase in ("startup", "cleanup")):
             failure_classifications.append(("error", "scheduler-error"))
         elif case.get("fixture") is True:
             if name in ("fetch_libevent", "build_libevent", "fetch_prrte"):
@@ -995,3 +995,4 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

@@ -113,6 +113,8 @@ with tempfile.TemporaryDirectory(prefix="openpmix-result-test-") as temporary:
          "failure", "source-build-failure"),
         ("fetch_libevent", "setup", "download failed", "1", 2,
          "error", "fixture-error"),
+        ("PMIxPythonScalingTest", "sanity", "spawned process timeout while waiting", "1", 1,
+         "failure", "test-failure"),
         ("PMIxPythonScalingTest", "run", "slurm job timeout", "1", 2,
          "error", "scheduler-error"),
     )
@@ -179,3 +181,4 @@ with tempfile.TemporaryDirectory(prefix="openpmix-result-test-") as temporary:
 
 print("1..{}".format(passed_count))
 PY
+

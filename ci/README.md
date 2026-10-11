@@ -57,5 +57,14 @@ Open the pipeline's commit jobs for test logs and artifacts. Each generated comm
 If runners are disabled, pause the schedule to avoid accumulating waiting pipelines. Pausing does not cancel existing pipelines or erase saved state.
 
 PR testing is under development and will be documented separately once validated.
+Automatic OpenPMIx PR discovery remains opt-in (`OPENPMIX_PR_AUTODISCOVERY=1`).
+It requires job-token access to the pipeline-list API (`READ_PIPELINES` where
+fine-grained permissions are used). It identifies PR heads by child pipeline
+names, suppresses active or successful attempts, and retries failed, canceled,
+or skipped attempts. Pipelines created before this naming convention are not
+recognized and can be tested again. Overlapping discovery runs can still launch
+duplicates; validate live API access and address that race before enabling it.
+OpenPMIx PR execution uses the same fixed PRRTE v5.0 commit as scheduled jobs.
 
 Configuration: [`.gitlab-ci.yml`](../.gitlab-ci.yml), [`openpmix_pr_jobs.yml`](openpmix_pr_jobs.yml), and [`run_pmix_python_suite.sh`](run_pmix_python_suite.sh). See the [root README](../README.md) for installation and test coverage. Development-only pilots are outside this guide.
+

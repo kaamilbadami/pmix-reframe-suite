@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import importlib.util
 import yaml
 
 
@@ -46,6 +47,21 @@ def run(root, prs, pipelines):
     ], cwd=str(root), env=environment, stdout=subprocess.PIPE,
        stderr=subprocess.PIPE, check=False)
 
+
+spec = importlib.util.spec_from_file_location("discovery", discover)
+module = importlib.util.module_from_spec(spec)
+sys.path.insert(0, str(ci))
+spec.loader.exec_module(module)
+for status in ("success", "running", "pending", "failed", "canceled", "skipped"):
+    def fake_get(url, headers):
+        check("/variables" not in url, "unsupported variables endpoint requested")
+        return [{"id": 123, "status": status,
+                 "name": "openpmix-pr:42:" + "a" * 40}]
+    module.get_json = fake_get
+    pairs = module.pipeline_pairs("https://gitlab.example/api/v4", "1", "fixture-token")
+    check((("42", "a" * 40) in pairs) == (status in module.SUPPRESS_STATES),
+          "retry policy differs for " + status)
+passed("supported pipeline-list endpoint suppresses active/successful heads and retries failed/canceled heads")
 
 with tempfile.TemporaryDirectory(prefix="openpmix-discovery-") as temporary:
     root = Path(temporary)
@@ -149,3 +165,4 @@ with tempfile.TemporaryDirectory(prefix="openpmix-discovery-") as temporary:
 
 print("1..{}".format(passed_count))
 PY
+
