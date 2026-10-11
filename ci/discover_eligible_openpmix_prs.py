@@ -28,6 +28,11 @@ PIPELINE_STATES = frozenset((
     "created", "waiting_for_resource", "preparing", "pending", "running",
     "success", "failed", "canceled", "skipped", "manual", "scheduled",
 ))
+SUPPRESS_STATES = frozenset((
+    "created", "waiting_for_resource", "preparing", "pending", "running",
+    "success", "manual", "scheduled",
+))
+PIPELINE_NAME_RE = re.compile(r"openpmix-pr:([1-9][0-9]*):([0-9a-f]{40})\Z")
 OUTPUT_KEYS = (
     "pr_number", "head_sha", "author", "base_repository",
     "head_repository", "source_policy",
@@ -135,27 +140,12 @@ def pipeline_pairs(api_url, project_id, token):
                     pipeline.get("status") not in PIPELINE_STATES or
                     not isinstance(pipeline.get("id"), int)):
                 raise DiscoveryError("GitLab pipeline identity is malformed")
-            variables = get_json(
-                base + "/pipelines/{}/variables".format(pipeline["id"]),
-                headers,
-            )
-            if not isinstance(variables, list):
-                raise DiscoveryError("GitLab variables response is malformed")
-            mapping = {}
-            for variable in variables:
-                if (not isinstance(variable, dict) or
-                        not isinstance(variable.get("key"), str) or
-                        not isinstance(variable.get("value"), str)):
-                    raise DiscoveryError("GitLab pipeline variable is malformed")
-                key = variable["key"]
-                if key in mapping:
-                    raise DiscoveryError("duplicate GitLab pipeline variable")
-                mapping[key] = variable["value"]
-            number = mapping.get("OPENPMIX_PR_NUMBER", "")
-            sha = mapping.get("OPENPMIX_PR_EXPECTED_SHA", "")
-            if (mapping.get("OPENPMIX_PR_INTERNAL") == "1" and
-                    NUMBER_RE.fullmatch(number) and SHA_RE.fullmatch(sha)):
-                pairs.add((number, sha))
+            # Pipeline names use the supported pipeline-list endpoint. Reading
+            # pipeline variables is not supported by CI_JOB_TOKEN.
+            name = pipeline.get("name")
+            match = PIPELINE_NAME_RE.fullmatch(name) if isinstance(name, str) else None
+            if match and pipeline["status"] in SUPPRESS_STATES:
+                pairs.add(match.groups())
         if len(pipelines) < 100:
             return pairs
     raise DiscoveryError("GitLab pipeline pagination exceeded its bound")
@@ -291,3 +281,4 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

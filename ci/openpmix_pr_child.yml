@@ -15,6 +15,8 @@ variables:
   FF_GIT_URLS_WITHOUT_TOKENS: "1"
 
 workflow:
+  name: "openpmix-pr:${OPENPMIX_PR_NUMBER}:${OPENPMIX_PR_EXPECTED_SHA}"
   rules:
     - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $OPENPMIX_PR_INTERNAL == "1"'
     - when: never
+
