@@ -142,7 +142,7 @@ def select_prrte(shas, history_repo):
     def git(*args):
         return subprocess.run(
             ["git", "-C", str(history_repo), *args],
-            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            universal_newlines=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
 
     shallow = git("rev-parse", "--is-shallow-repository")
@@ -211,7 +211,10 @@ def atomic_write(output_path, content):
         os.replace(temporary_name, output_path)
     except OSError as error:
         if temporary_name is not None:
-            Path(temporary_name).unlink(missing_ok=True)
+            try:
+                Path(temporary_name).unlink()
+            except FileNotFoundError:
+                pass
         fail(f"could not write output YAML: {output_path}: {error}")
 
 
@@ -260,7 +263,7 @@ def main(arguments=None):
                 result = subprocess.run([
                     "git", "clone", "--bare", "--single-branch", "--branch", "master",
                     "https://github.com/openpmix/openpmix.git", str(history)
-                ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
                 if result.returncode:
                     fail(f"could not fetch OpenPMIx history: {result.stderr.strip()}")
                 selections = select_prrte(shas, history)
