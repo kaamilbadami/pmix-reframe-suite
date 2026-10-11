@@ -42,7 +42,7 @@ Normal runs do not require development-pilot switches. CI supplies the job ident
 | `PMIX_AUTHORITATIVE_STATE_FILE` | Selects the scheduled checkpoint; defaults to the Frontier path above. |
 | `OLCF_SERVICE_ACCOUNT` | Selects the Frontier execution account through runner configuration; defaults to `gen243_auser`. |
 | `PMIX_COMMIT` | Identifies the exact OpenPMIx commit being tested. Scheduled jobs set it individually. The normal manual web run resolves master itself rather than honoring a supplied pin. |
-| `PRRTE_BRANCH`, `PRRTE_COMMIT` | Select the PRRTE source used with OpenPMIx. Scheduled commit jobs currently pin branch `v5.0` at `22820a01e17547dbf1c4f9628eac327f193caa45`. |
+| `PRRTE_BRANCH`, `PRRTE_COMMIT` | Select the PRRTE source used with OpenPMIx. Multi-commit generators select an exact compatible pin per job; see the compatibility section below. |
 | `GITHUB_PR_READ_TOKEN` | Reads PR information for PR workflows; ordinary scheduled commit discovery does not need it. |
 | `GITHUB_STATUS_TOKEN` | Posts GitHub status in supported workflows. Scheduled multi-commit testing and internal OpenPMIx PR testing do not post GitHub status. |
 
@@ -68,3 +68,22 @@ OpenPMIx PR execution uses the same fixed PRRTE v5.0 commit as scheduled jobs.
 
 Configuration: [`.gitlab-ci.yml`](../.gitlab-ci.yml), [`openpmix_pr_jobs.yml`](openpmix_pr_jobs.yml), and [`run_pmix_python_suite.sh`](run_pmix_python_suite.sh). See the [root README](../README.md) for installation and test coverage. Development-only pilots are outside this guide.
 
+
+### PRRTE compatibility for exact OpenPMIx commits
+
+Scheduled and manual multi-commit generators use `--select-prrte` to set
+`PRRTE_BRANCH` and `PRRTE_COMMIT` separately for each child job. Complete
+OpenPMIx Git ancestry selects `v5.0` / `22820a01e17547dbf1c4f9628eac327f193caa45`
+for commits without the `1244a4498895f07f0b1a6e2d81c97d4104c2e12b` change,
+and `master` / `a783dab5948c76bca5bde1647f291d9492f33fca` for that commit
+and its descendants. This handles the two-argument `pmix_getline` change.
+The newer pairing passed all 17 Frontier checks on `1244a449`, `dba155a5`,
+and `effa2f89` on October 11, 2026. It does not guarantee compatibility
+with future upstream changes.
+
+Selection fetches official OpenPMIx master history once per nonempty generator
+run. Missing commits or shallow history stop generation rather than guessing.
+For local checks, pass `--pmix-history PATH` with `--select-prrte` to use a
+complete existing OpenPMIx repository. Child job variables override the
+parent's legacy dependency defaults; explicit pipeline-level overrides should
+not be supplied for automatic compatibility runs.

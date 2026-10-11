@@ -130,6 +130,7 @@ generate-pmix-child-pipeline-pilot:
       generator_args=(
           ci-generated/pmix-untested-commits.txt
           ci-generated/pmix-child-pipeline.yml
+          --select-prrte
       )
       if [[ -n ${PMIX_CHILD_PIPELINE_FAIL_COMMIT:-} ]]; then
           generator_args+=(
@@ -236,7 +237,8 @@ generate-pmix-child-pipeline-scheduled:
           "$output_dir/pmix-untested-commits.txt"
       python3 ci/generate_pmix_child_pipeline.py \
           "$output_dir/pmix-untested-commits.txt" \
-          "$output_dir/pmix-child-pipeline.yml"
+          "$output_dir/pmix-child-pipeline.yml" \
+          --select-prrte
 
   artifacts:
     expire_in: 14 days
@@ -710,6 +712,7 @@ pmix-python-suite:
     - bash ci/test_run_exact_pmix_commit.sh
     - bash ci/test_discover_untested_pmix_commits.sh
     - bash ci/test_generate_pmix_child_pipeline.sh
+    - python3 ci/test_prrte_selection.py
     - bash ci/test_pmix_collection_reconciliation_pilot.sh
     - bash ci/test_pmix_failed_result_child.sh
     - bash ci/test_probe_pmix_child_artifacts.sh

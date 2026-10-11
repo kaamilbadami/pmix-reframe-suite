@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import subprocess
 import tempfile
 
 
@@ -131,12 +132,58 @@ def read_shas(input_path):
     return shas
 
 
-def render_pipeline(shas, fail_commit=None):
+PMIX_GETLINE_CHANGE = "1244a4498895f07f0b1a6e2d81c97d4104c2e12b"
+PRRTE_LEGACY = ("v5.0", "22820a01e17547dbf1c4f9628eac327f193caa45")
+PRRTE_GETLINE = ("master", "a783dab5948c76bca5bde1647f291d9492f33fca")
+
+
+def select_prrte(shas, history_repo):
+    """Select exact dependency pins using complete OpenPMIx ancestry."""
+    def git(*args):
+        return subprocess.run(
+            ["git", "-C", str(history_repo), *args],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+
+    shallow = git("rev-parse", "--is-shallow-repository")
+    if shallow.returncode or shallow.stdout.strip() != "false":
+        fail("PRRTE selection requires a complete OpenPMIx history")
+    # A history ending before the change legitimately has only old commits.
+    boundary = git("cat-file", "-e", PMIX_GETLINE_CHANGE + "^{commit}")
+    selections = {}
+    for sha in shas:
+        if git("cat-file", "-e", sha + "^{commit}").returncode:
+            fail(f"OpenPMIx history is missing requested commit: {sha}")
+        if boundary.returncode:
+            # Verify the selected source itself has the legacy declaration.
+            header = git("show", sha + ":src/util/pmix_string_copy.h")
+            if header.returncode or not re.search(
+                r"pmix_getline\s*\(\s*FILE\s*\*\s*fp\s*\)", header.stdout
+            ):
+                fail("OpenPMIx history lacks compatibility boundary; cannot select PRRTE")
+            selections[sha] = PRRTE_LEGACY
+            continue
+        result = git("merge-base", "--is-ancestor", PMIX_GETLINE_CHANGE, sha)
+        if result.returncode not in (0, 1):
+            fail(f"OpenPMIx ancestry check failed: {result.stderr.strip()}")
+        selections[sha] = PRRTE_GETLINE if result.returncode == 0 else PRRTE_LEGACY
+    return selections
+
+
+def render_pipeline(shas, fail_commit=None, prrte_selections=None):
     jobs = []
     for sha in shas:
         template = COMMIT_JOB
         if fail_commit is not None and sha.lower() == fail_commit:
             template = FAILED_COMMIT_JOB
+        if prrte_selections is not None:
+            branch, commit = prrte_selections[sha]
+            template = template.replace(
+                '    PMIX_COMMIT: "__SHA__"',
+                '    PMIX_COMMIT: "__SHA__"\n'
+                f'    PRRTE_BRANCH: "{branch}"\n'
+                f'    PRRTE_COMMIT: "{commit}"'
+            )
         jobs.append(
             template.replace("__SHA__", sha).replace(
                 "__RESULT_SHA__", sha.lower()
@@ -173,6 +220,8 @@ def parse_arguments(arguments=None):
     parser.add_argument("input_sha_file", type=Path)
     parser.add_argument("output_yaml", type=Path)
     parser.add_argument("--fail-commit")
+    parser.add_argument("--select-prrte", action="store_true")
+    parser.add_argument("--pmix-history", type=Path)
     return parser.parse_args(arguments)
 
 
@@ -199,7 +248,23 @@ def main(arguments=None):
             fail("--fail-commit must match exactly one discovered commit")
         fail_commit = matches[0].lower()
 
-    atomic_write(output_path, render_pipeline(shas, fail_commit))
+    selections = None
+    if options.pmix_history is not None and not options.select_prrte:
+        fail("--pmix-history requires --select-prrte")
+    if options.select_prrte and shas:
+        if options.pmix_history is not None:
+            selections = select_prrte(shas, options.pmix_history)
+        else:
+            with tempfile.TemporaryDirectory(prefix="pmix-prrte-selection-") as temporary:
+                history = Path(temporary) / "history.git"
+                result = subprocess.run([
+                    "git", "clone", "--bare", "--single-branch", "--branch", "master",
+                    "https://github.com/openpmix/openpmix.git", str(history)
+                ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                if result.returncode:
+                    fail(f"could not fetch OpenPMIx history: {result.stderr.strip()}")
+                selections = select_prrte(shas, history)
+    atomic_write(output_path, render_pipeline(shas, fail_commit, selections))
     return 0
 
 
