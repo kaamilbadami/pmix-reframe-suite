@@ -40,6 +40,13 @@ class SelectionTests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     generator.select_prrte(['f' * 40], directory)
 
+    def test_triggers_do_not_override_child_prrte_pins(self):
+        config = Path(__file__).resolve().parent.parent.joinpath(".gitlab-ci.yml").read_text()
+        for name in ("pilot", "scheduled"):
+            block = config.split("\ntrigger-pmix-child-pipeline-" + name + ":\n", 1)[1].split("\n\n", 1)[0]
+            self.assertNotIn("PRRTE_BRANCH:", block)
+            self.assertNotIn("PRRTE_COMMIT:", block)
+
     def test_subprocess_calls_use_python36_keywords(self):
         original = subprocess.run
         def compatible_run(*args, **kwargs):
