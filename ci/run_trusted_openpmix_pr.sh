@@ -130,8 +130,10 @@ checked_out_sha=$(/usr/bin/git -C "$checkout_dir" rev-parse --verify HEAD)
 /usr/bin/git -C "$checkout_dir" status --porcelain=v1 \
     --untracked-files=all > "$evidence_dir/checkout-status-before.txt"
 
-export PRRTE_BRANCH=v5.0
-export PRRTE_COMMIT=22820a01e17547dbf1c4f9628eac327f193caa45
+prrte_selection=$("$python_bin" ci/select_prrte_for_source.py "$checkout_dir" "$selected_sha")
+read -r PRRTE_BRANCH PRRTE_COMMIT <<< "$prrte_selection"
+export PRRTE_BRANCH PRRTE_COMMIT
+printf 'Selected exact PRRTE commit: %s (%s)\n' "$PRRTE_COMMIT" "$PRRTE_BRANCH"
 export PMIX_COMMIT=$selected_sha
 export PMIX_TRUSTED_SOURCE_DIR=$repo_root/$checkout_dir
 export PMIX_RFM_CONFIG_FILE=ci/openpmix_pr_sysconfig.yaml

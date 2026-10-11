@@ -87,3 +87,8 @@ For local checks, pass `--pmix-history PATH` with `--select-prrte` to use a
 complete existing OpenPMIx repository. Child job variables override the
 parent's legacy dependency defaults; explicit pipeline-level overrides should
 not be supplied for automatic compatibility runs.
+
+OpenPMIx PR execution selects an exact PRRTE pin from the function declaration
+in the exact PR checkout. Unknown declarations fail before the build. Scheduled
+commit jobs retain the multinode scaling stage, including PRRTE launch logs,
+for investigation when ReFrame output is incomplete.

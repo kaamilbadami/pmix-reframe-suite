@@ -93,10 +93,7 @@ check(generate["artifacts"]["paths"] == [
 ], "scheduled generation artifacts changed")
 passed("scheduled generation strictly snapshots authoritative Lustre state")
 
-check(trigger["variables"] == {
-    "PRRTE_BRANCH": "v5.0",
-    "PRRTE_COMMIT": "22820a01e17547dbf1c4f9628eac327f193caa45",
-}, "scheduled trigger changed the pinned PRRTE configuration")
+check(not {"PRRTE_BRANCH", "PRRTE_COMMIT"}.intersection(trigger.get("variables", {})), "scheduled trigger overrides child PRRTE pins")
 check(trigger["trigger"] == {
     "include": [{
         "artifact": "ci-scheduled/pmix-child-pipeline.yml",

@@ -75,9 +75,9 @@ assert parent["run-pmix-tests-pr-pilot"]["script"] is not None
 assert "run_pmix_tests_pr_isolated.sh" in parent_text
 assert child["workflow"]["name"] == "openpmix-pr:${OPENPMIX_PR_NUMBER}:${OPENPMIX_PR_EXPECTED_SHA}"
 runner = Path("ci/run_trusted_openpmix_pr.sh").read_text()
-assert "export PRRTE_BRANCH=v5.0" in runner
-assert "export PRRTE_COMMIT=22820a01e17547dbf1c4f9628eac327f193caa45" in runner
-print("ok - named children use the scheduled PRRTE pin and keep the pmix-tests pilot separate")
+assert 'ci/select_prrte_for_source.py "$checkout_dir" "$selected_sha"' in runner
+assert "export PRRTE_BRANCH PRRTE_COMMIT" in runner
+print("ok - named children select compatible PRRTE and keep the pmix-tests pilot separate")
 
 print("1..6")
 PY

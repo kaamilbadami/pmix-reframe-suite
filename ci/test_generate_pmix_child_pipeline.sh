@@ -370,6 +370,8 @@ for sha in (lower_sha, upper_sha, third_sha):
                 "PMIxPython*Compat*Test/",
                 ".ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/"
                 "PMIxPythonMappingPPRL3CacheTest/",
+                ".ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/"
+                "PMIxPythonScalingMultinodeTest/",
             ],
         },
     }
@@ -481,10 +483,7 @@ assert trigger["trigger"] == {
     }],
     "strategy": "mirror",
 }
-assert trigger["variables"] == {
-    "PRRTE_BRANCH": "v5.0",
-    "PRRTE_COMMIT": "22820a01e17547dbf1c4f9628eac327f193caa45",
-}
+assert not {"PRRTE_BRANCH", "PRRTE_COMMIT"}.intersection(trigger.get("variables", {}))
 assert "forward" not in trigger["trigger"]
 assert "resource_group" not in generation
 assert "resource_group" not in trigger

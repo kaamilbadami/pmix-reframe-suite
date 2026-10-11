@@ -72,6 +72,7 @@ pmix-__SHA__:
       - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env
       - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/PMIxPython*Compat*Test/
       - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/PMIxPythonMappingPPRL3CacheTest/
+      - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/PMIxPythonScalingMultinodeTest/
 """
 
 FAILED_COMMIT_JOB = """\
@@ -101,6 +102,7 @@ pmix-__SHA__:
       - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env
       - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/PMIxPython*Compat*Test/
       - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/PMIxPythonMappingPPRL3CacheTest/
+      - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/PMIxPythonScalingMultinodeTest/
 """
 
 

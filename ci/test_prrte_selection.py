@@ -3,6 +3,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from select_prrte_for_source import select
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('generator', Path(__file__).with_name('generate_pmix_child_pipeline.py'))
@@ -11,6 +12,17 @@ spec.loader.exec_module(generator)
 
 
 class SelectionTests(unittest.TestCase):
+    def test_exact_source_declarations(self):
+        self.assertEqual(select("PMIX_EXPORT char *pmix_getline(FILE *fp);"), generator.PRRTE_LEGACY)
+        self.assertEqual(select("PMIX_EXPORT char *pmix_getline(FILE *fp, bool *failed);"), generator.PRRTE_GETLINE)
+        for header in ("", "PMIX_EXPORT char *pmix_getline(FILE *fp, int unknown);", "PMIX_EXPORT char *pmix_getline(FILE *fp);" * 2):
+            with self.assertRaises(ValueError):
+                select(header)
+
+    def test_scaling_launch_artifacts_are_retained(self):
+        yaml = generator.render_pipeline(["a" * 40])
+        self.assertIn("stage/frontier/batch/pmix_test/PMIxPythonScalingMultinodeTest/", yaml)
+
     def test_ancestry_and_rendering(self):
         with tempfile.TemporaryDirectory() as directory:
             def git(*args):
