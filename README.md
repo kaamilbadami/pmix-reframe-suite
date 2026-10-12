@@ -89,6 +89,8 @@ export PRRTE_BRANCH=v5.0
 export PRRTE_COMMIT=22820a01e17547dbf1c4f9628eac327f193caa45
 ```
 
+Scheduled and manual multi-commit jobs automatically select an exact compatible PRRTE pin for each OpenPMIx commit. OpenPMIx PR jobs select the pin from the exact PR source. See [PRRTE compatibility](ci/README.md#prrte-compatibility-for-exact-openpmix-commits) for the supported pairings and limitations. Direct local runs must select a compatible dependency themselves.
+
 Git checkouts run `autogen.pl` before configure. Release tarballs retain the
 existing extraction and build path and do not run `autogen.pl`.
 
@@ -101,7 +103,7 @@ The CI suite runs the PMIx event utility unit tests, confirms that ReFrame disco
 | `PMIxPythonScalingTest` | `pmix_python_scaling_test.py` | Single-node process-count scaling |
 | `PMIxPythonScalingMultinodeTest` | `pmix_python_scaling_multinode_test.py` | One-, two-, and four-node spawning and placement |
 | `PMIxPythonMappingPPRNodeTest` | `pmix_python_mapping_ppr_node_test.py` | Explicit processes-per-node mapping |
-| `PMIxPythonMappingPPRL3CacheTest` | `pmix_python_mapping_ppr_l3cache_test.py` | L3-cache mapping, binding, and topology validation |
+| `PMIxPythonMappingPPRL3CacheTest` | `pmix_python_mapping_ppr_l3cache_test.py` | L3-cache mapping, binding, and process placement validation |
 | `PMIxPythonWorkerThreadsCompat1Test` | `pmix_python_worker_threads_compat_test.py` | Single Python dispatch-worker behavior |
 | `PMIxPythonWorkerThreadsCompat2Test` | `pmix_python_worker_threads_compat_test.py` | Concurrent two-worker spawn submission and participation |
 | `PMIxPythonTargetedCompatTest` | `pmix_python_targeted_compat_test.py` | Requested-host targeting through `PMIX_HOST` |
@@ -155,10 +157,10 @@ See [the CI handoff guide](ci/README.md) for scheduled pipeline behavior, CI var
 
 The tracked workflow accepts only two pipeline sources:
 
-- A manual pipeline started from the GitLab web interface always runs the complete PMIx Python suite without changing the production known-good state.
-- An hourly scheduled pipeline tests every OpenPMIx commit after the saved known-good commit and advances that state only through the contiguous successful prefix.
+- An ordinary manual pipeline started from the GitLab web interface runs the complete PMIx Python suite without changing the production known-good state. Opt-in PR and development-pilot switches select their own workflows.
+- A scheduled pipeline tests every OpenPMIx commit after the saved known-good commit and advances that state only through the contiguous successful prefix.
 
-Merge-request and push pipelines are not enabled by `.gitlab-ci.yml`.
+Merge-request and push pipelines are not enabled by `.gitlab-ci.yml`. The schedule's cadence and target branch are configured in GitLab.
 
 ### Scheduled multi-commit pipeline
 
@@ -324,14 +326,14 @@ Normal ReFrame runs may create these generated directories at the repository roo
 | `reports/` | ReFrame reports when report output is enabled |
 | `outputdir/` | Prefix used by `setup_env.sh` for the root functional suite |
 
-GitLab CI always runs `ci/collect_ci_artifacts.sh` in `after_script`. It recreates `ci-artifacts/`, writes `ci-artifacts/artifact-summary.txt`, and copies any available `output/`, `perflogs/`, and `reports/` trees. It also preserves selected PMIx fetch/build evidence under the same relative `stage/frontier/batch/pmix_test/...` paths, including:
+The ordinary manual `pmix-python-suite` job runs `ci/collect_ci_artifacts.sh` in `after_script`. It recreates `ci-artifacts/`, writes `ci-artifacts/artifact-summary.txt`, and copies any available `output/`, `perflogs/`, and `reports/` trees. It also preserves selected PMIx fetch/build evidence under the same relative `stage/frontier/batch/pmix_test/...` paths, including:
 
 - `rfm_build.sh`, `rfm_build.out`, and `rfm_build.err`;
 - the PMIx `config.log`;
 - the installed `python-site-packages` link; and
 - `pmix-commit.env`.
 
-GitLab uploads `ci-artifacts/` even for failed or intentionally skipped pipelines and retains it for 14 days. `.ci-venv/`, `ci-artifacts/`, ReFrame output trees, and reports are generated content covered by `.gitignore`.
+That job uploads `ci-artifacts/` even when it fails or intentionally skips the full suite, and retains it for 14 days. Generated commit jobs publish SHA-specific result records and job-specific ReFrame output and selected stage directories. PR jobs publish preparation, execution, and final result records plus their configured diagnostic artifacts. `.ci-venv/`, `ci-artifacts/`, ReFrame output trees, and reports are generated content covered by `.gitignore`.
 
 ## Execution flow
 
