@@ -27,12 +27,21 @@ def passed(message):
     print(f"ok - {message}")
 
 
-schedule_rule = {"if": '$CI_PIPELINE_SOURCE == "schedule"'}
+schedule_rule = {"if": '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'}
 always_schedule_rules = [
-    {"if": '$CI_PIPELINE_SOURCE == "schedule"', "when": "always"},
+    {"if": '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"', "when": "always"},
     {"when": "never"},
 ]
 normal_schedule_rules = [schedule_rule, {"when": "never"}]
+batch = parent['run-pmix-scheduled-batch']
+check(batch['resource_group'] == 'pmix-scheduled-batch', 'missing whole-batch lock')
+check(batch['trigger']['strategy'] == 'mirror', 'batch lock released too early')
+check(batch['trigger']['include'] == [{'local': '.gitlab-ci.yml'}], 'wrong batch configuration')
+check(batch['rules'] == [{'if': '$CI_PIPELINE_SOURCE == "schedule"'}, {'when': 'never'}], 'recursive batch trigger')
+check(batch['trigger']['forward']['pipeline_variables'] is False, 'dependency pins can override child selections')
+check(batch['variables']['PMIX_SCHEDULED_BATCH_INTERNAL'] == '1', 'missing batch identity')
+check(batch['variables']['PMIX_SCHEDULED_STATE_FILE'] == '$PMIX_AUTHORITATIVE_STATE_FILE', 'state override lost at wrapper')
+passed('whole scheduled batch is serialized before discovery without locking commit jobs')
 authoritative_state = (
     "/lustre/orion/gen243/world-shared/kbadami/openpmix-ci/pmix-master.env"
 )
@@ -185,7 +194,7 @@ for required in (
     '--pipeline-id "$CI_PIPELINE_ID"',
     "apply_reconciled_pmix_state.py apply",
     "baseline-pmix-master.env",
-    '--authoritative-state "$PMIX_AUTHORITATIVE_STATE_FILE"',
+    '--authoritative-state "${PMIX_SCHEDULED_STATE_FILE:-$PMIX_AUTHORITATIVE_STATE_FILE}"',
     "pmix-untested-commits.txt",
     "reconciliation.env",
     "proposed-pmix-master.env",

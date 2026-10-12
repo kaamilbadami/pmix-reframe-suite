@@ -188,6 +188,8 @@ itself from the current master tip. Discovery fetches OpenPMIx history and write
 every commit in `known-good..master`, oldest to newest, excluding the known-good
 base. An empty range produces a no-op child pipeline and leaves state unchanged.
 
+A scheduled wrapper holds the `pmix-scheduled-batch` resource group through discovery, testing, reconciliation, and application. Later scheduled runs wait before reading state. The wrapper starts an orchestration child containing the five scheduled jobs; that child generates the exact-commit child pipeline.
+
 For a nonempty range, a generated child pipeline runs one existing exact-commit PMIx Python suite job per SHA. Child jobs may run concurrently as runner and Slurm capacity permit; they do not use a resource group or an artificial concurrency cap. Each job uses a job-specific workspace, virtual environment, ReFrame prefix, and pip cache, and always publishes a strict result record. Result collection is allowed to continue after failed child jobs or incomplete artifact retrieval so that reconciliation can identify a safe prefix.
 
 Reconciliation compares the byte-exact discovery baseline with a fresh read of

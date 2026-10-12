@@ -24,6 +24,7 @@ workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'
     - when: never
 
 generate-openpmix-pr-pipelines:
@@ -207,20 +208,39 @@ collect-reconcile-pmix-child-pipeline-pilot:
       - ci-pilot-results/reconciliation/reconciliation.env
       - ci-pilot-results/reconciliation/proposed-pmix-master.env
 
+# Hold a distinct batch lock through discovery, parallel testing, and state
+# application. Discovery happens inside the lock, not before waiting for it.
+run-pmix-scheduled-batch:
+  stage: pilot-trigger
+  resource_group: pmix-scheduled-batch
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - when: never
+  variables:
+    PMIX_SCHEDULED_BATCH_INTERNAL: "1"
+    PMIX_SCHEDULED_STATE_FILE: "$PMIX_AUTHORITATIVE_STATE_FILE"
+  trigger:
+    include:
+      - local: .gitlab-ci.yml
+    strategy: mirror
+    forward:
+      yaml_variables: true
+      pipeline_variables: false
+
 generate-pmix-child-pipeline-scheduled:
   stage: pilot-generate
   extends:
     - .frontier-shell-runner
 
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'
     - when: never
 
   script:
     - |
       set -euo pipefail
 
-      state_file=${PMIX_AUTHORITATIVE_STATE_FILE:?PMIX_AUTHORITATIVE_STATE_FILE is required}
+      state_file=${PMIX_SCHEDULED_STATE_FILE:-${PMIX_AUTHORITATIVE_STATE_FILE:?PMIX_AUTHORITATIVE_STATE_FILE is required}}
       output_dir=ci-scheduled
       baseline_state="$output_dir/baseline-pmix-master.env"
 
@@ -247,7 +267,7 @@ generate-pmix-child-pipeline-scheduled:
 trigger-pmix-child-pipeline-scheduled:
   stage: pilot-trigger
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'
     - when: never
   trigger:
     include:
@@ -263,7 +283,7 @@ collect-pmix-child-results-scheduled:
   timeout: 15m
 
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'
       when: always
     - when: never
 
@@ -325,7 +345,7 @@ reconcile-pmix-child-results-scheduled:
   timeout: 15m
 
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'
       when: always
     - when: never
 
@@ -357,7 +377,7 @@ reconcile-pmix-child-results-scheduled:
               ;;
       esac
 
-      state_file=${PMIX_AUTHORITATIVE_STATE_FILE:?PMIX_AUTHORITATIVE_STATE_FILE is required}
+      state_file=${PMIX_SCHEDULED_STATE_FILE:-${PMIX_AUTHORITATIVE_STATE_FILE:?PMIX_AUTHORITATIVE_STATE_FILE is required}}
       current_state=ci-scheduled/current-pmix-master.env
       if [[ -L $current_state ]] ||
          [[ -e $current_state && ! -f $current_state ]]; then
@@ -418,7 +438,7 @@ apply-pmix-reconciled-state-scheduled:
   resource_group: pmix-python-suite-frontier
 
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'
       when: always
     - when: never
 
@@ -449,7 +469,7 @@ apply-pmix-reconciled-state-scheduled:
 
       python3 ci/apply_reconciled_pmix_state.py apply \
           --baseline-state ci-scheduled/baseline-pmix-master.env \
-          --authoritative-state "$PMIX_AUTHORITATIVE_STATE_FILE" \
+          --authoritative-state "${PMIX_SCHEDULED_STATE_FILE:-$PMIX_AUTHORITATIVE_STATE_FILE}" \
           --commits ci-scheduled/pmix-untested-commits.txt \
           --report ci-scheduled/reconciliation/reconciliation.env \
           --proposal ci-scheduled/reconciliation/proposed-pmix-master.env \
@@ -707,6 +727,7 @@ pmix-python-suite:
     - bash ci/test_discover_untested_pmix_commits.sh
     - bash ci/test_generate_pmix_child_pipeline.sh
     - python3 ci/test_prrte_selection.py
+    - python3 ci/test_cleanup_pmix_slurm_jobs.py
     - bash ci/test_pmix_collection_reconciliation_pilot.sh
     - bash ci/test_pmix_failed_result_child.sh
     - bash ci/test_probe_pmix_child_artifacts.sh

@@ -247,7 +247,7 @@ grep -Fq 'project: ci/resources/templates' "$multiple_output" &&
     fail 'approved runner include is missing'
 [[ $(grep -Fc -- '- .frontier-shell-runner' "$multiple_output") == 3 ]] ||
     fail 'not every job extends the Frontier runner'
-[[ $(grep -Fc 'timeout: 1h' "$multiple_output") == 3 ]] ||
+[[ $(grep -Fc 'timeout: 3h' "$multiple_output") == 3 ]] ||
     fail 'not every job uses the current timeout'
 if grep -Eq '^[[:space:]]*(resource_group|parallel):' "$multiple_output" ||
    grep -Eqi 'concurrency[-_ ]?lane|semaphore' "$multiple_output"; then
@@ -353,15 +353,17 @@ for sha in (lower_sha, upper_sha, third_sha):
     expected_multiple[f"pmix-{sha}"] = {
         "stage": "test",
         "extends": [".frontier-shell-runner"],
-        "timeout": "1h",
-        "variables": {"PMIX_COMMIT": sha},
+        "timeout": "3h",
+        "variables": {"PMIX_COMMIT": sha, "RUNNER_SCRIPT_TIMEOUT": "2h45m", "RUNNER_AFTER_SCRIPT_TIMEOUT": "5m"},
         "script": [expected_script],
-        "after_script": ["bash ci/write_pmix_commit_result.sh ci-results"],
+        "after_script": ["python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect Slurm cleanup errors above'", "bash ci/write_pmix_commit_result.sh ci-results"],
         "artifacts": {
             "when": "always",
             "expire_in": "14 days",
             "paths": [
                 f"ci-results/{sha.lower()}.env",
+                "ci-results/slurm-cleanup-$CI_JOB_ID.json",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.sh",
                 ".ci-work/$CI_JOB_ID/reframe/output/",
                 ".ci-work/$CI_JOB_ID/reframe/perflogs/",
                 ".ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/"
@@ -462,6 +464,7 @@ assert suite["rules"] == [
 assert parent["workflow"]["rules"] == [
     {"if": '$CI_PIPELINE_SOURCE == "web"'},
     {"if": '$CI_PIPELINE_SOURCE == "schedule"'},
+    {"if": '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'},
     {"when": "never"},
 ]
 assert parent["stages"].index(generation["stage"]) < parent["stages"].index(

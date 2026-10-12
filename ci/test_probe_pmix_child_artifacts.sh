@@ -864,6 +864,7 @@ try:
     check(parent["workflow"]["rules"] == [
         {"if": '$CI_PIPELINE_SOURCE == "web"'},
         {"if": '$CI_PIPELINE_SOURCE == "schedule"'},
+        {"if": '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'},
         {"when": "never"},
     ], "workflow schedule behavior changed")
     check("bash ci/test_probe_pmix_child_artifacts.sh" in parent["pmix-python-suite"]["script"],

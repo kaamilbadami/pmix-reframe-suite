@@ -4,12 +4,12 @@ This pipeline builds OpenPMIx and runs our 11-check PMIx Python ReFrame suite on
 
 ## How the scheduled pipeline works
 
-1. Read the saved last-known-good OpenPMIx commit.
+1. Acquire the GitLab `pmix-scheduled-batch` resource group, then read the saved last-known-good OpenPMIx commit.
 2. Find every newer commit on OpenPMIx master, oldest first.
 3. Run a separate test job for each exact commit. Jobs use separate workspaces and can run in parallel.
 4. Collect results and advance last-known-good only through consecutive successful commits.
 
-For example, if **A and B pass, C fails, and D passes**, state advances to **B**. The next schedule retries from C. Missing or invalid results also stop advancement. With no new commits, state stays unchanged.
+For example, if **A and B pass, C fails, and D passes**, state advances to **B**. The next schedule retries from C. Missing or invalid results also stop advancement. With no new commits, state stays unchanged. The schedule starts a wrapper pipeline that holds this lock until its five-job orchestration child completes, including state application. New scheduled pipelines wait before discovery, then read fresh state. Commit jobs inside each batch remain parallel. This uses two child levels: orchestration, then exact-commit jobs. It does not serialize manual or PR testing.
 
 ## Last-known-good state
 
@@ -53,6 +53,25 @@ Tokens belong in GitLab CI/CD variables, never in this README. The observed proj
 To run the full suite manually, choose **Build → Pipelines → New pipeline**, select the suite branch, and run without extra workflow switches. This tests the resolved OpenPMIx master commit without updating scheduled state. Push and merge-request pipelines are not enabled by the current configuration.
 
 Open the pipeline's commit jobs for test logs and artifacts. Each generated commit job publishes `ci-results/<sha>.env`. Collection/reconciliation reports explain the successful boundary and any blocking result. Artifacts are generally retained for 14 days.
+
+Generated commit jobs have a three-hour CI limit. `RUNNER_SCRIPT_TIMEOUT=2h45m`
+reserves time for `RUNNER_AFTER_SCRIPT_TIMEOUT=5m`, result records, cleanup, and
+artifact upload. Slurm queue waiting counts toward CI time, but each test's
+Slurm execution limit remains unchanged. A runner maximum timeout can cap the
+configured limit; verify the effective timeout in GitLab before re-enabling.
+
+On failure or cancellation, `cleanup_pmix_slurm_jobs.py` lists allocations owned
+by the executing UID and cancels only jobs whose working directory and batch
+script resolve inside that CI job's `.ci-work/<CI_JOB_ID>/reframe/stage/` tree.
+It retains `ci-results/slurm-cleanup-<CI_JOB_ID>.json`; successful jobs skip
+cleanup. No account-wide cancellation is used. Runner failures or forced kills
+can prevent `after_script` from running, so cleanup is best effort, not a
+replacement for operator checks. Older leftover jobs need separate cleanup.
+
+Before rolling out this configuration, pause the schedule and let existing
+batches finish or cancel them and clean up their verified Slurm allocations.
+Older pipelines do not acquire the new batch lock. Then resume the schedule
+and verify the first wrapper, orchestration child, and commit child in GitLab.
 
 If runners are disabled, pause the schedule to avoid accumulating waiting pipelines. Pausing does not cancel existing pipelines or erase saved state.
 

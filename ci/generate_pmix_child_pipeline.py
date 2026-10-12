@@ -41,9 +41,11 @@ pmix-__SHA__:
   stage: test
   extends:
     - .frontier-shell-runner
-  timeout: 1h
+  timeout: 3h
   variables:
     PMIX_COMMIT: "__SHA__"
+    RUNNER_SCRIPT_TIMEOUT: "2h45m"
+    RUNNER_AFTER_SCRIPT_TIMEOUT: "5m"
   script:
     - |
       set -euo pipefail
@@ -61,12 +63,15 @@ pmix-__SHA__:
       export RFM_BIN="${PMIX_VENV}/bin/reframe"
       bash ci/run_exact_pmix_commit.sh
   after_script:
+    - python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect Slurm cleanup errors above'
     - bash ci/write_pmix_commit_result.sh ci-results
   artifacts:
     when: always
     expire_in: 14 days
     paths:
       - ci-results/__RESULT_SHA__.env
+      - ci-results/slurm-cleanup-$CI_JOB_ID.json
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.sh
       - .ci-work/$CI_JOB_ID/reframe/output/
       - .ci-work/$CI_JOB_ID/reframe/perflogs/
       - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env
@@ -80,9 +85,11 @@ pmix-__SHA__:
   stage: test
   extends:
     - .frontier-shell-runner
-  timeout: 1h
+  timeout: 3h
   variables:
     PMIX_COMMIT: "__SHA__"
+    RUNNER_SCRIPT_TIMEOUT: "2h45m"
+    RUNNER_AFTER_SCRIPT_TIMEOUT: "5m"
   script:
     - |
       set -euo pipefail
@@ -91,12 +98,15 @@ pmix-__SHA__:
       printf 'Intentional multi-commit pilot failure for OpenPMIx commit: %s\\n' "$PMIX_COMMIT" >&2
       exit 1
   after_script:
+    - python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect Slurm cleanup errors above'
     - bash ci/write_pmix_commit_result.sh ci-results
   artifacts:
     when: always
     expire_in: 14 days
     paths:
       - ci-results/__RESULT_SHA__.env
+      - ci-results/slurm-cleanup-$CI_JOB_ID.json
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.sh
       - .ci-work/$CI_JOB_ID/reframe/output/
       - .ci-work/$CI_JOB_ID/reframe/perflogs/
       - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env
