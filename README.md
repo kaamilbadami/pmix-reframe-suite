@@ -114,6 +114,8 @@ The CI suite runs the PMIx event utility unit tests, confirms that ReFrame disco
 
 The interpreter selected through `PMIX_PYTHON` is also used to build and run the PMIx Python bindings. It must be executable and able to import Cython. If no override is supplied directly to the ReFrame fixtures, the build falls back to `python3`.
 
+The worker, targeted, and mixed-job controllers retain early completion events and process each namespace once. They wait for all expected jobs with a finite completion deadline (120 seconds by default, configurable with `--completion-timeout` when running a controller directly). A missing completion or unsuccessful job termination fails the test. DVM shutdown requests also have a bounded wait.
+
 ### Run the CI suite locally
 
 ```bash

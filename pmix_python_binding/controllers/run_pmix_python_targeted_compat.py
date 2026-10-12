@@ -3,6 +3,7 @@ import subprocess
 import sys
 import os
 import time
+import math
 import random
 import argparse
 import datetime
@@ -16,6 +17,8 @@ import threading
 import queue
 
 from pmix_event_utils import (
+    JobCompletionRouter,
+    wait_for_job_completions,
     format_pmix_job_term_status,
     get_pmix_info_value,
 )
@@ -59,7 +62,7 @@ parser.add_argument('--out-file', type=str, required=True)
 parser.add_argument('--delay', type=float, required=True)
 parser.add_argument('--job', type=str, required=True)
 parser.add_argument('--target-host-override', type=str)
-parser.add_argument('--completion-timeout', type=float)
+parser.add_argument('--completion-timeout', type=float, default=120.0)
 
 
 debug = True
@@ -89,10 +92,10 @@ def print_info(*args, **kwargs):
 
 args = parser.parse_args()
 if (
-    args.completion_timeout is not None
-    and args.completion_timeout <= 0
+    not math.isfinite(args.completion_timeout)
+    or args.completion_timeout <= 0
 ):
-    parser.error('--completion-timeout must be positive')
+    parser.error('--completion-timeout must be finite and positive')
 
 out_file = open(args.out_file, 'w')
 print_info(args)
@@ -155,16 +158,13 @@ def mark_complete(source=None):
             print_info(f"JOB {source['nspace']} completed on {next_host_slot}")
             host_q.appendleft(next_host_slot)
         run_var.notify()
-    completed += 1
-    if completed == num_iters:
-        with done_var:
-            done_var.notify()
+    with done_var:
+        completed += 1
+        done_var.notify_all()
 
 
 #PMIX_EVENT_JOB_END
-def next_handler(evhdlr:int, status:int,
-                 source:dict, info:list, results:list):
-
+def handle_job_completion(source, info):
     app = running[source['nspace']]
     term_status = get_pmix_info_value(
         info, pmix.PMIX_JOB_TERM_STATUS
@@ -184,6 +184,13 @@ def next_handler(evhdlr:int, status:int,
     print_info("Completion handler: Cleaning up {} slots from rank {}".format(running[source['nspace']]['maxprocs'], source['rank']))
     mark_complete(source)
 
+
+completion_router = JobCompletionRouter(run_var, handle_job_completion)
+
+
+def next_handler(evhdlr:int, status:int,
+                 source:dict, info:list, results:list):
+    completion_router.record(source, info)
     return pmix.PMIX_EVENT_ACTION_COMPLETE,None
 
 
@@ -324,22 +331,27 @@ def worker():
             print_info("Spawn Oops", tool.error_string(rc))
             print_info("Job that oopsed: {} avail: {} active: {}".format(app, avail, active), flush=True)
             # These two lines are to enable a fail semantic.
-            avail += app['maxprocs']
-            log_error(tool.error_string(rc), app)
-            mark_complete()
+            with run_var:
+                avail += app['maxprocs']
+                log_error(tool.error_string(rc), app)
+                mark_complete()
             continue
 
         print_info(f"JOB {nspace} launched on {next_host_slot}")
-        running[nspace] = app
-        active_jobs[nspace] = next_host_slot
-        active += app['maxprocs']
+        with run_var:
+            running[nspace] = app
+            active_jobs[nspace] = next_host_slot
+            active += app['maxprocs']
+            completion_router.register(nspace)
         rc, id = tool.iof_pull([{'nspace': nspace, 'rank': pmix.PMIX_RANK_WILDCARD}], pmix.PMIX_FWD_STDOUT_CHANNEL | pmix.PMIX_FWD_STDERR_CHANNEL, [], iof_cb)
         handlers[nspace] = id
 
 def queuer():
     while True:
         with run_var:
-            run_var.wait()
+            run_var.wait_for(lambda: any(
+                app['maxprocs'] <= avail for app in fill_queue
+            ))
             apps = select_tasks()
             if apps:
                 print_info(apps)
@@ -364,34 +376,21 @@ for idx in range(num_iters):
 
 print_info("Starting timer")
 start = time.perf_counter()
-apps = select_tasks()
-for app in apps:
-    run_queue.put(app)
+with run_var:
+    apps = select_tasks()
+    for app in apps:
+        run_queue.put(app)
 try:
-    with done_var:
-        if args.completion_timeout is None:
-            done_var.wait()
-        else:
-            completion_deadline = (
-                time.monotonic() + args.completion_timeout
+    if not wait_for_job_completions(
+        done_var, lambda: completed, num_iters, args.completion_timeout
+    ):
+        log_error('controller completion timeout', [])
+        print_info(
+            "CONTROLLER TIMEOUT: completed={} expected={} deadline={}s".format(
+                completed, num_iters, args.completion_timeout
             )
-            while completed < num_iters:
-                remaining = completion_deadline - time.monotonic()
-                if remaining <= 0:
-                    break
-                done_var.wait(timeout=remaining)
-
-            if completed < num_iters:
-                log_error('controller completion timeout', [])
-                print_info(
-                    "CONTROLLER TIMEOUT: completed={} expected={} "
-                    "deadline={}s".format(
-                        completed,
-                        num_iters,
-                        args.completion_timeout
-                    )
-                )
-                print_info("CHILD PROCESS TIMEOUT")
+        )
+        print_info("CHILD PROCESS TIMEOUT")
 except KeyboardInterrupt:
     print_info("killing {} tasks".format(len(fill_queue)))
 finally:

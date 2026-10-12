@@ -3,6 +3,7 @@ import subprocess
 import sys
 import os
 import time
+import math
 import random
 import argparse
 import datetime
@@ -14,6 +15,8 @@ import threading
 import queue
 
 from pmix_event_utils import (
+    JobCompletionRouter,
+    wait_for_job_completions,
     format_pmix_job_term_status,
     get_pmix_info_value,
 )
@@ -58,6 +61,8 @@ parser.add_argument('--job', type=str, required=True)
 parser.add_argument('--num-workers', type=int, required=False, default=1)
 
 
+parser.add_argument('--completion-timeout', type=float, default=120.0)
+
 debug = True
 
 
@@ -83,6 +88,8 @@ def print_info(*args, **kwargs):
 
 
 args = parser.parse_args()
+if not math.isfinite(args.completion_timeout) or args.completion_timeout <= 0:
+    parser.error('--completion-timeout must be finite and positive')
 print_info(args)
 
 # Number of nodes - for accounting/verification purposes
@@ -151,16 +158,13 @@ def mark_complete(source=None):
             active -= running[source['nspace']]['maxprocs']
             avail += running[source['nspace']]['maxprocs']
         run_var.notify()
-    completed += 1
-    if completed == num_iters:
-        with done_var:
-            done_var.notify()
+    with done_var:
+        completed += 1
+        done_var.notify_all()
 
 
 #PMIX_EVENT_JOB_END
-def next_handler(evhdlr:int, status:int,
-                 source:dict, info:list, results:list):
-
+def handle_job_completion(source, info):
     app = running[source['nspace']]
     term_status = get_pmix_info_value(
         info, pmix.PMIX_JOB_TERM_STATUS
@@ -180,6 +184,13 @@ def next_handler(evhdlr:int, status:int,
     print_info("Completion handler: Cleaning up {} slots from rank {}".format(running[source['nspace']]['maxprocs'], source['rank']))
     mark_complete(source)
 
+
+completion_router = JobCompletionRouter(run_var, handle_job_completion)
+
+
+def next_handler(evhdlr:int, status:int,
+                 source:dict, info:list, results:list):
+    completion_router.record(source, info)
     return pmix.PMIX_EVENT_ACTION_COMPLETE,None
 
 
@@ -201,16 +212,33 @@ def log_error(rc,app):
         errors[rc]['jobs'] = [ app ]
 
 def shutdown_dvm():
-    # ---------------------------------------
-    # Cleanup DVM
-    # ---------------------------------------
-    subprocess.run([
-        str(Path(os.environ["PRRTE"]) / "bin" / "pterm"),
-        "--dvm-uri",
-        "file:{}".format(dvm_file),
-        "--num-connect-retries",
-        "1000"
-    ])
+    """Request DVM shutdown with a bounded wait."""
+    try:
+        pterm_result = subprocess.run([
+            str(Path(os.environ["PRRTE"]) / "bin" / "pterm"),
+            "--dvm-uri",
+            "file:{}".format(dvm_file),
+            "--num-connect-retries",
+            "1000"
+        ],
+            check=False,
+            timeout=20
+        )
+    except subprocess.TimeoutExpired:
+        print_info("DVM SHUTDOWN FAIL: pterm timed out")
+        return False
+    except OSError as error:
+        print_info("DVM SHUTDOWN FAIL: {}".format(error))
+        return False
+
+    if pterm_result.returncode == 0:
+        print_info("DVM SHUTDOWN PASS: pterm_rc=0")
+        return True
+
+    print_info(
+        "DVM SHUTDOWN FAIL: pterm_rc={}".format(pterm_result.returncode)
+    )
+    return False
 
 sleeper = Path(args.job).resolve()
 
@@ -277,9 +305,10 @@ def worker(worker_id):
             print_info("Spawn Oops", tool.error_string(rc))
             print_info("Job that oopsed: {} avail: {} active: {}".format(app, avail, active), flush=True)
             # These two lines are to enable a fail semantic.
-            avail += app['maxprocs']
-            log_error(tool.error_string(rc), app)
-            mark_complete()
+            with run_var:
+                avail += app['maxprocs']
+                log_error(tool.error_string(rc), app)
+                mark_complete()
             continue
 
         with used_worker_ids_lock:
@@ -288,6 +317,7 @@ def worker(worker_id):
         with run_var:
             running[nspace] = app
             active += app['maxprocs']
+            completion_router.register(nspace)
 
         rc, id = tool.iof_pull([{'nspace': nspace, 'rank': pmix.PMIX_RANK_WILDCARD}], pmix.PMIX_FWD_STDOUT_CHANNEL | pmix.PMIX_FWD_STDERR_CHANNEL, [], iof_cb)
         handlers[nspace] = id
@@ -295,7 +325,9 @@ def worker(worker_id):
 def queuer():
     while True:
         with run_var:
-            run_var.wait()
+            run_var.wait_for(lambda: any(
+                app['maxprocs'] <= avail for app in fill_queue
+            ))
             apps = select_tasks()
             if apps:
                 print_info(apps)
@@ -319,12 +351,21 @@ for idx in range(num_iters):
 
 print_info("Starting timer")
 start = time.perf_counter()
-apps = select_tasks()
-for app in apps:
-    dispatch_task(app)
+with run_var:
+    apps = select_tasks()
+    for app in apps:
+        dispatch_task(app)
 try:
-    with done_var:
-        done_var.wait()
+    if not wait_for_job_completions(
+        done_var, lambda: completed, num_iters, args.completion_timeout
+    ):
+        log_error('controller completion timeout', [])
+        print_info(
+            "CONTROLLER TIMEOUT: completed={} expected={} deadline={}s".format(
+                completed, num_iters, args.completion_timeout
+            )
+        )
+        print_info("CHILD PROCESS TIMEOUT")
 except KeyboardInterrupt:
     print_info("killing {} tasks".format(len(fill_queue)))
 finally:
@@ -355,7 +396,7 @@ finally:
         out_file.write("\n".join(dvm_messages))
 
     # do sanity tests here
-    shutdown_dvm()
+    dvm_shutdown_ok = shutdown_dvm()
     expected_worker_ids = set(range(n_threads))
     worker_coverage_failed = used_worker_ids != expected_worker_ids
     if worker_coverage_failed:
@@ -365,7 +406,7 @@ finally:
             )
         )
 
-    if errors or completed != num_iters or worker_coverage_failed:
+    if errors or completed != num_iters or worker_coverage_failed or not dvm_shutdown_ok:
         print_info(
             "WORKER COUNT {} FAIL: completed={} expected={} errors={}".format(
                 n_threads, completed, num_iters, len(errors)
