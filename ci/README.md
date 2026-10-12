@@ -64,7 +64,7 @@ names, suppresses active or successful attempts, and retries failed, canceled,
 or skipped attempts. Pipelines created before this naming convention are not
 recognized and can be tested again. Overlapping discovery runs can still launch
 duplicates; validate live API access and address that race before enabling it.
-OpenPMIx PR execution uses the same fixed PRRTE v5.0 commit as scheduled jobs.
+OpenPMIx PR execution selects a compatible exact PRRTE pin from the function declaration in its verified source checkout; see the compatibility section below.
 
 Configuration: [`.gitlab-ci.yml`](../.gitlab-ci.yml), [`openpmix_pr_jobs.yml`](openpmix_pr_jobs.yml), and [`run_pmix_python_suite.sh`](run_pmix_python_suite.sh). See the [root README](../README.md) for installation and test coverage. Development-only pilots are outside this guide.
 
@@ -84,9 +84,9 @@ with future upstream changes.
 Selection fetches official OpenPMIx master history once per nonempty generator
 run. Missing commits or shallow history stop generation rather than guessing.
 For local checks, pass `--pmix-history PATH` with `--select-prrte` to use a
-complete existing OpenPMIx repository. Child job variables override the
-parent's legacy dependency defaults; explicit pipeline-level overrides should
-not be supplied for automatic compatibility runs.
+complete existing OpenPMIx repository. Parent triggers do not forward fixed PRRTE pins that would override the
+per-commit selections. Explicit pipeline-level PRRTE overrides should not be
+supplied for automatic compatibility runs.
 
 OpenPMIx PR execution selects an exact PRRTE pin from the function declaration
 in the exact PR checkout. Unknown declarations fail before the build. Scheduled
