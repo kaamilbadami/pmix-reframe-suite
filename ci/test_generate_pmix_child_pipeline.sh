@@ -247,7 +247,7 @@ grep -Fq 'project: ci/resources/templates' "$multiple_output" &&
     fail 'approved runner include is missing'
 [[ $(grep -Fc -- '- .frontier-shell-runner' "$multiple_output") == 3 ]] ||
     fail 'not every job extends the Frontier runner'
-[[ $(grep -Fc 'timeout: 3h' "$multiple_output") == 3 ]] ||
+[[ $(grep -Fc 'timeout: 2h' "$multiple_output") == 3 ]] ||
     fail 'not every job uses the current timeout'
 if grep -Eq '^[[:space:]]*(resource_group|parallel):' "$multiple_output" ||
    grep -Eqi 'concurrency[-_ ]?lane|semaphore' "$multiple_output"; then
@@ -353,8 +353,8 @@ for sha in (lower_sha, upper_sha, third_sha):
     expected_multiple[f"pmix-{sha}"] = {
         "stage": "test",
         "extends": [".frontier-shell-runner"],
-        "timeout": "3h",
-        "variables": {"PMIX_COMMIT": sha, "RUNNER_SCRIPT_TIMEOUT": "2h45m", "RUNNER_AFTER_SCRIPT_TIMEOUT": "5m"},
+        "timeout": "2h",
+        "variables": {"PMIX_COMMIT": sha, "RUNNER_SCRIPT_TIMEOUT": "1h45m", "RUNNER_AFTER_SCRIPT_TIMEOUT": "5m"},
         "script": [expected_script],
         "after_script": ["python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect Slurm cleanup errors above'", "bash ci/write_pmix_commit_result.sh ci-results"],
         "artifacts": {
@@ -452,6 +452,7 @@ pr_metadata_pilot_exclusion = {
 assert generation["rules"] == pilot_rules
 assert trigger["rules"] == pilot_rules
 assert suite["rules"] == [
+    {"if": '$PMIX_CLEANUP_239019 == "1" || $PMIX_CLEANUP_ENDED_RUNS == "1"', "when": "never"},
     openpmix_pr_exclusion,
     execution_exclusion,
     pr_metadata_pilot_exclusion,
