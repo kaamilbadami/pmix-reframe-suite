@@ -33,8 +33,11 @@ def owned_job(record, job_id, root, uid):
 def cleanup(environ, run=subprocess.run, uid=None):
     if environ.get('CI_JOB_STATUS') == 'success':
         return {'skipped': 'successful CI job', 'canceled': [], 'errors': []}
-    if environ.get('CI_JOB_STATUS') not in ('failed', 'canceled'):
-        raise ValueError('cleanup requires failed or canceled CI_JOB_STATUS')
+    # Script timeouts may enter after_script before a final failure status is set.
+    # This helper is called only after script termination; exact UID/workspace
+    # ownership checks below remain the cancellation boundary.
+    if environ.get('CI_JOB_STATUS') not in ('failed', 'canceled', 'running', 'timedout'):
+        raise ValueError('unsupported after_script CI_JOB_STATUS: ' + repr(environ.get('CI_JOB_STATUS')))
     job_id = environ.get('CI_JOB_ID', '')
     project = environ.get('CI_PROJECT_DIR', '')
     if not re.fullmatch(r'[1-9][0-9]*', job_id) or not os.path.isabs(project):
@@ -42,7 +45,7 @@ def cleanup(environ, run=subprocess.run, uid=None):
     # Derive scope from runner identity; never accept a caller-supplied prefix.
     root = Path(os.path.realpath(project)) / '.ci-work' / job_id
     uid = os.getuid() if uid is None else uid
-    report = {'ci_job_id': job_id, 'root': str(root), 'canceled': [], 'errors': []}
+    report = {'ci_job_status': environ.get('CI_JOB_STATUS'), 'ci_job_id': job_id, 'root': str(root), 'canceled': [], 'errors': []}
     def command(argv):
         return run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                    universal_newlines=True, timeout=20, check=False)
