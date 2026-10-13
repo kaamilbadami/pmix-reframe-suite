@@ -691,7 +691,7 @@ pmix-python-suite:
   resource_group: pmix-python-suite-frontier
 
   rules:
-    - if: '$PMIX_CLEANUP_239019 == "1" || $PMIX_CLEANUP_ENDED_RUNS == "1"'
+    - if: '$PMIX_CLEANUP_239019 == "1" || $PMIX_CLEANUP_ENDED_RUNS == "1" || $PMIX_TIMEOUT_CLEANUP_PILOT == "1"'
       when: never
     - if: '$OPENPMIX_PR_INTERNAL == "1"'
       when: never
@@ -908,3 +908,73 @@ cleanup-pmix-ended-runs:
           raise SystemExit("Targeted jobs still present; inspect cancellation state")
       print("Cleanup verified; no jobs remain for the verified ended CI runs.")
       PY
+
+# Deliberate script timeout: expected CI failure, successful scoped cleanup.
+validate-pmix-timeout-cleanup:
+  stage: test
+  extends:
+    - .frontier-shell-runner
+  timeout: 10m
+  needs: []
+  variables:
+    RUNNER_SCRIPT_TIMEOUT: "1m"
+    RUNNER_AFTER_SCRIPT_TIMEOUT: "5m"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_TIMEOUT_CLEANUP_PILOT == "1"'
+      when: manual
+      allow_failure: false
+    - when: never
+  script:
+    - |
+      set -euo pipefail
+      stage="$CI_PROJECT_DIR/.ci-work/$CI_JOB_ID/reframe/stage/timeout-cleanup-pilot"
+      mkdir -p "$stage" ci-results
+      cd "$stage"
+      cat > rfm_job.sh <<'SH'
+      #!/bin/bash
+      #SBATCH --account=gen243
+      #SBATCH --partition=batch
+      #SBATCH --nodes=1
+      #SBATCH --ntasks=1
+      #SBATCH --time=00:01:00
+      #SBATCH --job-name=rfm_PMIxTimeoutCleanupPilot
+      sleep 30
+      SH
+      submitted=$(sbatch --parsable rfm_job.sh)
+      slurm_id=${submitted%%;*}
+      [[ "$slurm_id" =~ ^[1-9][0-9]*$ ]] || exit 2
+      printf '%s\n' "$slurm_id" > "$CI_PROJECT_DIR/ci-results/timeout-pilot-slurm-id.txt"
+      printf 'Submitted cleanup pilot Slurm job %s; deliberately waiting for script timeout.\n' "$slurm_id"
+      sleep 120
+      printf '%s\n' 'ERROR: script timeout did not trigger'
+      exit 1
+  after_script:
+    - |
+      set -eu
+      printf 'Timeout pilot after_script CI_JOB_STATUS=%s\n' "${CI_JOB_STATUS:-unset}"
+      python3 ci/cleanup_pmix_slurm_jobs.py
+      python3 - <<'PY'
+      import json
+      import os
+      import subprocess
+      from pathlib import Path
+      report = json.loads(Path("ci-results/slurm-cleanup-" + os.environ["CI_JOB_ID"] + ".json").read_text())
+      if report.get("errors") or report.get("skipped"):
+          raise SystemExit("Cleanup failed or skipped")
+      target_file = Path("ci-results/timeout-pilot-slurm-id.txt")
+      if not target_file.exists():
+          raise SystemExit("Pilot did not submit a Slurm job")
+      target = target_file.read_text().strip()
+      result = subprocess.run(["squeue", "-h", "-u", str(os.getuid()), "-o", "%i"],
+                              check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True, timeout=30)
+      if target in result.stdout.split():
+          raise SystemExit("Pilot Slurm job remains queued")
+      print("TIMEOUT CLEANUP VERIFIED: pilot job is absent; canceled IDs:", report["canceled"])
+      PY
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-results/timeout-pilot-slurm-id.txt
+      - ci-results/slurm-cleanup-*.json
