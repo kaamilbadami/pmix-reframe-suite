@@ -691,7 +691,7 @@ pmix-python-suite:
   resource_group: pmix-python-suite-frontier
 
   rules:
-    - if: '$PMIX_CLEANUP_239019 == "1"'
+    - if: '$PMIX_CLEANUP_239019 == "1" || $PMIX_CLEANUP_ENDED_RUNS == "1"'
       when: never
     - if: '$OPENPMIX_PR_INTERNAL == "1"'
       when: never
@@ -857,4 +857,53 @@ cleanup-pmix-leftovers-239019:
       if remaining:
           raise SystemExit("Jobs still present; inspect cancellation state: " + ", ".join(sorted(remaining)))
       print("Cleanup verified; no targeted jobs remain.")
+      PY
+
+# Recovery restricted to ten CI runs verified failed/canceled on 2026-10-12.
+cleanup-pmix-ended-runs:
+  stage: test
+  extends:
+    - .frontier-shell-runner
+  timeout: 5m
+  needs: []
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_CLEANUP_ENDED_RUNS == "1"'
+      when: manual
+      allow_failure: false
+    - when: never
+  script:
+    - |
+      python3 - <<'PY'
+      import os
+      import re
+      import subprocess
+      
+      owners = {"239033", "239034", "239035", "239036", "239037", "239038",
+                "239061", "239062", "239063", "239065"}
+      if os.environ.get("CI_PROJECT_PATH") != "ci/gen243/dev/pmix-reframe-suite" or os.environ.get("USER") != "gen243_auser":
+          raise SystemExit("Wrong project or service account")
+      def queue():
+          return subprocess.run(
+              ["squeue", "-h", "-u", "gen243_auser", "-o", "%i|%Z|%j"],
+              check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+              universal_newlines=True, timeout=30).stdout
+      def select(listing):
+          targets = []
+          for line in listing.splitlines():
+              job, workdir, name = line.split("|", 2)
+              match = re.search(r"/ci/gen243/dev/pmix-reframe-suite/\.ci-work/([0-9]+)/reframe/stage/", workdir)
+              if match and match.group(1) in owners:
+                  if not job.isdigit() or not name.startswith("rfm_PMIxPython"):
+                      raise SystemExit("Unexpected job in cleanup scope: " + line)
+                  targets.append(job)
+                  print("Confirmed leftover:", job, "CI owner:", match.group(1), flush=True)
+          return targets
+      targets = select(queue())
+      print("Total confirmed leftovers:", len(targets), flush=True)
+      if targets:
+          subprocess.run(["scancel", *targets], check=True, timeout=60)
+      remaining = select(queue())
+      if remaining:
+          raise SystemExit("Targeted jobs still present; inspect cancellation state")
+      print("Cleanup verified; no jobs remain for the ten ended CI runs.")
       PY
