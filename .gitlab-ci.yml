@@ -859,7 +859,7 @@ cleanup-pmix-leftovers-239019:
       print("Cleanup verified; no targeted jobs remain.")
       PY
 
-# Recovery restricted to ten CI runs verified failed/canceled on 2026-10-12.
+# Recovery restricted to ended CI runs verified failed/canceled on 2026-10-12.
 cleanup-pmix-ended-runs:
   stage: test
   extends:
@@ -879,7 +879,8 @@ cleanup-pmix-ended-runs:
       import subprocess
       
       owners = {"239033", "239034", "239035", "239036", "239037", "239038",
-                "239061", "239062", "239063", "239065"}
+                "239061", "239062", "239063", "239065",
+                "239112", "239113", "239114", "239115", "239116", "239117"}
       if os.environ.get("CI_PROJECT_PATH") != "ci/gen243/dev/pmix-reframe-suite" or os.environ.get("USER") != "gen243_auser":
           raise SystemExit("Wrong project or service account")
       def queue():
@@ -905,5 +906,5 @@ cleanup-pmix-ended-runs:
       remaining = select(queue())
       if remaining:
           raise SystemExit("Targeted jobs still present; inspect cancellation state")
-      print("Cleanup verified; no jobs remain for the ten ended CI runs.")
+      print("Cleanup verified; no jobs remain for the verified ended CI runs.")
       PY
