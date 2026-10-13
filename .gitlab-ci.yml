@@ -691,6 +691,8 @@ pmix-python-suite:
   resource_group: pmix-python-suite-frontier
 
   rules:
+    - if: '$PMIX_CLEANUP_239019 == "1"'
+      when: never
     - if: '$OPENPMIX_PR_INTERNAL == "1"'
       when: never
     - if: '$PMIX_TESTS_PR_EXECUTION_PILOT == "1"'
@@ -810,3 +812,49 @@ pmix-python-suite:
     expire_in: 14 days
     paths:
       - ci-artifacts/
+
+# One-time recovery for seven verified leftovers from timed-out CI job 239019.
+cleanup-pmix-leftovers-239019:
+  stage: test
+  extends:
+    - .frontier-shell-runner
+  timeout: 5m
+  needs: []
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_CLEANUP_239019 == "1"'
+      when: manual
+      allow_failure: false
+    - when: never
+  script:
+    - |
+      python3 - <<'PY'
+      import os
+      import subprocess
+      
+      allowed = {5659694, 5659695, 5659696, 5659697, 5659698, 5659699, 5659700}
+      if os.environ.get("CI_PROJECT_PATH") != "ci/gen243/dev/pmix-reframe-suite":
+          raise SystemExit("Wrong project")
+      if os.environ.get("USER") != "gen243_auser":
+          raise SystemExit("Cleanup must run as gen243_auser")
+      result = subprocess.run(
+          ["squeue", "-h", "-u", "gen243_auser", "-o", "%i|%Z|%j"],
+          check=True, capture_output=True, text=True, timeout=30)
+      targets = []
+      for line in result.stdout.splitlines():
+          job, workdir, name = line.split("|", 2)
+          if not job.isdigit() or int(job) not in allowed:
+              continue
+          if "/ci/gen243/dev/pmix-reframe-suite/.ci-work/239019/reframe/stage/" not in workdir or not name.startswith("rfm_PMIxPython"):
+              raise SystemExit("Ownership check failed for " + job)
+          targets.append(job)
+      print("Confirmed leftovers for failed CI job 239019:", targets, flush=True)
+      if targets:
+          subprocess.run(["scancel", *targets], check=True, timeout=30)
+      verify = subprocess.run(
+          ["squeue", "-h", "-u", "gen243_auser", "-o", "%i"],
+          check=True, capture_output=True, text=True, timeout=30)
+      remaining = set(verify.stdout.split()) & set(targets)
+      if remaining:
+          raise SystemExit("Jobs still present; inspect cancellation state: " + ", ".join(sorted(remaining)))
+      print("Cleanup verified; no targeted jobs remain.")
+      PY
