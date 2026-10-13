@@ -54,7 +54,7 @@ To run the full suite manually, choose **Build → Pipelines → New pipeline**,
 
 Open the pipeline's commit jobs for test logs and artifacts. Each generated commit job publishes `ci-results/<sha>.env`. Collection/reconciliation reports explain the successful boundary and any blocking result. Artifacts are generally retained for 14 days.
 
-Generated commit jobs have a three-hour CI limit. `RUNNER_SCRIPT_TIMEOUT=2h45m`
+Generated commit jobs have a two-hour CI limit. `RUNNER_SCRIPT_TIMEOUT=1h45m`
 reserves time for `RUNNER_AFTER_SCRIPT_TIMEOUT=5m`, result records, cleanup, and
 artifact upload. Slurm queue waiting counts toward CI time, but each test's
 Slurm execution limit remains unchanged. A runner maximum timeout can cap the
