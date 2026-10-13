@@ -52,6 +52,14 @@ class CleanupTests(unittest.TestCase):
         self.env['CI_JOB_STATUS'] = 'canceled'
         self.assertEqual(self.run_fake({'10': self.record('10')})['canceled'], ['10'])
 
+    def test_script_timeout_statuses_clean_only_owned_jobs(self):
+        for status in ('running', 'timedout'):
+            with self.subTest(status=status):
+                self.env['CI_JOB_STATUS'] = status
+                records = {'10': self.record('10'),
+                           '11': self.record('11', self.project / '.ci-work' / '239019')}
+                self.assertEqual(self.run_fake(records)['canceled'], ['10'])
+
     def test_invalid_identity_fails_before_any_command(self):
         for value in ('', '0', '../239018', '239018;scancel'):
             self.env['CI_JOB_ID'] = value
@@ -59,7 +67,7 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(self.commands, [])
 
     def test_unexpected_status_fails_closed(self):
-        self.env['CI_JOB_STATUS'] = 'running'
+        self.env['CI_JOB_STATUS'] = 'unknown'
         with self.assertRaises(ValueError): self.run_fake({})
         self.assertEqual(self.commands, [])
 
