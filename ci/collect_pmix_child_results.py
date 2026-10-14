@@ -366,7 +366,9 @@ def list_jobs(client: GitLabGetClient, child_id: str) -> Tuple[str, List[dict]]:
         query = urlencode({
             "per_page": "100",
             "page": str(page),
-            "include_retried": "true",
+            # Ask the API to exclude superseded attempts; job records may omit
+            # the retried flag, so it cannot reliably filter attempt history.
+            "include_retried": "false",
         })
         suffix = f"pipelines/{quote(child_id, safe='')}/jobs?{query}"
         kind, status, body, headers = client.get(client.project_url(suffix), JSON_LIMIT)

@@ -135,7 +135,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             if (
                 jobs_match.group(1) != child_id
                 or query.get("per_page") != ["100"]
-                or query.get("include_retried") != ["true"]
+                or query.get("include_retried") != ["false"]
             ):
                 self.send(400)
                 return
