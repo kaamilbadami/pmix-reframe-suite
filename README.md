@@ -346,3 +346,72 @@ That job uploads `ci-artifacts/` even when it fails or intentionally skips the f
 3. Build or stage the workload required by each entry point.
 4. Configure `PATH`, `PYTHONPATH`, and `LD_LIBRARY_PATH` from the fixture installations.
 5. Run the selected PMIx Python, root functional, or PRTE startup checks and apply their ReFrame sanity/performance validation.
+
+### Optional single-allocation pilot
+
+Branch `feat/pmix-single-allocation-pilot` adds an isolated **web-only** experiment.
+Scheduled batches and their child generator retain the existing implementation.
+The experiment does not collect production commit results, update the saved
+known-good commit, or publish GitHub statuses.
+
+After the branch is available in GitLab, use **Build > Pipelines > New pipeline**,
+select this branch, and supply:
+
+| Variable | Value |
+| --- | --- |
+| `PMIX_SINGLE_ALLOCATION_PILOT` | `1` |
+| `PMIX_COMMIT` | Exact lowercase 40-character OpenPMIx commit to test |
+| `PRRTE_COMMIT` | Exact compatible lowercase PRRTE commit, using the scheduled generator's dependency selection |
+| `PRRTE_BRANCH` | Branch containing that PRRTE pin (`v5.0` or `master`, as selected by the generator) |
+
+Copy the PMIx/PRRTE pair from a successful exact-commit job when comparing
+implementations; do not choose unrelated dependency pins. Do not set other pilot
+flags. Run after the active production batch finishes to avoid competing with it.
+The default `pmix-python-suite` web job is excluded when this pilot flag is set.
+
+The shell runner sets up Python, then submits exactly one exclusive four-node,
+45-minute batch allocation. On its first compute node, ReFrame uses
+`sysconfig-single-allocation.py`, a local scheduler and serial execution with
+`--maxfail=1`. All eleven runtime checks share the allocation, retaining their
+existing host selection and sanity checks. The local config refuses to load on
+a login node, on a different allocated node, or without exactly four nodes.
+The default tests fit four nodes; this pilot does not expose custom node counts.
+
+**Initial implementation limit:** source downloads and dependency builds also
+run inside the allocation. Compute-node network access, module initialization,
+shared filesystem paths, and PMIx/PRRTE placement must be verified on Frontier.
+If compute-node downloads are unavailable, this version cannot pass: a separate
+source-staging/build-reuse phase will be needed before adoption. Four nodes are
+held during builds and smaller tests. Forty-five minutes is an experimental
+allocated runtime budget, not a measured requirement or a guarantee.
+
+The pilot CI job requests four hours overall, with a 3h45m script allowance and
+five minutes for cleanup. Runner/project limits may cap these values. The queue
+wait still counts toward the script limit; this pilot does not eliminate that
+risk. Timings cannot be compared fairly with the old 1h45m script cap without
+separating queue time and allocated execution time.
+
+`sbatch --wait` propagates allocation failure to CI. On failure or interruption,
+the existing cleanup helper validates the runner UID, exact job workspace,
+allocation working directory and `rfm_job.sh` command before canceling anything.
+The allocation lives under `.ci-work/$CI_JOB_ID/reframe/stage/single-allocation`
+so it fits the existing cleanup scope. `after_script` provides a second cleanup
+attempt for script timeouts. Slurm's 45-minute allocation limit also bounds
+compute usage if the runner disappears; hard runner loss cannot guarantee
+immediate cancellation of a pending request.
+
+Artifacts retain allocation logs, the ReFrame report, runtime stage evidence,
+output and cleanup reports. The CI log follows allocation output and prints it
+again after completion. Compare `sacct` Submit/Start/End times, all eleven sanity
+results, and cleanup on a controlled failure before adopting this approach.
+One-commit success is required before a multi-commit pilot; this initial web job
+does not change the production child pipeline or prove child concurrency.
+
+Offline validation:
+
+```bash
+python3 ci/test_single_allocation_pilot.py
+python3 ci/test_cleanup_pmix_slurm_jobs.py
+bash ci/test_generate_pmix_child_pipeline.sh
+bash ci/test_run_exact_pmix_commit.sh
+```

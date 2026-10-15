@@ -16,6 +16,7 @@ Optional trusted-runner variables:
   PMIX_RFM_CONFIG_FILE  ReFrame config (default: sysconfig.yaml)
   PMIX_RFM_PREFIX       Isolated ReFrame output prefix
   PMIX_RFM_REPORT_FILE  JSON report path for an executing run
+  PMIX_RFM_EXEC_POLICY  async (default) or serial
 EOF
 }
 
@@ -147,9 +148,15 @@ if [[ "$mode" == list-only ]]; then
     exit 0
 fi
 
+rfm_policy=()
+case ${PMIX_RFM_EXEC_POLICY:-async} in
+    async) ;;
+    serial) rfm_policy=(--exec-policy=serial --maxfail=1) ;;
+    *) printf 'error: PMIX_RFM_EXEC_POLICY must be async or serial\n' >&2; exit 2 ;;
+esac
 rfm_report=()
 if [[ -n ${PMIX_RFM_REPORT_FILE:-} ]]; then
     rfm_report+=(--report-file "$PMIX_RFM_REPORT_FILE")
 fi
 "$RFM_BIN" "${rfm_common[@]}" -r "${rfm_system[@]}" \
-    "${rfm_output[@]}" "${rfm_report[@]}" --keep-stage-files
+    "${rfm_output[@]}" "${rfm_report[@]}" "${rfm_policy[@]}" --keep-stage-files

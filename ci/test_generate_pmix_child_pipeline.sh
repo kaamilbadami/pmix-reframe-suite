@@ -452,6 +452,7 @@ pr_metadata_pilot_exclusion = {
 assert generation["rules"] == pilot_rules
 assert trigger["rules"] == pilot_rules
 assert suite["rules"] == [
+    {"if": '$PMIX_SINGLE_ALLOCATION_PILOT == "1"', "when": "never"},
     {"if": '$PMIX_CLEANUP_239019 == "1" || $PMIX_CLEANUP_ENDED_RUNS == "1" || $PMIX_TIMEOUT_CLEANUP_PILOT == "1"', "when": "never"},
     openpmix_pr_exclusion,
     execution_exclusion,
