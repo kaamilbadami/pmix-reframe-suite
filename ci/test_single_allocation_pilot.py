@@ -26,6 +26,10 @@ class PilotTests(unittest.TestCase):
         (self.repo / 'ci').mkdir()
         for name in ('run_pmix_single_allocation.sh', 'cleanup_pmix_slurm_jobs.py'):
             shutil.copy(ROOT / 'ci' / name, self.repo / 'ci' / name)
+        (self.repo / 'ci/pmix_pilot_sources.py').write_text(
+            'import os, pathlib, sys\n'
+            'pathlib.Path(os.environ["CI_PROJECT_DIR"], "prepared").touch()\n'
+            'sys.exit(int(os.environ.get("SOURCE_FAIL", "0")))\n')
         self.bin = self.repo / 'bin'
         self.bin.mkdir()
         self.env = dict(os.environ, CI_PROJECT_DIR=str(self.repo), CI_JOB_ID='123',
@@ -49,6 +53,7 @@ class PilotTests(unittest.TestCase):
         result = self.launch()
         self.assertEqual(result.returncode, 0, result.stderr)
         args = (self.repo / 'submitted').read_text().splitlines()
+        self.assertTrue((self.repo / 'prepared').exists())
         self.assertIn('--nodes=4', args)
         self.assertIn('--wait', args)
         self.assertIn('--time=00:45:00', args)
@@ -59,6 +64,11 @@ class PilotTests(unittest.TestCase):
         # Reusing an identity must not submit another allocation.
         (self.repo / 'submitted').unlink()
         self.assertNotEqual(self.launch().returncode, 0)
+        self.assertFalse((self.repo / 'submitted').exists())
+
+    def test_source_failure_never_requests_allocation(self):
+        self.env['SOURCE_FAIL'] = '4'
+        self.assertEqual(self.launch().returncode, 4)
         self.assertFalse((self.repo / 'submitted').exists())
 
     def test_failed_allocation_propagates_exit_status(self):

@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 import os
+import shlex
 import reframe as rfm
 import reframe.utility.sanity as sn
 
@@ -18,6 +19,13 @@ class fetch_libevent(rfm.RunOnlyRegressionTest):
 
     @run_before('run')
     def prepare_download(self):
+        offline = os.environ.get('PMIX_PILOT_OFFLINE_SOURCES', '')
+        if offline:
+            helper = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  'ci', 'pmix_pilot_sources.py')
+            self.executable = os.environ['PMIX_PYTHON']
+            self.executable_opts = [shlex.quote(helper), 'use', 'libevent', shlex.quote(offline)]
+            return
         self.url = f"https://github.com/libevent/libevent/releases/download/release-{self.version}-stable/libevent-{self.version}-stable.tar.gz"
         self.executable_opts = [f"{self.url}"]
         

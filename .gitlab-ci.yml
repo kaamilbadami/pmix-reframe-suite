@@ -986,9 +986,9 @@ pmix-single-allocation-pilot:
   stage: test
   extends:
     - .frontier-shell-runner
-  timeout: 4h
+  timeout: 2h
   variables:
-    RUNNER_SCRIPT_TIMEOUT: "3h45m"
+    RUNNER_SCRIPT_TIMEOUT: "1h45m"
     RUNNER_AFTER_SCRIPT_TIMEOUT: "5m"
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_SINGLE_ALLOCATION_PILOT == "1"'
@@ -1009,8 +1009,10 @@ pmix-single-allocation-pilot:
       export PMIX_PYTHON="$PMIX_JOB_ROOT/venv/bin/python"
       export RFM_BIN="$PMIX_JOB_ROOT/venv/bin/reframe"
       python ci/test_single_allocation_pilot.py
+      python ci/test_pmix_pilot_sources.py
       bash ci/run_pmix_single_allocation.sh
   after_script:
+    - 'find ".ci-work/$CI_JOB_ID/reframe/stage" -type f -name rfm_job.err -print -exec tail -40 {} \; || true'
     - python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect Slurm cleanup errors above'
   artifacts:
     when: always
@@ -1023,5 +1025,9 @@ pmix-single-allocation-pilot:
       - .ci-work/$CI_JOB_ID/reframe/stage/single-allocation/*.err
       - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/PMIxPython*/
       - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.err
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.out
+      - .ci-work/$CI_JOB_ID/sources/prepare.log
+      - .ci-work/$CI_JOB_ID/sources/manifest.json
       - .ci-work/$CI_JOB_ID/report.json
       - ci-results/slurm-cleanup-$CI_JOB_ID.json

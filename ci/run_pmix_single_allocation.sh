@@ -18,6 +18,9 @@ export PMIX_RFM_PREFIX="$PMIX_JOB_ROOT/reframe"
 export PMIX_RFM_REPORT_FILE="$PMIX_JOB_ROOT/report.json"
 export PMIX_RFM_CONFIG_FILE="$repo/sysconfig-single-allocation.py"
 export PMIX_RFM_EXEC_POLICY=serial
+# Source preparation must finish on the login node before any allocation request.
+export PMIX_PILOT_OFFLINE_SOURCES="$PMIX_JOB_ROOT/sources"
+"$PMIX_PYTHON" ci/pmix_pilot_sources.py prepare "$PMIX_PILOT_OFFLINE_SOURCES"
 allocation="$PMIX_RFM_PREFIX/stage/single-allocation"
 mkdir -p -- "$allocation"
 # This exact stage/command scope is recognized by the existing cleanup helper.

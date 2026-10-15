@@ -377,19 +377,27 @@ existing host selection and sanity checks. The local config refuses to load on
 a login node, on a different allocated node, or without exactly four nodes.
 The default tests fit four nodes; this pilot does not expose custom node counts.
 
-**Initial implementation limit:** source downloads and dependency builds also
-run inside the allocation. Compute-node network access, module initialization,
-shared filesystem paths, and PMIx/PRRTE placement must be verified on Frontier.
-If compute-node downloads are unavailable, this version cannot pass: a separate
-source-staging/build-reuse phase will be needed before adoption. Four nodes are
-held during builds and smaller tests. Forty-five minutes is an experimental
-allocated runtime budget, not a measured requirement or a guarantee.
+Sources are now downloaded **on the shell runner's login node before requesting
+nodes**. `ci/pmix_pilot_sources.py` stages exact clean PMIx/PRRTE checkouts and
+the libevent archive under `.ci-work/$CI_JOB_ID/sources`. Git operations have
+wall-clock deadlines; wget uses bounded retries and a 180-second outer deadline.
+A failed preparation prevents allocation submission. The compute-side fetch
+fixtures verify the manifest, exact commits, clean trees, origins and archive
+checksum, then copy local sources. They never fall back to network downloads.
+The normal source paths remain unchanged when the pilot environment variable
+is absent.
 
-The pilot CI job requests four hours overall, with a 3h45m script allowance and
-five minutes for cleanup. Runner/project limits may cap these values. The queue
-wait still counts toward the script limit; this pilot does not eliminate that
-risk. Timings cannot be compared fairly with the old 1h45m script cap without
-separating queue time and allocated execution time.
+Builds still run inside the allocation. Four nodes are held during builds and
+smaller tests. Forty-five minutes is an experimental allocated runtime budget,
+not a measured requirement or a guarantee. Compute-node module initialization,
+shared filesystem paths, and PMIx/PRRTE placement still require Frontier testing.
+
+The pilot requests the existing two-hour overall job allowance, with 1h45m for
+the script and five minutes for cleanup. The first pilot demonstrated that the
+runner capped its former four-hour request; that request has been removed.
+Runner/project limits can still impose a lower cap. Source preparation and queue
+waiting count toward the script limit; allocation reuse does not eliminate
+queue timeout risk.
 
 `sbatch --wait` propagates allocation failure to CI. On failure or interruption,
 the existing cleanup helper validates the runner UID, exact job workspace,
@@ -400,7 +408,8 @@ attempt for script timeouts. Slurm's 45-minute allocation limit also bounds
 compute usage if the runner disappears; hard runner loss cannot guarantee
 immediate cancellation of a pending request.
 
-Artifacts retain allocation logs, the ReFrame report, runtime stage evidence,
+Artifacts retain source preparation logs and manifest, fetch stdout/stderr,
+allocation logs, the ReFrame report, runtime stage evidence,
 output and cleanup reports. The CI log follows allocation output and prints it
 again after completion. Compare `sacct` Submit/Start/End times, all eleven sanity
 results, and cleanup on a controlled failure before adopting this approach.
@@ -411,6 +420,7 @@ Offline validation:
 
 ```bash
 python3 ci/test_single_allocation_pilot.py
+python3 ci/test_pmix_pilot_sources.py
 python3 ci/test_cleanup_pmix_slurm_jobs.py
 bash ci/test_generate_pmix_child_pipeline.sh
 bash ci/test_run_exact_pmix_commit.sh

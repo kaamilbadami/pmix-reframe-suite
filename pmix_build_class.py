@@ -29,6 +29,13 @@ class fetch_pmix(rfm.RunOnlyRegressionTest):
 
     @run_before('run')
     def prepare_download(self):
+        offline = os.environ.get('PMIX_PILOT_OFFLINE_SOURCES', '')
+        if offline:
+            helper = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  'ci', 'pmix_pilot_sources.py')
+            self.executable = os.environ['PMIX_PYTHON']
+            self.executable_opts = [shlex.quote(helper), 'use', 'pmix', shlex.quote(offline)]
+            return
         branch = shlex.quote(self.branch)
         requested_commit = shlex.quote(self.commit)
         trusted_source = shlex.quote(self.trusted_source)
