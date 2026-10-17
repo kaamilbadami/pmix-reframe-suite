@@ -439,7 +439,8 @@ openpmix_pr_exclusion = {
     "if": '$OPENPMIX_PR_INTERNAL == "1"',
     "when": "never",
 }
-pilot_rules = [execution_exclusion, {"if": pilot_rule}, {"when": "never"}]
+multi_exclusion = {"if": '$PMIX_MULTI_ALLOCATION_PILOT == "1"', "when": "never"}
+pilot_rules = [multi_exclusion, execution_exclusion, {"if": pilot_rule}, {"when": "never"}]
 
 generation = parent["generate-pmix-child-pipeline-pilot"]
 trigger = parent["trigger-pmix-child-pipeline-pilot"]
@@ -452,6 +453,7 @@ pr_metadata_pilot_exclusion = {
 assert generation["rules"] == pilot_rules
 assert trigger["rules"] == pilot_rules
 assert suite["rules"] == [
+    multi_exclusion,
     {"if": '$PMIX_SINGLE_ALLOCATION_PILOT == "1"', "when": "never"},
     {"if": '$PMIX_CLEANUP_239019 == "1" || $PMIX_CLEANUP_ENDED_RUNS == "1" || $PMIX_TIMEOUT_CLEANUP_PILOT == "1"', "when": "never"},
     openpmix_pr_exclusion,
