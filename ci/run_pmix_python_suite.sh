@@ -148,6 +148,21 @@ if [[ "$mode" == list-only ]]; then
     exit 0
 fi
 
+rfm_selection=()
+case ${PMIX_PILOT_TEST_SCOPE:-all} in
+    all) ;;
+    l3)
+        [[ ${PMIX_SINGLE_ALLOCATION_PILOT:-} == 1 &&
+           -n ${PMIX_PILOT_OFFLINE_SOURCES:-} &&
+           $rfm_config == */sysconfig-single-allocation.py ]] || {
+            echo 'error: L3-only selection is restricted to the allocation pilot' >&2
+            exit 2
+        }
+        rfm_selection=(-n '^PMIxPythonMappingPPRL3CacheTest$')
+        printf 'Pilot scope: L3 only (plus its build dependencies); this is not a full-suite result.\n'
+        ;;
+    *) echo 'error: PMIX_PILOT_TEST_SCOPE must be all or l3' >&2; exit 2 ;;
+esac
 rfm_policy=()
 case ${PMIX_RFM_EXEC_POLICY:-async} in
     async) ;;
@@ -159,4 +174,4 @@ if [[ -n ${PMIX_RFM_REPORT_FILE:-} ]]; then
     rfm_report+=(--report-file "$PMIX_RFM_REPORT_FILE")
 fi
 "$RFM_BIN" "${rfm_common[@]}" -r "${rfm_system[@]}" \
-    "${rfm_output[@]}" "${rfm_report[@]}" "${rfm_policy[@]}" --keep-stage-files
+    "${rfm_output[@]}" "${rfm_report[@]}" "${rfm_policy[@]}" "${rfm_selection[@]}" --keep-stage-files

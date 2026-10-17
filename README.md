@@ -370,7 +370,7 @@ flags. Run after the active production batch finishes to avoid competing with it
 The default `pmix-python-suite` web job is excluded when this pilot flag is set.
 
 The shell runner sets up Python, then submits exactly one exclusive four-node,
-45-minute batch allocation. On its first compute node, ReFrame uses
+45-minute batch allocation with **64 tasks per node (256 total)**. On its first compute node, ReFrame uses
 `sysconfig-single-allocation.py`, a local scheduler and serial execution with
 `--maxfail=1`. All eleven runtime checks share the allocation, retaining their
 existing host selection and sanity checks. The local config refuses to load on
@@ -425,3 +425,12 @@ python3 ci/test_cleanup_pmix_slurm_jobs.py
 bash ci/test_generate_pmix_child_pipeline.sh
 bash ci/test_run_exact_pmix_commit.sh
 ```
+
+For the first slot-capacity check, add `PMIX_PILOT_TEST_SCOPE=l3` to the four
+pilot variables above. This runs only `PMIxPythonMappingPPRL3CacheTest` and its
+build dependencies inside the allocation. The complete eleven-check listing is
+still validated, but an L3-only pass is not a full-suite pass. After L3 succeeds,
+start a new pipeline with `PMIX_PILOT_TEST_SCOPE=all` (the default) to run all
+eleven tests. Multi-commit validation follows only after that full-suite pass.
+The 64-task-per-node request matches the default L3 test's 64-process requirement;
+no oversubscription or reduced test coverage is used.

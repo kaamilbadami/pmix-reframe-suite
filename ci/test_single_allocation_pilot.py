@@ -55,6 +55,8 @@ class PilotTests(unittest.TestCase):
         args = (self.repo / 'submitted').read_text().splitlines()
         self.assertTrue((self.repo / 'prepared').exists())
         self.assertIn('--nodes=4', args)
+        self.assertIn('--ntasks=256', args)
+        self.assertIn('--ntasks-per-node=64', args)
         self.assertIn('--wait', args)
         self.assertIn('--time=00:45:00', args)
         self.assertEqual(sum(a.endswith('/rfm_job.sh') for a in args), 1)
@@ -77,7 +79,8 @@ class PilotTests(unittest.TestCase):
 
     def test_missing_or_invalid_pins_never_submit(self):
         for key, value in [('PMIX_COMMIT', ''), ('PRRTE_COMMIT', 'main'),
-                           ('CI_JOB_ID', '../123'), ('PRRTE_BRANCH', 'bad branch')]:
+                           ('CI_JOB_ID', '../123'), ('PRRTE_BRANCH', 'bad branch'),
+                           ('PMIX_PILOT_TEST_SCOPE', 'unknown')]:
             with self.subTest(key=key):
                 env = self.env.copy()
                 self.env[key] = value
@@ -179,6 +182,26 @@ class PilotTests(unittest.TestCase):
         args = (self.repo / 'rfm-args').read_text().splitlines()
         self.assertNotIn('--exec-policy=serial', args)
         self.assertNotIn('--maxfail=1', args)
+
+        self.env.update(PMIX_PILOT_TEST_SCOPE='l3', PMIX_SINGLE_ALLOCATION_PILOT='1',
+                        PMIX_PILOT_OFFLINE_SOURCES='/offline',
+                        PMIX_RFM_CONFIG_FILE=str(self.repo / 'sysconfig-single-allocation.py'))
+        (self.repo / 'sysconfig-single-allocation.py').write_text('placeholder')
+        result = subprocess.run(['bash', 'ci/run_pmix_python_suite.sh'],
+                                cwd=self.repo, env=self.env, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, universal_newlines=True, timeout=15)
+        self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+        args = (self.repo / 'rfm-args').read_text().splitlines()
+        self.assertIn('^PMIxPythonMappingPPRL3CacheTest$', args)
+        self.assertIn('-n', args)
+        self.assertIn('not a full-suite result', result.stdout)
+        del self.env['PMIX_SINGLE_ALLOCATION_PILOT']
+        (self.repo / 'rfm-args').unlink()
+        result = subprocess.run(['bash', 'ci/run_pmix_python_suite.sh'],
+                                cwd=self.repo, env=self.env, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, universal_newlines=True, timeout=15)
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse((self.repo / 'rfm-args').exists())
 
 
 if __name__ == '__main__':

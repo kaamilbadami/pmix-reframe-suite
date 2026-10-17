@@ -18,6 +18,11 @@ export PMIX_RFM_PREFIX="$PMIX_JOB_ROOT/reframe"
 export PMIX_RFM_REPORT_FILE="$PMIX_JOB_ROOT/report.json"
 export PMIX_RFM_CONFIG_FILE="$repo/sysconfig-single-allocation.py"
 export PMIX_RFM_EXEC_POLICY=serial
+export PMIX_PILOT_TEST_SCOPE=${PMIX_PILOT_TEST_SCOPE:-all}
+case $PMIX_PILOT_TEST_SCOPE in
+    all|l3) ;;
+    *) echo 'error: PMIX_PILOT_TEST_SCOPE must be all or l3' >&2; exit 2 ;;
+esac
 # Source preparation must finish on the login node before any allocation request.
 export PMIX_PILOT_OFFLINE_SOURCES="$PMIX_JOB_ROOT/sources"
 "$PMIX_PYTHON" ci/pmix_pilot_sources.py prepare "$PMIX_PILOT_OFFLINE_SOURCES"
@@ -59,7 +64,7 @@ printf 'Requesting four nodes for one commit; allocated limit 45m. Queue wait co
 # --wait propagates a failed batch exit, including Slurm time-limit failure.
 # Explicit absolute paths permit cleanup even if submission is interrupted.
 sbatch --wait --parsable --account=gen243 --partition=batch \
-    --nodes=4 --ntasks=128 --ntasks-per-node=32 --exclusive \
+    --nodes=4 --ntasks=256 --ntasks-per-node=64 --exclusive \
     --time=00:45:00 --export=ALL --job-name="pmix-pilot-$CI_JOB_ID" \
     --chdir="$allocation" --output="$allocation/allocation.out" \
     --error="$allocation/allocation.err" "$allocation/rfm_job.sh" &
