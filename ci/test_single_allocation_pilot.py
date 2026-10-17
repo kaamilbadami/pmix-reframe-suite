@@ -60,6 +60,10 @@ class PilotTests(unittest.TestCase):
         self.assertIn('--nodes=4', args)
         self.assertIn('--ntasks=256', args)
         self.assertIn('--ntasks-per-node=64', args)
+        # Frontier defaults to 56 available cores. The 64-slot L3 allocation
+        # must disable that reservation at submission, matching the L3 check.
+        self.assertIn('--core-spec=0', args)
+        self.assertIn('--threads-per-core=1', args)
         self.assertIn('--wait', args)
         self.assertIn('--time=00:45:00', args)
         self.assertEqual(sum(a.endswith('/rfm_job.sh') for a in args), 1)
