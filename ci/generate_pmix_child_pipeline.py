@@ -190,11 +190,15 @@ def single_allocation_template():
         '      export PMIX_PILOT_TEST_SCOPE=all\n'
         '      python ci/test_single_allocation_pilot.py\n'
         '      python ci/test_pmix_pilot_sources.py\n'
+        '      python ci/test_monitor_pmix_allocation.py\n'
         '      bash ci/run_pmix_single_allocation.sh'
     )
     return template + """\
       - .ci-work/$CI_JOB_ID/reframe/stage/single-allocation/*.out
       - .ci-work/$CI_JOB_ID/reframe/stage/single-allocation/*.err
+      - .ci-work/$CI_JOB_ID/reframe/stage/single-allocation/*.jsonl
+      - .ci-work/$CI_JOB_ID/reframe/stage/single-allocation/*id.txt
+      - .ci-work/$CI_JOB_ID/reframe/stage/single-allocation/submission.out
       - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/PMIxPython*/
       - .ci-work/$CI_JOB_ID/sources/prepare.log
       - .ci-work/$CI_JOB_ID/sources/manifest.json
@@ -277,8 +281,8 @@ def main(arguments=None):
 
     shas = read_shas(input_path)
     if options.single_allocation:
-        if len(shas) != 2 or any(sha != sha.lower() for sha in shas):
-            fail("single-allocation pilot requires exactly two lowercase commits")
+        if any(sha != sha.lower() for sha in shas):
+            fail("single-allocation jobs require lowercase commits")
         if not options.select_prrte or options.fail_commit:
             fail("single-allocation pilot requires --select-prrte and no --fail-commit")
     fail_commit = options.fail_commit
