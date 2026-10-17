@@ -1054,6 +1054,8 @@ generate-pmix-multi-allocation-pilot:
   script:
     - |
       set -euo pipefail
+      module load miniforge3/23.11.0-0
+      python3 --version
       python3 ci/test_multi_allocation_pilot.py
       python3 ci/generate_pmix_multi_allocation_pilot.py \
           "${PMIX_MULTI_ALLOCATION_TIP:?provide an exact OpenPMIx tip SHA}" ci-allocation-pilot
