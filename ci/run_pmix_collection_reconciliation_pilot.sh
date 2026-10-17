@@ -84,10 +84,15 @@ mv -f -- "$current_tmp" "$current_state"
 current_tmp=
 trap - EXIT
 
+trigger_args=()
+if [[ -n ${PMIX_PILOT_TRIGGER_JOB_NAME:-} ]]; then
+    trigger_args=(--trigger-job-name "$PMIX_PILOT_TRIGGER_JOB_NAME")
+fi
 collector_status=0
 "$collector" \
     --commits "$ordered_commits" \
     --parent-pipeline-id "$CI_PIPELINE_ID" \
+    "${trigger_args[@]}" \
     --output "$collection_output" || collector_status=$?
 
 case $collector_status in
