@@ -43,6 +43,14 @@ mkdir -p -- "$allocation"
 chmod 700 "$allocation/rfm_job.sh"
 wait_pid=''
 log_pid=''
+monitor_pid=''
+stop_monitor() {
+    if [[ -n $monitor_pid ]]; then
+        kill -TERM "$monitor_pid" 2>/dev/null || true
+        wait "$monitor_pid" || echo 'WARNING - allocation diagnostics were incomplete' >&2
+        monitor_pid=''
+    fi
+}
 cleanup() {
     rc=$?
     trap - EXIT INT TERM
@@ -51,6 +59,7 @@ cleanup() {
         CI_JOB_STATUS=failed python3 ci/cleanup_pmix_slurm_jobs.py || true
         [[ -z $wait_pid ]] || kill "$wait_pid" 2>/dev/null || true
     fi
+    stop_monitor
     exit "$rc"
 }
 trap cleanup EXIT
@@ -58,7 +67,8 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 : > "$allocation/allocation.out"
 : > "$allocation/allocation.err"
-tail -n +1 -F "$allocation/allocation.out" "$allocation/allocation.err" &
+: > "$allocation/submission.out"
+tail -n +1 -F "$allocation/allocation.out" "$allocation/allocation.err" "$allocation/submission.out" &
 log_pid=$!
 printf 'Requesting four nodes for one commit; allocated limit 45m. Queue wait counts toward CI script limit.\n'
 # --wait propagates a failed batch exit, including Slurm time-limit failure.
@@ -70,11 +80,14 @@ sbatch --wait --parsable --account=gen243 --partition=batch \
     --core-spec=0 --threads-per-core=1 \
     --time=00:45:00 --export=ALL --job-name="pmix-pilot-$CI_JOB_ID" \
     --chdir="$allocation" --output="$allocation/allocation.out" \
-    --error="$allocation/allocation.err" "$allocation/rfm_job.sh" &
+    --error="$allocation/allocation.err" "$allocation/rfm_job.sh" > "$allocation/submission.out" &
 wait_pid=$!
+"$PMIX_PYTHON" ci/monitor_pmix_allocation.py "$allocation" &
+monitor_pid=$!
 rc=0
 wait "$wait_pid" || rc=$?
 wait_pid=''
+stop_monitor
 kill "$log_pid" 2>/dev/null || true
 wait "$log_pid" 2>/dev/null || true
 log_pid=''
