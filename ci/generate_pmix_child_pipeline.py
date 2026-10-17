@@ -182,10 +182,31 @@ def select_prrte(shas, history_repo):
     return selections
 
 
-def render_pipeline(shas, fail_commit=None, prrte_selections=None):
+def single_allocation_template():
+    """Reuse result handling; change only the opt-in commit execution path."""
+    template = COMMIT_JOB.replace(
+        '      bash ci/run_exact_pmix_commit.sh',
+        '      export PMIX_SINGLE_ALLOCATION_PILOT=1\n'
+        '      export PMIX_PILOT_TEST_SCOPE=all\n'
+        '      python ci/test_single_allocation_pilot.py\n'
+        '      python ci/test_pmix_pilot_sources.py\n'
+        '      bash ci/run_pmix_single_allocation.sh'
+    )
+    return template + """\
+      - .ci-work/$CI_JOB_ID/reframe/stage/single-allocation/*.out
+      - .ci-work/$CI_JOB_ID/reframe/stage/single-allocation/*.err
+      - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/PMIxPython*/
+      - .ci-work/$CI_JOB_ID/sources/prepare.log
+      - .ci-work/$CI_JOB_ID/sources/manifest.json
+      - .ci-work/$CI_JOB_ID/report.json
+"""
+
+
+def render_pipeline(shas, fail_commit=None, prrte_selections=None,
+                    single_allocation=False):
     jobs = []
     for sha in shas:
-        template = COMMIT_JOB
+        template = single_allocation_template() if single_allocation else COMMIT_JOB
         if fail_commit is not None and sha.lower() == fail_commit:
             template = FAILED_COMMIT_JOB
         if prrte_selections is not None:
@@ -236,6 +257,7 @@ def parse_arguments(arguments=None):
     parser.add_argument("output_yaml", type=Path)
     parser.add_argument("--fail-commit")
     parser.add_argument("--select-prrte", action="store_true")
+    parser.add_argument("--single-allocation", action="store_true")
     parser.add_argument("--pmix-history", type=Path)
     return parser.parse_args(arguments)
 
@@ -254,6 +276,11 @@ def main(arguments=None):
         fail("input SHA file and output YAML must be different files")
 
     shas = read_shas(input_path)
+    if options.single_allocation:
+        if len(shas) != 2 or any(sha != sha.lower() for sha in shas):
+            fail("single-allocation pilot requires exactly two lowercase commits")
+        if not options.select_prrte or options.fail_commit:
+            fail("single-allocation pilot requires --select-prrte and no --fail-commit")
     fail_commit = options.fail_commit
     if fail_commit is not None:
         if SHA_PATTERN.fullmatch(fail_commit) is None:
@@ -279,7 +306,7 @@ def main(arguments=None):
                 if result.returncode:
                     fail(f"could not fetch OpenPMIx history: {result.stderr.strip()}")
                 selections = select_prrte(shas, history)
-    atomic_write(output_path, render_pipeline(shas, fail_commit, selections))
+    atomic_write(output_path, render_pipeline(shas, fail_commit, selections, options.single_allocation))
     return 0
 
 
