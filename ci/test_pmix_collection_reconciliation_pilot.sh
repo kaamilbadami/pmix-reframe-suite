@@ -148,6 +148,15 @@ check(case.reconciler_args() == [
 ], "reconciler arguments changed")
 passed("collector exit 0 invokes the reconciler with exact ordered arguments")
 
+case = Case(collector_status=0, reconciler_status=0)
+case.environment["PMIX_PILOT_TRIGGER_JOB_NAME"] = "trigger-pmix-multi-allocation-pilot"
+check(case.run().returncode == 0, "custom trigger collection failed")
+args = case.collector_args()
+check(args[args.index("--trigger-job-name") + 1] == "trigger-pmix-multi-allocation-pilot",
+      "collector did not receive the multi-allocation trigger name")
+passed("multi-allocation trigger name reaches collector")
+
+
 baseline = (case.output / "baseline-pmix-master.env").read_bytes()
 current = (case.output / "current-pmix-master.env").read_bytes()
 baseline_lines = baseline.decode().splitlines()
@@ -264,7 +273,8 @@ execution_exclusion = {
     "if": '$PMIX_TESTS_PR_EXECUTION_PILOT == "1"',
     "when": "never",
 }
-guarded_rules = [execution_exclusion, {"if": pilot_rule}, {"when": "never"}]
+multi_exclusion = {"if": '$PMIX_MULTI_ALLOCATION_PILOT == "1"', "when": "never"}
+guarded_rules = [multi_exclusion, execution_exclusion, {"if": pilot_rule}, {"when": "never"}]
 generation = parent["generate-pmix-child-pipeline-pilot"]
 trigger = parent["trigger-pmix-child-pipeline-pilot"]
 job = parent["collect-reconcile-pmix-child-pipeline-pilot"]
@@ -277,6 +287,7 @@ check(parent["workflow"]["rules"] == [
 check(generation["rules"] == guarded_rules, "generation pilot guard changed")
 check(trigger["rules"] == guarded_rules, "trigger pilot guard changed")
 check(job["rules"] == [
+    multi_exclusion,
     execution_exclusion,
     {"if": pilot_rule, "when": "always"},
     {"when": "never"},
