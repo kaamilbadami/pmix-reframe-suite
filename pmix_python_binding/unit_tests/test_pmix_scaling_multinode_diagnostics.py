@@ -89,6 +89,20 @@ class ScalingMultinodeDiagnosticsTests(unittest.TestCase):
         source = WORKLOAD.read_text(encoding="utf-8")
         self.assertIn("process_${{host}}_$$_host", source)
 
+    def test_spawn_requests_32_per_node_independent_of_allocation_slots(self):
+        # Evaluate the actual spawn boundary without importing the PMIx binding.
+        call = next(node for node in ast.walk(workload_tree())
+                    if isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "spawn")
+        info = eval(compile(ast.Expression(call.args[0]), str(WORKLOAD), "eval"), {
+            "pmix": types.SimpleNamespace(PMIX_MAPBY="mapby", PMIX_STRING="string",
+                                          PMIX_NOTIFY_COMPLETION="notify", PMIX_BOOL="bool"),
+            "slots_per_node": 32,
+        })
+        self.assertIn({"key": "mapby", "value": "ppr:32:node", "val_type": "string"}, info)
+        self.assertIn({"key": "notify", "value": True, "val_type": "bool"}, info)
+
     def test_completion_event_is_requested_and_registered(self):
         source = WORKLOAD.read_text(encoding="utf-8")
         self.assertIn("pmix.PMIX_EVENT_JOB_END", source)
