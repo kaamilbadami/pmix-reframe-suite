@@ -1,6 +1,7 @@
 """Two-commit pilot checks using local Git history and no Frontier allocation."""
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -133,16 +134,106 @@ class MultiAllocationTests(unittest.TestCase):
         self.assertNotIn('run_pmix_single_allocation.sh', normal)
         self.assertEqual(normal.count('bash ci/run_exact_pmix_commit.sh'), 2)
 
-    def test_cli_rejects_unbounded_or_unpinned_pilot(self):
-        for shas, extra in [([self.first], ['--select-prrte']),
-                            ([self.base, self.first, self.tip], ['--select-prrte']),
-                            ([self.first, self.tip], []),
-                            ([self.first, self.tip], ['--select-prrte', '--fail-commit', self.tip])]:
+    def test_general_single_allocation_generator_accepts_zero_one_and_many(self):
+        for shas in ([], [self.first], [self.base, self.first, self.tip]):
             inp = self.root / 'commits'
-            inp.write_text('\n'.join(shas) + '\n')
-            with self.assertRaises(SystemExit):
-                child.main([str(inp), str(self.root / 'child.yml'), '--single-allocation'] + extra)
-        self.assertFalse((self.root / 'child.yml').exists())
+            inp.write_text(''.join(sha + '\n' for sha in shas))
+            child.main([str(inp), str(self.root / 'child.yml'), '--single-allocation',
+                        '--select-prrte', '--pmix-history', str(self.history)])
+            text = (self.root / 'child.yml').read_text()
+            self.assertEqual(text.count('bash ci/run_pmix_single_allocation.sh'), len(shas))
+            if not shas:
+                self.assertIn('no-untested-pmix-commits:', text)
+
+    def test_single_allocation_requires_dependency_selection(self):
+        inp = self.root / 'commits'
+        inp.write_text(self.tip + '\n')
+        with self.assertRaises(SystemExit):
+            child.main([str(inp), str(self.root / 'child.yml'), '--single-allocation'])
+
+    def test_parent_backlog_mode_snapshots_live_state_without_apply(self):
+        try:
+            import yaml
+        except ImportError:
+            self.skipTest('PyYAML unavailable')
+        config = yaml.safe_load((ROOT / '.gitlab-ci.yml').read_text())
+        script = config['generate-pmix-multi-allocation-pilot']['script'][0]
+        self.assertIn('PMIX_MULTI_ALLOCATION_FROM_STATE', script)
+        self.assertIn('ci/apply_reconciled_pmix_state.py snapshot', script)
+        self.assertIn('--state "$PMIX_AUTHORITATIVE_STATE_FILE"', script)
+        self.assertIn('--from-state ci-allocation-pilot/checkpoint-snapshot.env', script)
+        self.assertNotIn('apply_reconciled_pmix_state.py apply', script)
+        self.assertNotIn('cache:', str(config['generate-pmix-multi-allocation-pilot']))
+
+    def test_cli_from_snapshot_uses_frozen_master_and_all_commits(self):
+        self.commit('third')
+        snapshot = self.root / 'snapshot.env'
+        snapshot.write_text('PMIX_COMMIT=' + self.base + '\nSUITE_COMMIT=' + 'd' * 40 +
+                            '\nLAST_SUCCESS_EPOCH=12345\n')
+        original = snapshot.read_bytes()
+        real_run = subprocess.run
+        clone_calls = []
+        def local_clone(argv, **kwargs):
+            argv = list(argv)
+            if 'clone' in argv:
+                clone_calls.append(argv[:])
+                argv[argv.index('https://github.com/openpmix/openpmix.git')] = str(self.history)
+            return real_run(argv, **kwargs)
+        with patch.object(sys, 'argv', ['generator', 'master', str(self.output),
+                                       '--from-state', str(snapshot)]), \
+             patch('subprocess.run', side_effect=local_clone):
+            pilot.main()
+        self.assertEqual(len(clone_calls), 1)
+        self.assertEqual(len((self.output / 'commits.txt').read_text().splitlines()), 3)
+        self.assertEqual(snapshot.read_bytes(), original)
+
+    def test_checkpoint_range_preserves_state_and_freezes_full_backlog(self):
+        from apply_reconciled_pmix_state import snapshot_state, parse_state
+        state = self.root / 'live.env'
+        content = ('PMIX_COMMIT=' + self.base + '\nSUITE_COMMIT=' + 'd' * 40 +
+                   '\nLAST_SUCCESS_EPOCH=12345\n')
+        state.write_text(content)
+        snapshot = self.root / 'snapshot.env'
+        snapshot_state(state, snapshot)
+        base = parse_state(snapshot)[0]['PMIX_COMMIT']
+        self.commit('third')
+        self.commit('fourth')
+        frozen = pilot.git(self.history, 'rev-parse', 'master')
+        pilot.generate(self.history, frozen, self.output, base=base)
+        self.assertEqual(len((self.output / 'commits.txt').read_text().splitlines()), 4)
+        self.assertEqual((self.output / 'tip-sha.txt').read_text().strip(), frozen)
+        self.commit('arrived after discovery')
+        self.assertEqual(len((self.output / 'commits.txt').read_text().splitlines()), 4)
+        self.assertEqual(state.read_text(), content)
+        self.assertEqual(snapshot.read_text(), content)
+
+    def test_checkpoint_at_master_generates_noop(self):
+        pilot.generate(self.history, self.tip, self.output, base=self.tip)
+        self.assertEqual((self.output / 'commits.txt').read_text(), '')
+        self.assertIn('no-untested-pmix-commits:', (self.output / 'pipeline.yml').read_text())
+
+    def test_checkpoint_not_ancestor_is_rejected(self):
+        subprocess.run(['git', '-C', str(self.history), 'checkout', '-qb', 'other', self.base], check=True)
+        self.commit('outside')
+        outside = pilot.git(self.history, 'rev-parse', 'HEAD')
+        with self.assertRaises(subprocess.CalledProcessError):
+            pilot.generate(self.history, self.tip, self.output, base=outside)
+        self.assertFalse(self.output.exists())
+
+    def test_backlog_mode_includes_merged_commits(self):
+        subprocess.run(['git', '-C', str(self.history), 'checkout', '-qb', 'side', self.base], check=True)
+        self.commit('side')
+        side = pilot.git(self.history, 'rev-parse', 'HEAD')
+        subprocess.run(['git', '-C', str(self.history), 'checkout', '-q', 'master'], check=True)
+        subprocess.run(['git', '-C', str(self.history), '-c', 'user.name=Test',
+                        '-c', 'user.email=test@example.invalid', 'merge', '-q', '--no-ff',
+                        '-m', 'merge', 'side'], check=True)
+        tip = pilot.git(self.history, 'rev-parse', 'HEAD')
+        pilot.generate(self.history, tip, self.output, base=self.base)
+        commits = (self.output / 'commits.txt').read_text().splitlines()
+        self.assertEqual(len(commits), 4)
+        self.assertIn(side, commits)
+        self.assertEqual(commits[-1], tip)
 
 
 if __name__ == '__main__':
