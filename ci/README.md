@@ -111,3 +111,37 @@ OpenPMIx PR execution selects an exact PRRTE pin from the function declaration
 in the exact PR checkout. Unknown declarations fail before the build. Scheduled
 commit jobs retain the multinode scaling stage, including PRRTE launch logs,
 for investigation when ReFrame output is incomplete.
+
+## Two-commit single-allocation pilot
+
+On `feat/pmix-single-allocation-pilot`, create a new **web** pipeline with:
+
+| Variable | Value |
+|---|---|
+| `PMIX_MULTI_ALLOCATION_PILOT` | `1` |
+| `PMIX_MULTI_ALLOCATION_TIP` | Exact lowercase OpenPMIx master SHA ending the two-commit range |
+
+For the initial validation use `96f0b2ec66566f2ccf74adbb7d40b4a544a84853` as
+`PMIX_MULTI_ALLOCATION_TIP`. Start with these two variables only; remove old
+single-commit pilot variables and explicit PMIx/PRRTE pin overrides.
+
+Generation validates the tip against complete upstream master history, selects
+that commit and its predecessor, and rejects ranges with extra merged commits.
+The commit before those two is the excluded baseline. Each child receives its
+own exact OpenPMIx and compatible PRRTE pins. Parent pipeline variables are not
+forwarded to the children, and each child explicitly selects the full suite.
+
+The parent has generation, a mirrored child trigger, and collection/reconciliation.
+The child has two commit jobs in the same stage, with no resource-group lock;
+actual overlap depends on runner and Slurm capacity. Each commit uses its own
+CI-job workspace and one four-node allocation, with all 11 runtime checks
+executed serially inside it. Each job retains results, source manifests,
+allocation logs, and the ReFrame report even on failure. A failed commit stops
+that commit's remaining tests but does not cancel its sibling.
+
+Limits remain two hours per CI commit job, 1h45m for setup + queue waiting +
+builds/tests, and 45 minutes once nodes are allocated. This pilot does not
+promise a shorter initial queue wait. Collection produces only a proposed
+successful prefix under `ci-multi-allocation-results/`; it does not read or
+update the authoritative checkpoint or any state cache. The production schedule
+continues using its existing execution path. Frontier validation remains required.
