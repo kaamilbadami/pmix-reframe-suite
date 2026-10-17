@@ -333,8 +333,16 @@ try:
     if event_handler_result[0] != 0:
         raise SystemExit("spawn completion handler registration failed")
 
-    # Ask PMIx and PRRTE to launch every process and report job completion.
+    # Keep the requested processes per node even when an enclosing allocation
+    # exposes more slots (the shared-allocation pilot provides 64 per node).
+    # Default slot filling could otherwise place a two-node trial on one node.
+    print("map-by policy:", f"ppr:{slots_per_node}:node", flush=True)
     spawn_result = tool.spawn([
+        {
+            "key": pmix.PMIX_MAPBY,
+            "value": f"ppr:{slots_per_node}:node",
+            "val_type": pmix.PMIX_STRING
+        },
         {
             "key": pmix.PMIX_NOTIFY_COMPLETION,
             "value": True,
