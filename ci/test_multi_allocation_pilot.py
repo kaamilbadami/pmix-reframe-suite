@@ -70,6 +70,9 @@ class MultiAllocationTests(unittest.TestCase):
         collect = config['collect-reconcile-pmix-multi-allocation-pilot']
         self.assertEqual(generation['rules'], [{'if': flag}, {'when': 'never'}])
         self.assertEqual(trigger['rules'], generation['rules'])
+        preparation = generation['script'][0]
+        self.assertLess(preparation.index('module load miniforge3/23.11.0-0'),
+                        preparation.index('python3 ci/test_multi_allocation_pilot.py'))
         self.assertEqual(collect['rules'], [{'if': flag, 'when': 'always'}, {'when': 'never'}])
         self.assertFalse(trigger['trigger']['forward']['pipeline_variables'])
         self.assertEqual(trigger['trigger']['strategy'], 'mirror')
@@ -86,11 +89,11 @@ class MultiAllocationTests(unittest.TestCase):
             self.assertEqual(job['variables']['PMIX_COMMIT'], sha)
             self.assertEqual(job['variables']['PRRTE_COMMIT'], selections[sha][1])
             self.assertEqual(job['artifacts']['when'], 'always')
-            subprocess.run(['bash', '-n'], input=job['script'][0], text=True, check=True)
+            subprocess.run(['bash', '-n'], input=job['script'][0], universal_newlines=True, check=True)
             self.assertNotIn('needs', job)
             self.assertNotIn('resource_group', job)
         for name in ('generate-pmix-multi-allocation-pilot', 'collect-reconcile-pmix-multi-allocation-pilot'):
-            subprocess.run(['bash', '-n'], input=config[name]['script'][0], text=True, check=True)
+            subprocess.run(['bash', '-n'], input=config[name]['script'][0], universal_newlines=True, check=True)
 
     def test_invalid_tip_never_runs_git_or_creates_output(self):
         with patch.object(pilot, 'git') as git:
