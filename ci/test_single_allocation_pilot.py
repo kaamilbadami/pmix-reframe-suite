@@ -32,7 +32,10 @@ class PilotTests(unittest.TestCase):
             'sys.exit(int(os.environ.get("SOURCE_FAIL", "0")))\n')
         self.bin = self.repo / 'bin'
         self.bin.mkdir()
-        self.env = dict(os.environ, CI_PROJECT_DIR=str(self.repo), CI_JOB_ID='123',
+        # Mock jobs must not inherit the real pilot scope, paths or Slurm identity.
+        clean_env = {k: v for k, v in os.environ.items()
+                     if not k.startswith(('PMIX_', 'PRRTE_', 'RFM_', 'SLURM_', 'CI_'))}
+        self.env = dict(clean_env, CI_PROJECT_DIR=str(self.repo), CI_JOB_ID='123',
                         PMIX_COMMIT='a' * 40, PRRTE_COMMIT='b' * 40,
                         PMIX_PYTHON='/usr/bin/python3', RFM_BIN='/unused/reframe',
                         PATH=str(self.bin) + os.pathsep + os.environ['PATH'])
