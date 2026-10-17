@@ -77,6 +77,8 @@ generate-pmix-child-pipeline-pilot:
     - .frontier-shell-runner
 
   rules:
+    - if: '$PMIX_MULTI_ALLOCATION_PILOT == "1"'
+      when: never
     - if: '$PMIX_TESTS_PR_EXECUTION_PILOT == "1"'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
@@ -162,6 +164,8 @@ generate-pmix-child-pipeline-pilot:
 trigger-pmix-child-pipeline-pilot:
   stage: pilot-trigger
   rules:
+    - if: '$PMIX_MULTI_ALLOCATION_PILOT == "1"'
+      when: never
     - if: '$PMIX_TESTS_PR_EXECUTION_PILOT == "1"'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
@@ -180,6 +184,8 @@ collect-reconcile-pmix-child-pipeline-pilot:
   timeout: 15m
 
   rules:
+    - if: '$PMIX_MULTI_ALLOCATION_PILOT == "1"'
+      when: never
     - if: '$PMIX_TESTS_PR_EXECUTION_PILOT == "1"'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_CHILD_PIPELINE_PILOT == "1"'
@@ -691,6 +697,8 @@ pmix-python-suite:
   resource_group: pmix-python-suite-frontier
 
   rules:
+    - if: '$PMIX_MULTI_ALLOCATION_PILOT == "1"'
+      when: never
     - if: '$PMIX_SINGLE_ALLOCATION_PILOT == "1"'
       when: never
     - if: '$PMIX_CLEANUP_239019 == "1" || $PMIX_CLEANUP_ENDED_RUNS == "1" || $PMIX_TIMEOUT_CLEANUP_PILOT == "1"'
@@ -991,6 +999,8 @@ pmix-single-allocation-pilot:
     RUNNER_SCRIPT_TIMEOUT: "1h45m"
     RUNNER_AFTER_SCRIPT_TIMEOUT: "5m"
   rules:
+    - if: '$PMIX_MULTI_ALLOCATION_PILOT == "1"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_SINGLE_ALLOCATION_PILOT == "1"'
     - when: never
   script:
@@ -1031,3 +1041,66 @@ pmix-single-allocation-pilot:
       - .ci-work/$CI_JOB_ID/sources/manifest.json
       - .ci-work/$CI_JOB_ID/report.json
       - ci-results/slurm-cleanup-$CI_JOB_ID.json
+
+# Manual two-commit validation only. No scheduled rules, caches, or state apply.
+generate-pmix-multi-allocation-pilot:
+  stage: pilot-generate
+  extends:
+    - .frontier-shell-runner
+  timeout: 15m
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_MULTI_ALLOCATION_PILOT == "1"'
+    - when: never
+  script:
+    - |
+      set -euo pipefail
+      python3 ci/test_multi_allocation_pilot.py
+      python3 ci/generate_pmix_multi_allocation_pilot.py \
+          "${PMIX_MULTI_ALLOCATION_TIP:?provide an exact OpenPMIx tip SHA}" ci-allocation-pilot
+      cat ci-allocation-pilot/pipeline.yml
+  artifacts:
+    expire_in: 14 days
+    paths:
+      - ci-allocation-pilot/
+
+trigger-pmix-multi-allocation-pilot:
+  stage: pilot-trigger
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_MULTI_ALLOCATION_PILOT == "1"'
+    - when: never
+  trigger:
+    include:
+      - artifact: ci-allocation-pilot/pipeline.yml
+        job: generate-pmix-multi-allocation-pilot
+    strategy: mirror
+    forward:
+      yaml_variables: true
+      pipeline_variables: false
+
+collect-reconcile-pmix-multi-allocation-pilot:
+  stage: pmix-collect
+  extends:
+    - .frontier-shell-runner
+  timeout: 15m
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_MULTI_ALLOCATION_PILOT == "1"'
+      when: always
+    - when: never
+  needs:
+    - job: generate-pmix-multi-allocation-pilot
+      artifacts: true
+    - job: trigger-pmix-multi-allocation-pilot
+      artifacts: false
+  script:
+    - |
+      set -euo pipefail
+      export PMIX_CHILD_PIPELINE_BASE_SHA=$(cat ci-allocation-pilot/base-sha.txt)
+      export PMIX_PILOT_TRIGGER_JOB_NAME=trigger-pmix-multi-allocation-pilot
+      bash ci/run_pmix_collection_reconciliation_pilot.sh \
+          ci-allocation-pilot/commits.txt ci-multi-allocation-results
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-allocation-pilot/
+      - ci-multi-allocation-results/
