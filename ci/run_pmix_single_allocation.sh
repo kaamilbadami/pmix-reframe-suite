@@ -63,8 +63,11 @@ log_pid=$!
 printf 'Requesting four nodes for one commit; allocated limit 45m. Queue wait counts toward CI script limit.\n'
 # --wait propagates a failed batch exit, including Slurm time-limit failure.
 # Explicit absolute paths permit cleanup even if submission is interrupted.
+# Match the L3 check: Frontier otherwise reserves eight of the 64 cores.
+# Inner local-scheduler checks cannot change the outer allocation CPU layout.
 sbatch --wait --parsable --account=gen243 --partition=batch \
     --nodes=4 --ntasks=256 --ntasks-per-node=64 --exclusive \
+    --core-spec=0 --threads-per-core=1 \
     --time=00:45:00 --export=ALL --job-name="pmix-pilot-$CI_JOB_ID" \
     --chdir="$allocation" --output="$allocation/allocation.out" \
     --error="$allocation/allocation.err" "$allocation/rfm_job.sh" &
