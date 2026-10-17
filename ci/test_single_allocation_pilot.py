@@ -24,7 +24,8 @@ class PilotTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.repo = Path(self.temp.name)
         (self.repo / 'ci').mkdir()
-        for name in ('run_pmix_single_allocation.sh', 'cleanup_pmix_slurm_jobs.py'):
+        for name in ('run_pmix_single_allocation.sh', 'cleanup_pmix_slurm_jobs.py',
+                     'monitor_pmix_allocation.py'):
             shutil.copy(ROOT / 'ci' / name, self.repo / 'ci' / name)
         (self.repo / 'ci/pmix_pilot_sources.py').write_text(
             'import os, pathlib, sys\n'
@@ -74,6 +75,20 @@ class PilotTests(unittest.TestCase):
         (self.repo / 'submitted').unlink()
         self.assertNotEqual(self.launch().returncode, 0)
         self.assertFalse((self.repo / 'submitted').exists())
+
+    def test_allocation_id_and_accounting_are_retained(self):
+        self.fake('sbatch', 'printf "42\\n"; sleep 0.3')
+        self.fake('squeue', 'echo "42|PENDING|0:00|45:00|4|Priority|N/A"')
+        self.fake('scontrol', 'echo "JobId=42 Reason=Priority"')
+        self.fake('sacct', 'echo "42|submit|eligible|start|end|0:10|COMPLETED|0:0"')
+        result = self.launch()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        directory = self.repo / '.ci-work/123/reframe/stage/single-allocation'
+        self.assertEqual((directory / 'submission.out').read_text().strip(), '42')
+        self.assertEqual((directory / 'slurm-id.txt').read_text().strip(), '42')
+        diagnostics = (directory / 'allocation-diagnostics.jsonl').read_text()
+        self.assertIn('Priority', diagnostics)
+        self.assertIn('COMPLETED', diagnostics)
 
     def test_source_failure_never_requests_allocation(self):
         self.env['SOURCE_FAIL'] = '4'
