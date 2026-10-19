@@ -9,7 +9,7 @@ This pipeline builds OpenPMIx and runs our 11-check PMIx Python ReFrame suite on
 3. Run a separate test job for each exact commit. Jobs use separate workspaces and can run in parallel.
 4. Collect results and advance last-known-good only through consecutive successful commits.
 
-For example, if **A and B pass, C fails, and D passes**, state advances to **B**. The next schedule retries from C. Missing or invalid results also stop advancement. With no new commits, state stays unchanged. The schedule starts a wrapper pipeline that holds this lock until its five-job orchestration child completes, including state application. New scheduled pipelines wait before discovery, then read fresh state. Commit jobs inside each batch remain parallel. This uses two child levels: orchestration, then exact-commit jobs. It does not serialize manual or PR testing.
+For example, if **A and B pass, C fails, and D passes**, state advances to **B**. The next schedule retries from C. Missing or invalid results also stop advancement. With no new commits, the saved commit is retested using the full suite when `LAST_SUCCESS_EPOCH` is at least 24 hours old. Success refreshes the timestamp without advancing the commit; failure leaves the health check due. Before 24 hours, no tests run and state stays unchanged. The schedule starts a wrapper pipeline that holds this lock until its five-job orchestration child completes, including state application. New scheduled pipelines wait before discovery, then read fresh state. Commit jobs inside each batch remain parallel. This uses two child levels: orchestration, then exact-commit jobs. It does not serialize manual or PR testing.
 
 ## Last-known-good state
 

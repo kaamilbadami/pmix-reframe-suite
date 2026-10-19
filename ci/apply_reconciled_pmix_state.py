@@ -265,11 +265,13 @@ def validate_reconciliation(
     commits: List[str],
     report: Dict[str, str],
     suite_commit: str,
+    allow_baseline_retest: bool = False,
 ) -> Tuple[bool, str]:
     if not valid_sha(suite_commit):
         raise ValidationError("suite commit is not a lowercase 40-character SHA")
     base_commit = baseline["PMIX_COMMIT"]
-    if base_commit in commits:
+    baseline_retest = allow_baseline_retest and commits == [base_commit]
+    if base_commit in commits and not baseline_retest:
         raise ValidationError("ordered commit list contains the baseline commit")
     if report["BASELINE_COMMIT"] != base_commit:
         raise ValidationError("report baseline does not match discovery state")
@@ -375,7 +377,7 @@ def apply_state(options: argparse.Namespace) -> None:
     commits = parse_commits(options.commits)
     report = parse_report(options.report)
     update_required, boundary = validate_reconciliation(
-        baseline, commits, report, options.suite_commit
+        baseline, commits, report, options.suite_commit, options.allow_baseline_retest
     )
     has_proposal = proposal_exists(options.proposal)
     proposal_bytes = b""
@@ -422,6 +424,7 @@ def parse_arguments(arguments: Optional[Sequence[str]] = None) -> argparse.Names
     snapshot.add_argument("--state", required=True, type=Path)
     snapshot.add_argument("--output", required=True, type=Path)
     apply_parser = subparsers.add_parser("apply")
+    apply_parser.add_argument("--allow-baseline-retest", action="store_true")
     apply_parser.add_argument("--baseline-state", required=True, type=Path)
     apply_parser.add_argument("--authoritative-state", required=True, type=Path)
     apply_parser.add_argument("--commits", required=True, type=Path)

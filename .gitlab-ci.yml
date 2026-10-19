@@ -252,6 +252,9 @@ generate-pmix-child-pipeline-scheduled:
       bash ci/discover_untested_pmix_commits.sh \
           "$baseline_state" \
           "$output_dir/pmix-untested-commits.txt"
+      python3 ci/prepare_pmix_health_check.py \
+          --state "$baseline_state" \
+          --commits "$output_dir/pmix-untested-commits.txt"
       python3 ci/generate_pmix_child_pipeline.py \
           "$output_dir/pmix-untested-commits.txt" \
           "$output_dir/pmix-child-pipeline.yml" \
@@ -392,6 +395,7 @@ reconcile-pmix-child-results-scheduled:
 
       reconciliation_status=0
       python3 ci/reconcile_pmix_results.py \
+          --allow-baseline-retest \
           --baseline-state ci-scheduled/baseline-pmix-master.env \
           --current-state "$current_state" \
           --commits ci-scheduled/pmix-untested-commits.txt \
@@ -468,6 +472,7 @@ apply-pmix-reconciled-state-scheduled:
       esac
 
       python3 ci/apply_reconciled_pmix_state.py apply \
+          --allow-baseline-retest \
           --baseline-state ci-scheduled/baseline-pmix-master.env \
           --authoritative-state "${PMIX_SCHEDULED_STATE_FILE:-$PMIX_AUTHORITATIVE_STATE_FILE}" \
           --commits ci-scheduled/pmix-untested-commits.txt \

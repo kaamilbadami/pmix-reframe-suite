@@ -314,6 +314,8 @@ def publish_outputs(
 
 def parse_arguments(arguments: Optional[List[str]] = None) -> argparse.Namespace:
     parser = ReconcileArgumentParser(description=__doc__)
+    parser.add_argument("--allow-baseline-retest", action="store_true",
+                        help="allow a singleton saved-commit health check")
     parser.add_argument("--baseline-state", required=True, type=Path)
     parser.add_argument("--current-state", required=True, type=Path)
     parser.add_argument("--commits", required=True, type=Path)
@@ -373,7 +375,8 @@ def reconcile(arguments: Optional[List[str]] = None) -> int:
             write_report(options.output, report)
             return EXIT_STALE
 
-        if baseline["PMIX_COMMIT"] in commits:
+        baseline_retest = options.allow_baseline_retest and commits == [baseline["PMIX_COMMIT"]]
+        if baseline["PMIX_COMMIT"] in commits and not baseline_retest:
             raise InputError("commit list contains the baseline PMIX_COMMIT")
 
         if not commits:
@@ -421,7 +424,7 @@ def reconcile(arguments: Optional[List[str]] = None) -> int:
             report["RECONCILIATION_RESULT"] = "complete"
             exit_status = EXIT_OK
 
-        if candidate_good != baseline["PMIX_COMMIT"]:
+        if candidate_good != baseline["PMIX_COMMIT"] or (baseline_retest and successful_prefix_count == 1):
             report["STATE_UPDATE_PROPOSED"] = "1"
 
         proposal_content = None

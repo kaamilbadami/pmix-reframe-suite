@@ -85,6 +85,7 @@ for required in (
     "baseline-pmix-master.env",
     "discover_untested_pmix_commits.sh",
     "generate_pmix_child_pipeline.py",
+    "prepare_pmix_health_check.py",
 ):
     check(required in generate_script, f"scheduled generation omits {required}")
 for forbidden in (
@@ -100,6 +101,9 @@ check(generate["artifacts"]["paths"] == [
     "ci-scheduled/pmix-untested-commits.txt",
     "ci-scheduled/pmix-child-pipeline.yml",
 ], "scheduled generation artifacts changed")
+check(generate_script.index("discover_untested_pmix_commits.sh") < generate_script.index("prepare_pmix_health_check.py") < generate_script.index("generate_pmix_child_pipeline.py"), "health check must follow discovery and precede generation")
+for job in (reconcile, apply):
+    check("--allow-baseline-retest" in "\n".join(job["script"]), "scheduled health-check result cannot be applied")
 passed("scheduled generation strictly snapshots authoritative Lustre state")
 
 check(not {"PRRTE_BRANCH", "PRRTE_COMMIT"}.intersection(trigger.get("variables", {})), "scheduled trigger overrides child PRRTE pins")

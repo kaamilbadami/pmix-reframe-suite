@@ -190,6 +190,8 @@ base. An empty range produces a no-op child pipeline and leaves state unchanged.
 
 A scheduled wrapper holds the `pmix-scheduled-batch` resource group through discovery, testing, reconciliation, and application. Later scheduled runs wait before reading state. The wrapper starts an orchestration child containing the five scheduled jobs; that child generates the exact-commit child pipeline.
 
+When there are no new commits, scheduled discovery checks `LAST_SUCCESS_EPOCH`. If the last successful full-suite run was at least 86,400 seconds (24 hours) ago, it generates one normal exact-commit job to retest the saved PMIx commit as a Frontier health check. A successful health check refreshes the timestamp without advancing the commit; a failed or missing result leaves state unchanged and the check due for retry. An empty backlog younger than 24 hours remains a no-op. New commits always use normal per-commit testing.
+
 For a nonempty range, a generated child pipeline runs one existing exact-commit PMIx Python suite job per SHA. Child jobs may run concurrently as runner and Slurm capacity permit; they do not use a resource group or an artificial concurrency cap. Each job uses a job-specific workspace, virtual environment, ReFrame prefix, and pip cache, and always publishes a strict result record. Result collection is allowed to continue after failed child jobs or incomplete artifact retrieval so that reconciliation can identify a safe prefix.
 
 Reconciliation compares the byte-exact discovery baseline with a fresh read of
