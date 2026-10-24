@@ -89,7 +89,7 @@ export PRRTE_BRANCH=v5.0
 export PRRTE_COMMIT=22820a01e17547dbf1c4f9628eac327f193caa45
 ```
 
-Scheduled and manual multi-commit jobs automatically select an exact compatible PRRTE pin for each OpenPMIx commit. OpenPMIx PR jobs select the pin from the exact PR source. See [PRRTE compatibility](ci/README.md#prrte-compatibility-for-exact-openpmix-commits) for the supported pairings and limitations. Direct local runs must select a compatible dependency themselves.
+Scheduled jobs resolve PRRTE master once per nonempty batch and use that exact SHA for every PMIx job, including daily health checks. Manual multi-commit pilots retain the existing per-PMIx-commit compatibility pins. OpenPMIx PR jobs select the pin from the exact PR source. See [PRRTE compatibility](ci/README.md#prrte-compatibility-for-exact-openpmix-commits) for the supported pairings and limitations. Direct local runs must select a compatible dependency themselves.
 
 Git checkouts run `autogen.pl` before configure. Release tarballs retain the
 existing extraction and build path and do not run `autogen.pl`.

@@ -182,6 +182,26 @@ def select_prrte(shas, history_repo):
     return selections
 
 
+def resolve_prrte_master():
+    """Resolve master once; child jobs build this exact SHA, never a moving ref."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", "--exit-code",
+             "https://github.com/openpmix/prrte.git", "refs/heads/master"],
+            universal_newlines=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, timeout=60
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        fail("could not resolve PRRTE master: {}".format(error))
+    fields = result.stdout.split()
+    if (result.returncode or len(fields) != 2
+            or re.fullmatch(r"[0-9a-f]{40}", fields[0]) is None
+            or fields[1] != "refs/heads/master"):
+        fail("could not resolve an exact PRRTE master SHA: {}".format(result.stderr.strip()))
+    print("Scheduled batch PRRTE master: {}".format(fields[0]))
+    return fields[0]
+
+
 def render_pipeline(shas, fail_commit=None, prrte_selections=None):
     jobs = []
     for sha in shas:
@@ -235,7 +255,10 @@ def parse_arguments(arguments=None):
     parser.add_argument("input_sha_file", type=Path)
     parser.add_argument("output_yaml", type=Path)
     parser.add_argument("--fail-commit")
-    parser.add_argument("--select-prrte", action="store_true")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--select-prrte", action="store_true")
+    selection.add_argument("--prrte-master", action="store_true",
+                           help="use one exact PRRTE master revision for the batch")
     parser.add_argument("--pmix-history", type=Path)
     return parser.parse_args(arguments)
 
@@ -266,6 +289,9 @@ def main(arguments=None):
     selections = None
     if options.pmix_history is not None and not options.select_prrte:
         fail("--pmix-history requires --select-prrte")
+    if options.prrte_master and shas:
+        prrte_sha = resolve_prrte_master()
+        selections = {sha: ("master", prrte_sha) for sha in shas}
     if options.select_prrte and shas:
         if options.pmix_history is not None:
             selections = select_prrte(shas, options.pmix_history)

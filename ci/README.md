@@ -42,7 +42,7 @@ Normal runs do not require development-pilot switches. CI supplies the job ident
 | `PMIX_AUTHORITATIVE_STATE_FILE` | Selects the scheduled checkpoint; defaults to the Frontier path above. |
 | `OLCF_SERVICE_ACCOUNT` | Selects the Frontier execution account through runner configuration; defaults to `gen243_auser`. |
 | `PMIX_COMMIT` | Identifies the exact OpenPMIx commit being tested. Scheduled jobs set it individually. The normal manual web run resolves master itself rather than honoring a supplied pin. |
-| `PRRTE_BRANCH`, `PRRTE_COMMIT` | Select the PRRTE source used with OpenPMIx. Multi-commit generators select an exact compatible pin per job; see the compatibility section below. |
+| `PRRTE_BRANCH`, `PRRTE_COMMIT` | Select the PRRTE source used with OpenPMIx. Scheduled batches resolve one exact PRRTE master SHA; manual pilots retain compatibility pins. See the compatibility section below. |
 | `GITHUB_PR_READ_TOKEN` | Reads PR information for PR workflows; ordinary scheduled commit discovery does not need it. |
 | `GITHUB_STATUS_TOKEN` | Posts GitHub status in supported workflows. Scheduled multi-commit testing and internal OpenPMIx PR testing do not post GitHub status. |
 
@@ -90,7 +90,16 @@ Configuration: [`.gitlab-ci.yml`](../.gitlab-ci.yml), [`openpmix_pr_jobs.yml`](o
 
 ### PRRTE compatibility for exact OpenPMIx commits
 
-Scheduled and manual multi-commit generators use `--select-prrte` to set
+Scheduled batches temporarily use `--prrte-master`: the generator resolves
+upstream PRRTE master once and writes that exact SHA into every commit job.
+This includes a saved-commit daily health check. Empty batches do not resolve
+PRRTE. A failed or malformed lookup stops generation without falling back to
+an older revision. Child jobs retain `prrte-source.env` with the built SHA;
+the generated YAML also records the batch's chosen SHA. PRRTE changes between
+batches can affect results, and compilation success does not establish runtime
+compatibility. Normal checkpoint and successful-prefix rules still apply.
+
+Manual multi-commit generators continue to use `--select-prrte` to set
 `PRRTE_BRANCH` and `PRRTE_COMMIT` separately for each child job. Complete
 OpenPMIx Git ancestry selects `v5.0` / `22820a01e17547dbf1c4f9628eac327f193caa45`
 for commits without the `1244a4498895f07f0b1a6e2d81c97d4104c2e12b` change,

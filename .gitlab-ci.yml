@@ -258,7 +258,7 @@ generate-pmix-child-pipeline-scheduled:
       python3 ci/generate_pmix_child_pipeline.py \
           "$output_dir/pmix-untested-commits.txt" \
           "$output_dir/pmix-child-pipeline.yml" \
-          --select-prrte
+          --prrte-master
 
   artifacts:
     expire_in: 14 days

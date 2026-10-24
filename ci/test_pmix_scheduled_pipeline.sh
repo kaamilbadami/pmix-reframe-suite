@@ -114,7 +114,9 @@ check(trigger["trigger"] == {
     }],
     "strategy": "mirror",
 }, "scheduled child trigger changed")
-passed("scheduled trigger mirrors the generated exact-commit child with pinned PRRTE")
+check("--prrte-master" in generate_script, "schedule does not resolve current PRRTE master")
+check("--select-prrte" not in generate_script, "schedule still uses old compatibility pins")
+passed("scheduled trigger mirrors the generated exact-commit child with batch-resolved PRRTE")
 
 check(collect["needs"] == [
     {"job": generate_name, "artifacts": True},
