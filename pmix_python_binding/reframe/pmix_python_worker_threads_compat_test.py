@@ -70,6 +70,8 @@ class _PMIxPythonWorkerThreadsCompatBase(rfm.RunOnlyRegressionTest):
             '0',
             '--job',
             SLEEPER,
+            '--startup-timeout',
+            '120',
             '--num-workers',
             str(self.num_workers)
         ]
@@ -80,6 +82,7 @@ class _PMIxPythonWorkerThreadsCompatBase(rfm.RunOnlyRegressionTest):
             "printf '%s slots=1\\n' \"${nodes[1]}\" \"${nodes[2]}\" > ci.hostfile",
             f'cp {os.path.join(SUITE_DIR, "controllers", "run_pmix_python_worker_threads_compat.py")} .',
             f'cp {os.path.join(SUITE_DIR, "common", "pmix_event_utils.py")} .',
+            f'cp {os.path.join(SUITE_DIR, "common", "prrte_startup.py")} .',
             f'cp {os.path.join(SUITE_DIR, "workloads", "sleeper_mpi_new.c")} .',
             'mpicc -o sleeper_mpi_new sleeper_mpi_new.c'
         ]

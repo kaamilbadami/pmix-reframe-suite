@@ -7,12 +7,13 @@ import math
 import random
 import argparse
 import datetime
-import select
 
 from pathlib import Path
 
 import threading
 import queue
+
+from prrte_startup import start_prrte
 
 from pmix_event_utils import (
     JobCompletionRouter,
@@ -62,6 +63,7 @@ parser.add_argument('--num-workers', type=int, required=False, default=1)
 
 
 parser.add_argument('--completion-timeout', type=float, default=120.0)
+parser.add_argument('--startup-timeout', type=float, default=120.0)
 
 debug = True
 
@@ -246,25 +248,6 @@ if not sleeper.exists():
     print("ERROR: Missing executable './sleeper'\n INFO: Remember to run './build.sh' first.\n\tGiven path was: '{}'".format(str(sleeper)))
     print("Continuing")
 
-dvm_messages = []
-
-def add_to_dvm_msg(fileh, name):
-    msg = fileh.readline().decode('utf8').strip()
-    msg_list = msg.split("\n")
-    for line in msg_list:
-        dvm_messages.append("{}: {}".format(name, line))
-
-def prte_log_thread():
-    global dvm
-
-    while True:
-        ready = select.select([dvm.stdout, dvm.stderr], [], [])
-
-        if dvm.stdout in ready[0]:
-            add_to_dvm_msg(dvm.stdout, "stdout")
-        if dvm.stderr in ready[0]:
-            add_to_dvm_msg(dvm.stderr, "stderr")
-
 prte_prefix = os.environ["PRRTE"]
 prte_args = [f"{prte_prefix}/bin/prte", "--prefix", prte_prefix, "--report-uri", dvm_file, "--prtemca", "plm", "^slurm,lsf", "--prtemca", "ras", "^slurm,lsf"]
 if "CI_HOSTFILE" in os.environ:
@@ -273,19 +256,14 @@ if "CI_HOSTFILE" in os.environ:
 
 print_info("Launching prte with args: {}".format(", ".join(prte_args)))
 
-#Popen is nonblocking, so no shell games needed, the script just owns prte
-dvm = subprocess.Popen(prte_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-while True:
-    outs = dvm.stdout.readline().decode('utf8').strip()
-    if outs:
-        print_info("dvm output: '{}'".format(outs))
-    if outs == "DVM ready":
-        break
-    if outs == "":
-        err = dvm.stderr.readline().decode('utf8').strip()
-        raise RuntimeError("PRTE exited before readiness. stderr: {}".format(err))
-
-threading.Thread(target=prte_log_thread, daemon=True).start()
+try:
+    dvm = start_prrte(prte_args, args.out_file, timeout=args.startup_timeout)
+except (RuntimeError, ValueError, OSError) as error:
+    print_info(str(error))
+    if Path(dvm_file).is_file():
+        shutdown_dvm()
+    raise SystemExit(1)
+print_info("DVM ready")
 
 def worker(worker_id):
     info = [{'key':pmix.PMIX_MAPBY, 'value':"hwthread:NOLOCAL", 'val_type':pmix.PMIX_STRING},
@@ -391,9 +369,10 @@ finally:
     with open(args.out_file+".sleep_times", 'w') as out_file:
         out_file.write("\n".join(app_times))
 
-    dvm_messages.append("")
     with open(args.out_file+".dvm_output", 'w') as out_file:
-        out_file.write("\n".join(dvm_messages))
+        for stream in ("stdout", "stderr"):
+            path = Path(args.out_file + ".prte." + stream)
+            out_file.write(stream + ":\n" + path.read_text(errors="replace") + "\n")
 
     # do sanity tests here
     dvm_shutdown_ok = shutdown_dvm()
