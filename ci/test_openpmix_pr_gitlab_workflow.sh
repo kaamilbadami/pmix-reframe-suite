@@ -18,6 +18,26 @@ child = yaml.safe_load(child_text)
 assert isinstance(parent, dict) and isinstance(jobs, dict) and isinstance(child, dict)
 print("ok - parent, reusable workflow, and child configurations parse as YAML")
 
+# Exercise the first-match schedule rules for ordinary and PR-only schedules.
+def scheduled_job_enabled(name, pr_polling):
+    env = {"CI_PIPELINE_SOURCE": "schedule", "OPENPMIX_PR_AUTODISCOVERY": pr_polling}
+    for rule in parent[name]["rules"]:
+        expression = rule.get("if")
+        if expression:
+            for key, value in env.items():
+                expression = expression.replace("$" + key, repr(value))
+            if not eval(expression.replace("&&", " and "), {"__builtins__": {}}, {}):
+                continue
+        return rule.get("when") != "never"
+    return False
+
+for pr_polling in ("", "0", "1"):
+    assert scheduled_job_enabled("run-pmix-scheduled-batch", pr_polling) == (pr_polling != "1")
+    for name in ("generate-openpmix-pr-pipelines", "trigger-openpmix-pr-pipelines"):
+        assert scheduled_job_enabled(name, pr_polling) == (pr_polling == "1")
+print("ok - ordinary schedules run master batches; PR schedules run only PR discovery")
+
+
 for name in (
         "prepare-openpmix-pr", "run-openpmix-pr",
         "finalize-openpmix-pr"):
@@ -84,6 +104,6 @@ assert jobs['run-openpmix-pr']['variables']['RUNNER_SCRIPT_TIMEOUT'] == '1h45m'
 assert jobs['run-openpmix-pr']['variables']['RUNNER_AFTER_SCRIPT_TIMEOUT'] == '5m'
 print("ok - named children resolve exact PRRTE master and keep the pmix-tests pilot separate")
 
-print("1..6")
+print("1..8")
 PY
 

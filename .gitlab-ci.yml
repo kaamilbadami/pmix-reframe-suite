@@ -214,6 +214,8 @@ run-pmix-scheduled-batch:
   stage: pilot-trigger
   resource_group: pmix-scheduled-batch
   rules:
+    - if: '$OPENPMIX_PR_AUTODISCOVERY == "1"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - when: never
   variables:

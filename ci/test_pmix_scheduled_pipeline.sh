@@ -37,7 +37,7 @@ batch = parent['run-pmix-scheduled-batch']
 check(batch['resource_group'] == 'pmix-scheduled-batch', 'missing whole-batch lock')
 check(batch['trigger']['strategy'] == 'mirror', 'batch lock released too early')
 check(batch['trigger']['include'] == [{'local': '.gitlab-ci.yml'}], 'wrong batch configuration')
-check(batch['rules'] == [{'if': '$CI_PIPELINE_SOURCE == "schedule"'}, {'when': 'never'}], 'recursive batch trigger')
+check(batch['rules'] == [{'if': '$OPENPMIX_PR_AUTODISCOVERY == "1"', 'when': 'never'}, {'if': '$CI_PIPELINE_SOURCE == "schedule"'}, {'when': 'never'}], 'PR polling must exclude normal master batches')
 check(batch['trigger']['forward']['pipeline_variables'] is False, 'dependency pins can override child selections')
 check(batch['variables']['PMIX_SCHEDULED_BATCH_INTERNAL'] == '1', 'missing batch identity')
 check(batch['variables']['PMIX_SCHEDULED_STATE_FILE'] == '$PMIX_AUTHORITATIVE_STATE_FILE', 'state override lost at wrapper')

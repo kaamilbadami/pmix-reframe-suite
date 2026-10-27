@@ -76,7 +76,16 @@ and verify the first wrapper, orchestration child, and commit child in GitLab.
 If runners are disabled, pause the schedule to avoid accumulating waiting pipelines. Pausing does not cancel existing pipelines or erase saved state.
 
 PR testing is under development and will be documented separately once validated.
-Automatic OpenPMIx PR discovery remains opt-in (`OPENPMIX_PR_AUTODISCOVERY=1`).
+Automatic OpenPMIx PR discovery remains opt-in (`OPENPMIX_PR_AUTODISCOVERY=1`). Use a separate
+schedule on the lifecycle branch with that variable for a temporary PR trial
+(e.g. `*/5 * * * *`, subject to GitLab's allowed frequency). PR schedules
+exclude `run-pmix-scheduled-batch`; leave the normal 30-minute schedule without
+this variable. Empty discovery creates a no-op child without building or
+requesting compute nodes. PR execution jobs share their existing resource lock;
+discovery suppresses active/successful heads but overlapping discovery still
+has the duplicate-launch race noted below. Disable the temporary schedule after
+validation; this configuration does not disable it automatically.
+
 It requires job-token access to the pipeline-list API (`READ_PIPELINES` where
 fine-grained permissions are used). It identifies PR heads by child pipeline
 names, suppresses active or successful attempts, and retries failed, canceled,
