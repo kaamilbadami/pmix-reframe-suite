@@ -18,9 +18,21 @@ KEYS = (
 HEADER = """stages:
   - trigger
 
+include:
+  - project: ci/resources/templates
+    ref: main
+    file:
+      - /runners.yml
+
+variables:
+  OLCF_SERVICE_ACCOUNT: "gen243_auser"
+  FF_GIT_URLS_WITHOUT_TOKENS: "1"
+
 """
 NOOP = """no-eligible-openpmix-prs:
   stage: trigger
+  extends:
+    - .frontier-shell-runner
   script:
     - printf '%s\\n' 'No new eligible OpenPMIx PR heads were discovered.'
 """

@@ -135,6 +135,15 @@ with tempfile.TemporaryDirectory(prefix="openpmix-discovery-") as temporary:
           "empty discovery did not generate a no-op child")
     passed("empty discovery produces one harmless no-op pipeline")
 
+    pipeline = yaml.safe_load((root / "pipeline.yml").read_text())
+    check({"project": "ci/resources/templates", "ref": "main",
+           "file": ["/runners.yml"]} in pipeline["include"] and
+          pipeline["no-eligible-openpmix-prs"]["extends"] ==
+          [".frontier-shell-runner"] and
+          pipeline["variables"]["OLCF_SERVICE_ACCOUNT"] == "gen243_auser",
+          "empty discovery job has no matching Frontier shell runner")
+    passed("no-op child includes and selects the Frontier shell runner template")
+
     result = run(root, [updated, kaamil], [])
     check(result.returncode == 0, result.stderr.decode())
     generated = subprocess.run([
