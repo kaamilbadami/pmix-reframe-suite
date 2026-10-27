@@ -76,8 +76,13 @@ assert "run_pmix_tests_pr_isolated.sh" in parent_text
 assert child["workflow"]["name"] == "openpmix-pr:${OPENPMIX_PR_NUMBER}:${OPENPMIX_PR_EXPECTED_SHA}"
 runner = Path("ci/run_trusted_openpmix_pr.sh").read_text()
 assert 'ci/select_prrte_for_source.py "$checkout_dir" "$selected_sha"' in runner
+assert '"$selected_sha" --prrte-master)' in runner
+assert 'prrte-selection.env' in runner
 assert "export PRRTE_BRANCH PRRTE_COMMIT" in runner
-print("ok - named children select compatible PRRTE and keep the pmix-tests pilot separate")
+assert jobs['run-openpmix-pr']['timeout'] == '2h'
+assert jobs['run-openpmix-pr']['variables']['RUNNER_SCRIPT_TIMEOUT'] == '1h45m'
+assert jobs['run-openpmix-pr']['variables']['RUNNER_AFTER_SCRIPT_TIMEOUT'] == '5m'
+print("ok - named children resolve exact PRRTE master and keep the pmix-tests pilot separate")
 
 print("1..6")
 PY

@@ -83,7 +83,7 @@ names, suppresses active or successful attempts, and retries failed, canceled,
 or skipped attempts. Pipelines created before this naming convention are not
 recognized and can be tested again. Overlapping discovery runs can still launch
 duplicates; validate live API access and address that race before enabling it.
-OpenPMIx PR execution selects a compatible exact PRRTE pin from the function declaration in its verified source checkout; see the compatibility section below.
+OpenPMIx PR execution resolves one exact PRRTE master SHA per execution; see the compatibility section below.
 
 Configuration: [`.gitlab-ci.yml`](../.gitlab-ci.yml), [`openpmix_pr_jobs.yml`](openpmix_pr_jobs.yml), and [`run_pmix_python_suite.sh`](run_pmix_python_suite.sh). See the [root README](../README.md) for installation and test coverage. Development-only pilots are outside this guide.
 
@@ -116,7 +116,9 @@ complete existing OpenPMIx repository. Parent triggers do not forward fixed PRRT
 per-commit selections. Explicit pipeline-level PRRTE overrides should not be
 supplied for automatic compatibility runs.
 
-OpenPMIx PR execution selects an exact PRRTE pin from the function declaration
-in the exact PR checkout. Unknown declarations fail before the build. Scheduled
+OpenPMIx PR execution resolves PRRTE master once, builds that exact SHA, and
+records it in `evidence/prrte-selection.env` and `prrte-source.env` artifacts.
+PR execution has a two-hour job limit and a 1h45m main-script limit.
+Results remain internal to GitLab; this workflow does not post GitHub statuses. Scheduled
 commit jobs retain the multinode scaling stage, including PRRTE launch logs,
 for investigation when ReFrame output is incomplete.

@@ -53,9 +53,11 @@ run-openpmix-pr:
   extends:
     - .frontier-shell-runner
     - .openpmix-pr-always-rules
-  timeout: 3h
+  timeout: 2h
   resource_group: pmix-python-suite-frontier
   variables:
+    RUNNER_SCRIPT_TIMEOUT: "1h45m"
+    RUNNER_AFTER_SCRIPT_TIMEOUT: "5m"
     GITHUB_PR_READ_TOKEN: ""
     GITHUB_STATUS_TOKEN: ""
     GIT_SUBMODULE_STRATEGY: none
@@ -84,6 +86,7 @@ run-openpmix-pr:
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.err
       - ci-openpmix-pr-execution/reframe/stage/**/PMIX_COMMIT
       - ci-openpmix-pr-execution/reframe/stage/**/pmix-commit.env
+      - ci-openpmix-pr-execution/reframe/stage/**/prrte-source.env
 
 finalize-openpmix-pr:
   stage: pr-finalize
