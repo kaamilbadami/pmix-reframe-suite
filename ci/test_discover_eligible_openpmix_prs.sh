@@ -12,6 +12,7 @@ import sys
 import tempfile
 import importlib.util
 import yaml
+from urllib.parse import parse_qs, urlsplit
 
 
 ci = Path(sys.argv[1]).resolve()
@@ -55,13 +56,39 @@ spec.loader.exec_module(module)
 for status in ("success", "running", "pending", "failed", "canceled", "skipped"):
     def fake_get(url, headers):
         check("/variables" not in url, "unsupported variables endpoint requested")
+        query = parse_qs(urlsplit(url).query)
+        check(query["name"] == ["openpmix-pr:42:" + "a" * 40],
+              "discovery scanned unrelated historical pipelines")
         return [{"id": 123, "status": status,
                  "name": "openpmix-pr:42:" + "a" * 40}]
     module.get_json = fake_get
-    pairs = module.pipeline_pairs("https://gitlab.example/api/v4", "1", "fixture-token")
+    pairs = module.pipeline_pairs("https://gitlab.example/api/v4", "1", "fixture-token",
+                                  [("42", "a" * 40)])
     check((("42", "a" * 40) in pairs) == (status in module.SUPPRESS_STATES),
           "retry policy differs for " + status)
 passed("supported pipeline-list endpoint suppresses active/successful heads and retries failed/canceled heads")
+
+def reject_request(url, headers):
+    raise AssertionError("empty candidate set queried GitLab history")
+module.get_json = reject_request
+check(module.pipeline_pairs("https://gitlab.example/api/v4", "1", "fixture-token", []) == set(),
+      "empty candidate set was not empty")
+passed("no eligible open PRs require no historical pipeline scan")
+
+pages = []
+def paginated_get(url, headers):
+    page = int(parse_qs(urlsplit(url).query)["page"][0])
+    pages.append(page)
+    if page == 1:
+        return [{"id": i, "status": "failed", "name": "openpmix-pr:42:" + "a" * 40}
+                for i in range(100)]
+    return [{"id": 101, "status": "success", "name": "openpmix-pr:42:" + "a" * 40}]
+module.get_json = paginated_get
+check(("42", "a" * 40) in module.pipeline_pairs(
+    "https://gitlab.example/api/v4", "1", "fixture-token", [("42", "a" * 40)]),
+    "successful head on a later retry page was missed")
+check(pages == [1, 2], "per-head pagination changed")
+passed("named-head lookup paginates retries without scanning empty polls")
 
 with tempfile.TemporaryDirectory(prefix="openpmix-discovery-") as temporary:
     root = Path(temporary)

@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import tempfile
 from urllib.parse import quote, urlencode, urlsplit
+from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from check_trusted_openpmix_pr import (
@@ -78,6 +79,8 @@ def get_json(url, headers):
             body = response.read(MAX_BODY + 1)
     except DiscoveryError:
         raise
+    except HTTPError as error:
+        raise DiscoveryError("metadata request returned HTTP {}".format(error.code)) from error
     except Exception as error:
         raise DiscoveryError("metadata request failed") from error
     if len(body) > MAX_BODY:
@@ -118,7 +121,7 @@ def github_prs(token):
     raise DiscoveryError("GitHub pull pagination exceeded its bound")
 
 
-def pipeline_pairs(api_url, project_id, token):
+def pipeline_pairs(api_url, project_id, token, candidates):
     parts = urlsplit(api_url)
     if (parts.scheme != "https" or not parts.netloc or parts.query or
             parts.fragment or not NUMBER_RE.fullmatch(project_id or "") or
@@ -127,28 +130,34 @@ def pipeline_pairs(api_url, project_id, token):
     base = api_url.rstrip("/") + "/projects/" + quote(project_id, safe="")
     headers = {"JOB-TOKEN": token, "Accept": "application/json"}
     pairs = set()
-    for page in range(1, 11):
-        query = urlencode({
-            "source": "parent_pipeline", "per_page": "100",
-            "page": str(page),
-        })
-        pipelines = get_json(base + "/pipelines?" + query, headers)
-        if not isinstance(pipelines, list):
-            raise DiscoveryError("GitLab pipelines response is not a list")
-        for pipeline in pipelines:
-            if (not isinstance(pipeline, dict) or
-                    pipeline.get("status") not in PIPELINE_STATES or
-                    not isinstance(pipeline.get("id"), int)):
-                raise DiscoveryError("GitLab pipeline identity is malformed")
-            # Pipeline names use the supported pipeline-list endpoint. Reading
-            # pipeline variables is not supported by CI_JOB_TOKEN.
-            name = pipeline.get("name")
-            match = PIPELINE_NAME_RE.fullmatch(name) if isinstance(name, str) else None
-            if match and pipeline["status"] in SUPPRESS_STATES:
-                pairs.add(match.groups())
-        if len(pipelines) < 100:
-            return pairs
-    raise DiscoveryError("GitLab pipeline pagination exceeded its bound")
+    # Query only current eligible heads. Scanning every historical child also
+    # scanned empty polls and master batches and failed after 1,000 children.
+    for number, sha in sorted(set(candidates)):
+        wanted = "openpmix-pr:{}:{}".format(number, sha)
+        if PIPELINE_NAME_RE.fullmatch(wanted) is None:
+            raise DiscoveryError("candidate PR identity is malformed")
+        for page in range(1, 11):
+            query = urlencode({
+                "source": "parent_pipeline", "name": wanted,
+                "per_page": "100", "page": str(page),
+            })
+            pipelines = get_json(base + "/pipelines?" + query, headers)
+            if not isinstance(pipelines, list):
+                raise DiscoveryError("GitLab pipelines response is not a list")
+            for pipeline in pipelines:
+                if (not isinstance(pipeline, dict) or
+                        pipeline.get("status") not in PIPELINE_STATES or
+                        type(pipeline.get("id")) is not int):
+                    raise DiscoveryError("GitLab pipeline identity is malformed")
+                if pipeline.get("name") != wanted:
+                    raise DiscoveryError("GitLab pipeline name filter was not honored")
+                if pipeline["status"] in SUPPRESS_STATES:
+                    pairs.add((number, sha))
+            if (number, sha) in pairs or len(pipelines) < 100:
+                break
+        else:
+            raise DiscoveryError("GitLab retry pagination exceeded its bound for one PR head")
+    return pairs
 
 
 def fixture_pairs(document):
@@ -267,15 +276,20 @@ def main():
             if test_mode:
                 raise DiscoveryError("test mode requires fixtures")
             prs = github_prs(os.environ.get("GITHUB_PR_READ_TOKEN", ""))
+            candidates = eligible_records(prs, set())
             suppressed = pipeline_pairs(
                 os.environ.get("CI_API_V4_URL", ""),
                 os.environ.get("CI_PROJECT_ID", ""),
                 os.environ.get("CI_JOB_TOKEN", ""),
+                [(record["pr_number"], record["head_sha"]) for record in candidates],
             )
         atomic_write(options.output, eligible_records(prs, suppressed))
         return 0
-    except (DiscoveryError, OSError):
-        print("error: OpenPMIx PR discovery failed", file=os.sys.stderr)
+    except DiscoveryError as error:
+        print("error: OpenPMIx PR discovery failed: " + str(error), file=os.sys.stderr)
+        return 2
+    except OSError:
+        print("error: OpenPMIx PR discovery failed: local file operation failed", file=os.sys.stderr)
         return 2
 
 
