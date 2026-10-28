@@ -54,11 +54,18 @@ generate-openpmix-pr-pipelines:
       python3 ci/generate_openpmix_pr_child_pipeline.py \
           .ci-openpmix-pr-discovery/eligible.jsonl \
           .ci-openpmix-pr-discovery/pipeline.yml
+      if ! python3 ci/summarize_openpmix_pr_pipelines.py \
+          > .ci-openpmix-pr-discovery/pr-summary.txt; then
+          printf '%s\n' 'PR summary unavailable; see the error above. PR discovery continues.' \
+              > .ci-openpmix-pr-discovery/pr-summary.txt
+      fi
+      cat .ci-openpmix-pr-discovery/pr-summary.txt
   artifacts:
     expire_in: 1 day
     paths:
       - .ci-openpmix-pr-discovery/eligible.jsonl
       - .ci-openpmix-pr-discovery/pipeline.yml
+      - .ci-openpmix-pr-discovery/pr-summary.txt
 
 trigger-openpmix-pr-pipelines:
   stage: pilot-trigger
