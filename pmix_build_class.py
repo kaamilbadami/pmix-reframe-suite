@@ -32,6 +32,9 @@ class fetch_pmix(rfm.RunOnlyRegressionTest):
         branch = shlex.quote(self.branch)
         requested_commit = shlex.quote(self.commit)
         trusted_source = shlex.quote(self.trusted_source)
+        oac_validator = shlex.quote(os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'ci',
+            'validate_openpmix_oac.py'))
         script = f"""
 set -euo pipefail
 PMIX_REQUESTED_BRANCH={branch}
@@ -68,14 +71,9 @@ if test -n "$PMIX_TRUSTED_SOURCE"; then
         printf '%s\\n' 'ERROR: trusted PMIx checkout origin is invalid' >&2
         exit 1
     fi
-    if git --no-pager -C "$PMIX_TRUSTED_SOURCE" ls-files \
-           --error-unmatch .gitmodules >/dev/null 2>&1 ||
-       git --no-pager -C "$PMIX_TRUSTED_SOURCE" ls-files --stage |
-           awk '$1 == "160000" {{ found=1 }} END {{ exit !found }}'; then
-        printf '%s\\n' 'ERROR: trusted PMIx source contains submodules' >&2
-        exit 1
-    fi
+    python3 {oac_validator} "$PMIX_TRUSTED_SOURCE" --populated
     cp -a -- "$PMIX_TRUSTED_SOURCE" pmix-git
+    python3 {oac_validator} pmix-git --populated
     PMIX_MODE=trusted-pr
     PMIX_BRANCH=refs/pull/validated/head
 else

@@ -294,7 +294,7 @@ def validate_checkout_values(values):
         raise RecordError("checkout is not detached")
     if values["CLEAN_CHECKOUT"] != "1":
         raise RecordError("checkout is not clean")
-    if values["GITLINK_COUNT"] != "0":
+    if values["GITLINK_COUNT"] not in ("0", "1"):
         raise RecordError("checkout contains unauthorized submodules")
     return values
 
@@ -583,7 +583,7 @@ def preparation_values(eligibility, pipeline_id, result):
     }
 
 
-def checkout_values(preparation, fetched_sha, checked_out_sha):
+def checkout_values(preparation, fetched_sha, checked_out_sha, gitlink_count="0"):
     values = {
         "OPENPMIX_PR_CHECKOUT_VERSION": CHECKOUT_VERSION,
         "CI_PIPELINE_ID": preparation["CI_PIPELINE_ID"],
@@ -599,7 +599,7 @@ def checkout_values(preparation, fetched_sha, checked_out_sha):
         "CHECKED_OUT_SHA": checked_out_sha,
         "DETACHED_HEAD": "1",
         "CLEAN_CHECKOUT": "1",
-        "GITLINK_COUNT": "0",
+        "GITLINK_COUNT": gitlink_count,
     }
     return validate_checkout_values(values)
 
@@ -677,7 +677,7 @@ def command_write_checkout(options):
             SHA_RE.fullmatch(options.checked_out_sha) is None):
         raise RecordError("checkout SHA argument is invalid")
     values = checkout_values(
-        preparation, options.fetched_sha, options.checked_out_sha
+        preparation, options.fetched_sha, options.checked_out_sha, options.gitlink_count
     )
     atomic_record(options.output, CHECKOUT_FIELDS, values, "checkout output")
     return 0
@@ -909,6 +909,7 @@ def build_parser():
     checkout.add_argument("--pipeline-id", required=True)
     checkout.add_argument("--fetched-sha", required=True)
     checkout.add_argument("--checked-out-sha", required=True)
+    checkout.add_argument("--gitlink-count", choices=("0", "1"), default="0")
     checkout.add_argument("--output", required=True, type=Path)
     checkout.set_defaults(function=command_write_checkout)
 

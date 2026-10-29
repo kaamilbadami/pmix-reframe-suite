@@ -15,7 +15,7 @@ fail() {
     exit "$status"
 }
 
-if (( $# != 3 && $# != 5 )); then
+if (( $# != 3 && $# != 5 && $# != 7 )); then
     usage
     exit 2
 fi
@@ -37,8 +37,10 @@ shift 3
     fail 2 'checkout directory must be a safe repository-relative path'
 
 upstream_url=https://github.com/openpmix/openpmix.git
+oac_url=https://github.com/open-mpi/oac.git
+script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" && pwd -P)
 git_protocol_option=never
-if (( $# == 2 )); then
+if (( $# == 2 || $# == 4 )); then
     [[ $1 == --test-upstream ]] ||
         fail 2 'unsupported checkout option'
     [[ ${OPENPMIX_PR_CHECKOUT_TEST_MODE:-} == 1 ]] ||
@@ -49,6 +51,11 @@ if (( $# == 2 )); then
         fail 2 'test upstream must be an existing absolute local path'
     upstream_url=$test_upstream
     git_protocol_option=always
+    if (( $# == 4 )); then
+        [[ $3 == --test-oac-upstream && $4 == /* && -d $4 && ! -L $4 ]] ||
+            fail 2 'test OAC upstream must be an existing absolute local path'
+        oac_url=$4
+    fi
 elif (( $# != 0 )); then
     usage
     exit 2
@@ -119,10 +126,23 @@ gitlink_count=$(
     /usr/bin/git -C "$checkout_dir" ls-files --stage |
         /usr/bin/awk '$1 == "160000" { count++ } END { print count + 0 }'
 )
-if (( gitlink_count != 0 )) ||
-   /usr/bin/git -C "$checkout_dir" ls-files --error-unmatch \
-       .gitmodules >/dev/null 2>&1; then
+oac_sha=$(python3 "$script_dir/validate_openpmix_oac.py" "$checkout_dir") ||
     fail 7 'OpenPMIx PR contains unauthorized submodule metadata or gitlinks'
+if [[ $oac_sha != none ]]; then
+    # Never run submodule update: neither a PR-supplied URL nor submodule
+    # options are used. Fetch only the exact gitlink revision from fixed OAC.
+    oac_dir=$checkout_dir/config/oac
+    /usr/bin/git init -q -- "$oac_dir"
+    /usr/bin/git -C "$oac_dir" remote add origin https://github.com/open-mpi/oac.git
+    /usr/bin/git -C "$oac_dir" -c credential.helper= -c core.hooksPath=/dev/null \
+        -c protocol.file.allow="$git_protocol_option" -c http.followRedirects=false \
+        fetch --no-tags --no-recurse-submodules "$oac_url" "$oac_sha" ||
+        fail 6 'could not fetch the exact OAC revision from its fixed upstream'
+    /usr/bin/git -C "$oac_dir" -c core.hooksPath=/dev/null \
+        checkout --detach "$oac_sha" --
+    python3 "$script_dir/validate_openpmix_oac.py" "$checkout_dir" --populated ||
+        fail 7 'OAC checkout failed validation'
+    printf 'OPENPMIX_PR_OAC_COMMIT=%s\n' "$oac_sha"
 fi
 
 if [[ -n $(/usr/bin/git -C "$checkout_dir" status \
@@ -135,4 +155,4 @@ printf 'OPENPMIX_PR_FETCHED_SHA=%s\n' "$fetched_sha"
 printf 'OPENPMIX_PR_CHECKED_OUT_SHA=%s\n' "$checked_out_sha"
 printf '%s\n' 'OPENPMIX_PR_DETACHED_HEAD=1'
 printf '%s\n' 'OPENPMIX_PR_CLEAN_CHECKOUT=1'
-printf '%s\n' 'OPENPMIX_PR_GITLINK_COUNT=0'
+printf 'OPENPMIX_PR_GITLINK_COUNT=%s\n' "$gitlink_count"

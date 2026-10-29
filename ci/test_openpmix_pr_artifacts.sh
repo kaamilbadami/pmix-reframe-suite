@@ -218,10 +218,21 @@ with tempfile.TemporaryDirectory(prefix="test-openpmix-records-") as temporary:
               "checkout schema or order changed")
         passed("checkout evidence binds the fixed pull ref and exact prepared SHA")
 
+        completed = run([
+            "write-checkout", "--preparation", "preparation.env",
+            "--pipeline-id", "9001", "--fetched-sha", sha,
+            "--checked-out-sha", sha, "--gitlink-count", "1",
+            "--output", "checkout-with-oac.env",
+        ])
+        check(completed.returncode == 0 and
+              "GITLINK_COUNT=1\n" in Path("checkout-with-oac.env").read_text(),
+              "validated OAC checkout count was not preserved")
+        passed("checkout evidence records the single validated OAC gitlink")
+
         for mutation in (
                 expected_checkout.replace("DETACHED_HEAD=1", "DETACHED_HEAD=0"),
                 expected_checkout.replace("CLEAN_CHECKOUT=1", "CLEAN_CHECKOUT=0"),
-                expected_checkout.replace("GITLINK_COUNT=0", "GITLINK_COUNT=1"),
+                expected_checkout.replace("GITLINK_COUNT=0", "GITLINK_COUNT=2"),
                 expected_checkout.replace("refs/pull/4028/head",
                                           "refs/heads/master"),
                 expected_checkout + "EXTRA=value\n"):

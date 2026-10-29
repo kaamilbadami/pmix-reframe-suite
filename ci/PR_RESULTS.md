@@ -1,5 +1,13 @@
 # Checking PR trial results
 
+PR checkout supports OpenPMIx's `config/oac` dependency. The helper validates
+the expected `.gitmodules` keys and path, fetches the exact gitlink revision
+from the fixed `https://github.com/open-mpi/oac.git` upstream, and checks its
+detached, clean checkout before and after copying the source into ReFrame.
+Other submodules, URL changes, extra options, and nested submodules are rejected.
+The selected OAC revision is saved in execution evidence `oac-selection.env`;
+checkout evidence records the actual gitlink count (zero or one).
+
 Open the latest **OpenPMIx PR discovery — 5-minute trial** parent pipeline,
 then its `generate-openpmix-pr-pipelines` job. The end of its log lists actual
 named PR child pipelines updated in the last 48 hours: PR number, full PMIx

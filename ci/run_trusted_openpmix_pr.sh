@@ -119,11 +119,17 @@ if (( checkout_status != 0 )); then
 fi
 
 checked_out_sha=$(/usr/bin/git -C "$checkout_dir" rev-parse --verify HEAD)
+oac_sha=$("$python_bin" ci/validate_openpmix_oac.py "$checkout_dir" --populated)
+printf 'OAC_ORIGIN=https://github.com/open-mpi/oac.git\nOAC_COMMIT=%s\n' \
+    "$oac_sha" > "$evidence_dir/oac-selection.env"
+gitlink_count=0
+[[ $oac_sha == none ]] || gitlink_count=1
 "$python_bin" "$records" write-checkout \
     --preparation "$preparation_record" \
     --pipeline-id "$CI_PIPELINE_ID" \
     --fetched-sha "$selected_sha" \
     --checked-out-sha "$checked_out_sha" \
+    --gitlink-count "$gitlink_count" \
     --output "$checkout_record"
 /usr/bin/git -C "$checkout_dir" show -s --format='%H' HEAD > \
     "$evidence_dir/checkout-commit.txt"
