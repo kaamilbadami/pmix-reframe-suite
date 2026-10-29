@@ -13,9 +13,22 @@ systems:
     - '--export=NIL'
     prepare_cmds:
     - |
-      set -euo pipefail
+      # Site initialization probes optional variables and command status.
+      # Match the isolated launcher: relax only while sourcing site scripts.
+      set +eu
       . /etc/profile.d/olcf-env.sh
+      olcf_init_status=$?
       . /etc/bash.bashrc.local
+      cray_pe_init_status=$?
+      set -euo pipefail
+      if (( olcf_init_status != 0 || cray_pe_init_status != 0 )); then
+          printf '%s\n' 'error: Frontier system module initialization failed' >&2
+          exit 2
+      fi
+      command -v module >/dev/null 2>&1 || {
+          printf '%s\n' 'error: Frontier module command is unavailable' >&2
+          exit 2
+      }
       if [[ -n ${SLURM_JOB_ID:-} ]]; then
           [[ $SLURM_JOB_ID =~ ^[1-9][0-9]*$ ]] || {
               printf '%s\n' 'error: canonical Slurm job ID is unavailable' >&2
