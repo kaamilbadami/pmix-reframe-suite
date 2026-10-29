@@ -55,9 +55,13 @@ def validate(root, populated=False):
                 not (sub / ".git").is_dir()):
             raise ValueError("OAC checkout is absent or unsafe")
         if (git(sub, "rev-parse", "HEAD").strip().decode() != sha or
+                git(root, "config", "--local", "--get", "submodule.oac.url").strip().decode() != OAC_URL or
                 git(sub, "remote", "get-url", "origin").strip().decode() != OAC_URL or
                 git(sub, "status", "--porcelain=v1", "--untracked-files=all")):
             raise ValueError("OAC checkout commit, origin, or clean state differs")
+        status = git(root, "submodule", "status", "--", "config/oac").decode()
+        if not status.startswith(" " + sha + " "):
+            raise ValueError("OAC is not initialized at the expected revision in the parent repository")
         if subprocess.run(["/usr/bin/git", "-C", str(sub), "symbolic-ref", "-q", "HEAD"],
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 1:
             raise ValueError("OAC checkout must be detached")

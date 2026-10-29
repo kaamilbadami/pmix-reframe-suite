@@ -140,6 +140,10 @@ if [[ $oac_sha != none ]]; then
         fail 6 'could not fetch the exact OAC revision from its fixed upstream'
     /usr/bin/git -C "$oac_dir" -c core.hooksPath=/dev/null \
         checkout --detach "$oac_sha" --
+    # autogen.pl checks `git submodule status`, which reports '-' unless
+    # the parent has registered the submodule, even with all files present.
+    /usr/bin/git -C "$checkout_dir" config --local submodule.oac.url \
+        https://github.com/open-mpi/oac.git
     python3 "$script_dir/validate_openpmix_oac.py" "$checkout_dir" --populated ||
         fail 7 'OAC checkout failed validation'
     printf 'OPENPMIX_PR_OAC_COMMIT=%s\n' "$oac_sha"

@@ -171,12 +171,25 @@ oac_checkout=$test_dir/oac-run/checkout
 [[ $(git -C "$oac_checkout/config/oac" rev-parse HEAD) == "$oac_sha" ]] ||
     fail 'exact OAC commit was not checked out'
 [[ -f $oac_checkout/config/oac/oac.m4 ]] || fail 'OAC build files are absent'
+submodule_status=$(git -C "$oac_checkout" submodule status -- config/oac)
+[[ $submodule_status == " $oac_sha "* ]] ||
+    fail 'autogen would reject OAC as missing or at the wrong revision'
 grep -Fqx 'OPENPMIX_PR_GITLINK_COUNT=1' "$test_dir/oac-run/evidence.txt" ||
     fail 'OAC gitlink count was not recorded'
 cp -a "$oac_checkout" "$test_dir/copied-checkout"
 python3 "$script_dir/validate_openpmix_oac.py" "$test_dir/copied-checkout" --populated >/dev/null ||
     fail 'copied trusted build source did not retain a valid OAC checkout'
+cp -a "$test_dir/copied-checkout" "$test_dir/build-checkout"
+submodule_status=$(git -C "$test_dir/build-checkout" submodule status -- config/oac)
+[[ $submodule_status == " $oac_sha "* ]] ||
+    fail 'autogen would reject OAC after the second build-stage copy'
 pass 'expected OAC is fetched at its exact revision and survives build-source copying'
+
+git -C "$test_dir/build-checkout" config --local --unset submodule.oac.url
+if python3 "$script_dir/validate_openpmix_oac.py" "$test_dir/build-checkout" --populated >/dev/null 2>&1; then
+    fail 'unregistered OAC was accepted despite autogen reporting it missing'
+fi
+pass 'populated OAC must also be registered in its parent for autogen'
 
 printf '%s\n' changed >> "$oac_checkout/config/oac/oac.m4"
 if python3 "$script_dir/validate_openpmix_oac.py" "$oac_checkout" --populated >/dev/null 2>&1; then
