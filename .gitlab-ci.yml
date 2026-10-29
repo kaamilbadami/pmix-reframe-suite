@@ -27,6 +27,30 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'
     - when: never
 
+audit-pmix-schedule-timeouts:
+  stage: pilot-generate
+  extends:
+    - .frontier-shell-runner
+  timeout: 30m
+  needs: []
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_TIMEOUT_AUDIT == "1"'
+    - when: never
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    GITHUB_PR_READ_TOKEN: ""
+    GITHUB_STATUS_TOKEN: ""
+  script:
+    - |
+      set +x
+      set -euo pipefail
+      python3 ci/audit_pmix_timeouts.py --schedule-id 46
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-timeout-audit/
+
 generate-openpmix-pr-pipelines:
   stage: pilot-generate
   extends:
@@ -705,6 +729,8 @@ pmix-python-suite:
   resource_group: pmix-python-suite-frontier
 
   rules:
+    - if: '$PMIX_TIMEOUT_AUDIT == "1"'
+      when: never
     - if: '$PMIX_CLEANUP_239019 == "1" || $PMIX_CLEANUP_ENDED_RUNS == "1" || $PMIX_TIMEOUT_CLEANUP_PILOT == "1"'
       when: never
     - if: '$OPENPMIX_PR_INTERNAL == "1"'
