@@ -729,6 +729,8 @@ pmix-python-suite:
   resource_group: pmix-python-suite-frontier
 
   rules:
+    - if: '$OPENPMIX_PR_BASELINE == "1"'
+      when: never
     - if: '$PMIX_TIMEOUT_AUDIT == "1"'
       when: never
     - if: '$PMIX_CLEANUP_239019 == "1" || $PMIX_CLEANUP_ENDED_RUNS == "1" || $PMIX_TIMEOUT_CLEANUP_PILOT == "1"'

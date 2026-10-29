@@ -1,5 +1,52 @@
 # Reusable three-job internal OpenPMIx PR workflow. It is reachable only from
 # an explicitly selected web pipeline or an isolated generated child pipeline.
+.openpmix-baseline-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $OPENPMIX_PR_BASELINE == "1"'
+      when: always
+    - when: never
+
+prepare-openpmix-baseline:
+  extends: prepare-openpmix-pr
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $OPENPMIX_PR_BASELINE == "1"'
+    - when: never
+  variables:
+    GITHUB_PR_READ_TOKEN: ""
+    GITHUB_STATUS_TOKEN: ""
+  script:
+    - |
+      set +x
+      set -euo pipefail
+      /usr/bin/rm -rf --one-file-system -- ci-openpmix-pr-preparation
+      [[ ! -e ci-openpmix-pr-preparation && ! -L ci-openpmix-pr-preparation ]]
+      /usr/bin/mkdir -m 700 -- ci-openpmix-pr-preparation
+      python3 ci/openpmix_pr_baseline.py prepare --pipeline-id "$CI_PIPELINE_ID"
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-openpmix-pr-preparation/preparation.env
+      - ci-openpmix-pr-preparation/baseline.env
+
+validate-openpmix-baseline:
+  extends:
+    - run-openpmix-pr
+    - .openpmix-baseline-rules
+  needs:
+    - job: prepare-openpmix-baseline
+      artifacts: true
+
+finalize-openpmix-baseline:
+  extends:
+    - finalize-openpmix-pr
+    - .openpmix-baseline-rules
+  needs:
+    - job: prepare-openpmix-baseline
+      artifacts: true
+    - job: validate-openpmix-baseline
+      artifacts: true
+
 .openpmix-pr-rules:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web" && $OPENPMIX_PR_INTERNAL == "1"'

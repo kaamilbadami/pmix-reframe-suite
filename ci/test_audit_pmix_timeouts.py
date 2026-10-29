@@ -90,8 +90,8 @@ class AuditTests(unittest.TestCase):
         parent = yaml.safe_load((Path(__file__).resolve().parent.parent / ".gitlab-ci.yml").read_text())
         self.assertEqual(parent["audit-pmix-schedule-timeouts"]["rules"][0]["if"],
                          '$CI_PIPELINE_SOURCE == "web" && $PMIX_TIMEOUT_AUDIT == "1"')
-        self.assertEqual(parent["pmix-python-suite"]["rules"][0],
-                         {"if": '$PMIX_TIMEOUT_AUDIT == "1"', "when": "never"})
+        self.assertIn({"if": '$PMIX_TIMEOUT_AUDIT == "1"', "when": "never"},
+                      parent["pmix-python-suite"]["rules"])
         self.assertNotIn("schedule", parent["audit-pmix-schedule-timeouts"]["rules"][0]["if"].lower())
         self.assertEqual(parent["audit-pmix-schedule-timeouts"]["artifacts"]["when"], "always")
         def enabled(config, env):
