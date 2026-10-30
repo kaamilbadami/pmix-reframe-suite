@@ -159,7 +159,11 @@ export PMIX_RFM_PREFIX=$repo_root/$reframe_prefix
 export PMIX_RFM_REPORT_FILE=$repo_root/$report_file
 
 runner_status=0
-/bin/bash "$exact_runner" || runner_status=$?
+if [[ $baseline_selection == live-pr ]]; then
+    /bin/bash "$exact_runner" || runner_status=$?
+else
+    /bin/bash ci/run_openpmix_single_allocation.sh || runner_status=$?
+fi
 if (( runner_status < 0 || runner_status > 255 )); then
     runner_status=255
 fi
@@ -184,6 +188,10 @@ if [[ -s $evidence_dir/checkout-status-after.txt ]] ||
 fi
 
 classification_status=0
+classification_options=()
+if [[ $baseline_selection != live-pr ]]; then
+    classification_options+=(--baseline-single-allocation)
+fi
 "$python_bin" "$records" classify-report \
     --preparation "$preparation_record" \
     --checkout "$checkout_record" \
@@ -191,7 +199,7 @@ classification_status=0
     --pipeline-id "$CI_PIPELINE_ID" \
     --execution-id "$execution_id" \
     --runner-exit-status "$runner_status" \
-    --output "$result_record" || classification_status=$?
+    --output "$result_record" "${classification_options[@]}" || classification_status=$?
 
 case $classification_status in
     0)

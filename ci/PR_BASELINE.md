@@ -11,7 +11,20 @@ path without waiting for an open upstream PR:
 The jobs are `prepare-openpmix-baseline`, `validate-openpmix-baseline`, and
 `finalize-openpmix-baseline`. The validation and finalization inherit the normal
 PR execution scripts, runner, credential isolation, resource lock, artifacts,
-and time limits. The entire suite runs; this is not an empty discovery poll.
+and CI time limits. The entire suite runs; this is not an empty discovery poll.
+
+The baseline now requests **one four-node allocation for 45 minutes**, matching
+the earlier single-allocation pilot. Sources are prepared on the login node;
+the six fetch/build fixtures and eleven runtime checks run serially on the first
+compute node, reusing the four allocated nodes. Inner ReFrame jobs use the local
+scheduler and submit no additional Slurm allocations. The 45-minute limit starts
+when nodes are allocated; the existing 1h45m CI script deadline includes waiting.
+Normal scheduled and live PR jobs retain their separate allocations until this
+baseline completes successfully and the change is promoted.
+
+Allocation ID, queue state/reason, accounting, and batch stdout/stderr are saved
+under `reframe/stage/single-allocation-<pipeline-id>/`. Timeout/cancellation
+cleanup checks ownership and the exact pipeline stage before canceling its job.
 
 ## Fixed inputs
 

@@ -148,8 +148,14 @@ if [[ "$mode" == list-only ]]; then
 fi
 
 rfm_report=()
+rfm_policy=()
+case ${PMIX_RFM_EXEC_POLICY:-} in
+    '') ;;
+    serial) rfm_policy=(--exec-policy=serial) ;;
+    *) printf 'error: unsupported ReFrame execution policy\n' >&2; exit 2 ;;
+esac
 if [[ -n ${PMIX_RFM_REPORT_FILE:-} ]]; then
     rfm_report+=(--report-file "$PMIX_RFM_REPORT_FILE")
 fi
 "$RFM_BIN" "${rfm_common[@]}" -r "${rfm_system[@]}" \
-    "${rfm_output[@]}" "${rfm_report[@]}" --keep-stage-files
+    "${rfm_output[@]}" "${rfm_report[@]}" "${rfm_policy[@]}" --keep-stage-files

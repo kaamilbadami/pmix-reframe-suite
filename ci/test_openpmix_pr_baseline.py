@@ -103,8 +103,10 @@ class WorkflowTests(unittest.TestCase):
         self.assertCountEqual(selected, ["prepare-openpmix-baseline", "validate-openpmix-baseline", "finalize-openpmix-baseline"])
         execution = resolve("validate-openpmix-baseline")
         normal = resolve("run-openpmix-pr")
-        for key in ("script", "variables", "timeout", "resource_group", "artifacts", "tags"):
+        for key in ("script", "variables", "timeout", "resource_group", "tags"):
             self.assertEqual(execution[key], normal[key], key)
+        self.assertTrue(set(normal['artifacts']['paths']).issubset(execution['artifacts']['paths']))
+        self.assertEqual(execution['after_script'], ['python3 ci/cleanup_openpmix_allocation.py'])
         self.assertEqual(execution["needs"], [{"job": "prepare-openpmix-baseline", "artifacts": True}])
         self.assertEqual(resolve("finalize-openpmix-baseline")["script"], resolve("finalize-openpmix-pr")["script"])
         for source in ("schedule", "parent_pipeline"):

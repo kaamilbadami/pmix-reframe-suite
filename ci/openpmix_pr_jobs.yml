@@ -36,6 +36,25 @@ validate-openpmix-baseline:
   needs:
     - job: prepare-openpmix-baseline
       artifacts: true
+  after_script:
+    - python3 ci/cleanup_openpmix_allocation.py
+  artifacts:
+    paths:
+      - ci-openpmix-pr-execution/result.env
+      - ci-openpmix-pr-execution/evidence/
+      - ci-openpmix-pr-execution/reframe/run-report.json
+      - ci-openpmix-pr-execution/reframe/output/
+      - ci-openpmix-pr-execution/reframe/perflogs/
+      - ci-openpmix-pr-execution/reframe/stage/single-allocation-*/
+      - ci-openpmix-pr-execution/reframe/stage/**/rfm_job.sh
+      - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.sh
+      - ci-openpmix-pr-execution/reframe/stage/**/rfm_job.out
+      - ci-openpmix-pr-execution/reframe/stage/**/rfm_job.err
+      - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.out
+      - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.err
+      - ci-openpmix-pr-execution/reframe/stage/**/PMIX_COMMIT
+      - ci-openpmix-pr-execution/reframe/stage/**/pmix-commit.env
+      - ci-openpmix-pr-execution/reframe/stage/**/prrte-source.env
 
 finalize-openpmix-baseline:
   extends:

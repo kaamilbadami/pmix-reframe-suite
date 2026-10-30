@@ -418,20 +418,20 @@ def case_base_name(case):
     return name.split(" ~", 1)[0]
 
 
-def validate_case_identity(case):
+def validate_case_identity(case, scheduler="slurm"):
     if not isinstance(case, dict):
         raise RecordError("ReFrame case is not an object")
     if (case.get("system") != "frontier" or
             case.get("partition") != "batch" or
             case.get("environ") != "pmix_test" or
-            case.get("scheduler") != "slurm"):
+            case.get("scheduler") != scheduler):
         raise RecordError("ReFrame case target identity is invalid")
     if case.get("result") not in ("pass", "fail", "skip", "abort"):
         raise RecordError("ReFrame case result is invalid")
     return case_base_name(case)
 
 
-def classify_reframe_report(document, runner_status):
+def classify_reframe_report(document, runner_status, scheduler="slurm"):
     if set(document) != set(("session_info", "runs", "restored_cases")):
         raise RecordError("ReFrame report schema is unexpected")
     session = document["session_info"]
@@ -460,7 +460,7 @@ def classify_reframe_report(document, runner_status):
     test_names = []
     fixture_names = []
     for case in cases:
-        name = validate_case_identity(case)
+        name = validate_case_identity(case, scheduler)
         fixture = case.get("fixture")
         if fixture is True:
             fixture_names.append(name)
@@ -745,6 +745,19 @@ def command_classify_report(options):
         expected_pipeline_id=options.pipeline_id,
     )
     checkout = read_checkout(options.checkout)
+    scheduler = "slurm"
+    if options.baseline_single_allocation:
+        from openpmix_pr_baseline import (
+            RecordError as BaselineError, select, preparation as baseline_preparation,
+        )
+        try:
+            baseline_selection = select(options.pipeline_id)
+        except BaselineError as error:
+            raise RecordError(str(error)) from error
+        if (baseline_selection == "live-pr" or
+                preparation != baseline_preparation(options.pipeline_id)):
+            raise RecordError("local scheduler is restricted to the fixed baseline")
+        scheduler = "local"
     for field in IDENTITY_FIELDS:
         if preparation[field] != checkout[field]:
             raise RecordError(
@@ -762,7 +775,7 @@ def command_classify_report(options):
     try:
         document, report_digest = read_report(options.report)
         result, classification = classify_reframe_report(
-            document, runner_status
+            document, runner_status, scheduler
         )
     except RecordError:
         result, classification = "error", "malformed-report"
@@ -954,6 +967,7 @@ def build_parser():
     classify.add_argument("--execution-id", required=True)
     classify.add_argument("--runner-exit-status", required=True)
     classify.add_argument("--output", required=True, type=Path)
+    classify.add_argument("--baseline-single-allocation", action="store_true")
     classify.set_defaults(function=command_classify_report)
 
     agreement = subparsers.add_parser("validate-agreement")
