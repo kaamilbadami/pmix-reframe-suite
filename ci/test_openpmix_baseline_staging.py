@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 import openpmix_baseline_staging as staging
+import validate_openpmix_oac as oac
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -86,6 +87,39 @@ class StagingTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     staging.verify_pmix(tree)
 
+    def test_compaction_removes_history_and_keeps_pin_origin_and_pull_ref(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            tree = root / 'repo'
+            tree.mkdir()
+            def git(*args):
+                return subprocess.check_output(['git', '-C', str(tree), *args], text=True).strip()
+            git('init', '-q', '-b', 'master')
+            git('config', 'user.email', 'test@example.invalid')
+            git('config', 'user.name', 'Test')
+            commits = []
+            for index in range(8):
+                (tree / 'payload').write_bytes(os.urandom(128 * 1024))
+                git('add', 'payload')
+                git('commit', '-qm', str(index))
+                commits.append(git('rev-parse', 'HEAD'))
+            pinned = commits[-2]
+            git('update-ref', 'refs/remotes/origin/master', commits[-1])
+            git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master')
+            git('update-ref', 'refs/remotes/origin/openpmix-pr-4370', pinned)
+            git('remote', 'add', 'origin', 'https://github.com/openpmix/openpmix.git')
+            git('checkout', '--detach', '-q', pinned)
+            def size():
+                return sum(path.stat().st_size for path in (tree / '.git').rglob('*') if path.is_file())
+            before = size()
+            staging.compact_sources(root)
+            self.assertEqual(git('rev-parse', 'HEAD'), pinned)
+            self.assertEqual(git('rev-parse', 'refs/remotes/origin/openpmix-pr-4370'), pinned)
+            self.assertEqual(git('rev-list', '--count', 'HEAD'), '1')
+            self.assertEqual(git('status', '--porcelain'), '')
+            self.assertEqual(git('remote', 'get-url', 'origin'), 'https://github.com/openpmix/openpmix.git')
+            self.assertLess(size(), before / 2)
+
     def test_unsafe_archive_members_are_rejected(self):
         previous = Path.cwd()
         for name, target in [('../escape', None), ('/absolute', None), ('sources/link', '/outside'),
@@ -104,6 +138,44 @@ class StagingTests(unittest.TestCase):
                         staging.restore()
                 finally:
                     os.chdir(previous)
+
+    def test_compaction_preserves_populated_oac_and_embedded_gitdirs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            parent = root / 'pmix'
+            sub = parent / 'config/oac'
+            sub.mkdir(parents=True)
+            def git(path, *args):
+                return subprocess.check_output(['git', '-C', str(path), *args], text=True).strip()
+            for path in (parent, sub):
+                git(path, 'init', '-q')
+                git(path, 'config', 'user.email', 'test@example.invalid')
+                git(path, 'config', 'user.name', 'Test')
+            (sub / 'fixture').write_text('OAC fixture')
+            git(sub, 'add', 'fixture')
+            git(sub, 'commit', '-qm', 'OAC')
+            sub_sha = git(sub, 'rev-parse', 'HEAD')
+            git(sub, 'checkout', '--detach', '-q', sub_sha)
+            git(sub, 'remote', 'add', 'origin', oac.OAC_URL)
+            (parent / '.gitmodules').write_text(
+                '[submodule "oac"]\n path = config/oac\n url = ' + oac.OAC_URL + '\n')
+            git(parent, 'add', '.gitmodules')
+            git(parent, 'update-index', '--add', '--cacheinfo', '160000,' + sub_sha + ',config/oac')
+            git(parent, 'commit', '-qm', 'parent')
+            parent_sha = git(parent, 'rev-parse', 'HEAD')
+            git(parent, 'checkout', '--detach', '-q', parent_sha)
+            git(parent, 'config', '--local', 'submodule.oac.url', oac.OAC_URL)
+            self.assertEqual(oac.validate(parent, populated=True), sub_sha)
+            staging.compact_sources(root)
+            self.assertEqual(oac.validate(parent, populated=True), sub_sha)
+            self.assertEqual(git(parent, 'rev-parse', 'HEAD'), parent_sha)
+            # PRRTE's recursive checkout uses .git files backed by the parent's
+            # .git/modules directory, unlike PMIx's separately fetched OAC.
+            git(parent, 'submodule', 'absorbgitdirs')
+            self.assertTrue((sub / '.git').is_file())
+            staging.compact_sources(root)
+            self.assertTrue(git(parent, 'submodule', 'status').startswith(sub_sha))
+            self.assertEqual(git(sub, 'rev-parse', 'HEAD'), sub_sha)
 
     def test_isolation_preserves_only_validated_scheduler_identity(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -14,8 +14,14 @@ credential isolation, resource lock, full-suite result checks, and finalizer.
 The entire suite runs; this is not an empty discovery poll.
 
 The preparation job stays on a Frontier shell runner and stages the fixed PMIx,
-PRRTE, and libevent sources in a compressed artifact. The validation job targets
-the **Frontier Slurm runners (#49/#51)** using explicit `frontier, slurm` tags.
+PRRTE, and libevent sources in a compressed artifact. Preparation packs only
+the pinned snapshots by compacting each staged Git repository to a
+single shallow commit, retaining origins, the validated pull ref, and populated
+submodule metadata. Old history and unreachable objects are not uploaded. The
+preparation log prints the final archive size before upload.
+
+The validation job targets the **Frontier Slurm runners (#49/#51)** using explicit
+`frontier, slurm` tags.
 It sets `timeout: 4h`, `RUNNER_SCRIPT_TIMEOUT: 3h45m`, and requests **one four-node
 allocation for 45 minutes** through Jacamar's `SCHEDULER_PARAMETERS`.
 

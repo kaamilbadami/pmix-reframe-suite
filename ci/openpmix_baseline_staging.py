@@ -48,9 +48,52 @@ def prepare():
     verify_pmix(STAGED / 'openpmix')
     env = dict(os.environ, PMIX_COMMIT=PMIX_SHA, PRRTE_COMMIT=PRRTE_SHA, PRRTE_BRANCH='master')
     sources.prepare(STAGED / 'cache', env)
+    compact_sources(STAGED)
+    verify_pmix(STAGED / 'openpmix')
+    sources.checked_tree(STAGED / 'cache/prrte-git', 'prrte', PRRTE_SHA)
     with tarfile.open(ARCHIVE, 'w:gz') as archive:
         archive.add(STAGED, arcname='sources')
+    print('Baseline source archive: {:.2f} MiB'.format(ARCHIVE.stat().st_size / (1024 * 1024)))
     print('Fixed baseline sources staged for the Slurm runner.')
+
+
+def compact_sources(root):
+    """Keep each exact source snapshot and its Git identity, without history.
+
+    Operates only on fresh, disposable staging copies. Parent/submodule config,
+    indexes, origins and gitlinks remain intact for autogen and later validation.
+    """
+    markers = sorted(root.rglob('.git'), key=lambda path: len(path.parts), reverse=True)
+    for marker in markers:
+        if '.git' in marker.relative_to(root).parts[:-1]:
+            continue
+        if marker.is_symlink():
+            raise ValueError('staged Git marker must not be a symlink')
+        tree = marker.parent
+        def git(*args):
+            return command(['git', '-C', str(tree), *args])
+        head = git('rev-parse', 'HEAD')
+        if not re.fullmatch(r'[0-9a-f]{40}', head):
+            raise ValueError('staged Git snapshot has an invalid HEAD')
+        attached = subprocess.run(['git', '-C', str(tree), 'symbolic-ref', '-q', 'HEAD'],
+                                  capture_output=True, timeout=10)
+        if attached.returncode != 1 or git('status', '--porcelain', '--untracked-files=all'):
+            raise ValueError('only detached, clean staging copies can be compacted')
+        # Keep the validated pull ref and any other ref at the pinned commit.
+        # Branch-tip provenance was checked and recorded before compaction.
+        for row in git('for-each-ref', '--format=%(refname) %(objectname)').splitlines():
+            ref, value = row.split()
+            if value != head:
+                git('update-ref', '--no-deref', '-d', ref)
+        gitdir = Path(git('rev-parse', '--absolute-git-dir'))
+        (gitdir / 'shallow').write_text(head + '\n')
+        for name in ('FETCH_HEAD', 'ORIG_HEAD'):
+            (gitdir / name).unlink(missing_ok=True)
+        git('reflog', 'expire', '--expire=now', '--expire-unreachable=now', '--all')
+        sources.bounded(['git', '-C', str(tree), 'gc', '--prune=now'], root / 'compact.log', 180)
+        if git('rev-list', '--count', 'HEAD') != '1' or git('status', '--porcelain', '--untracked-files=all'):
+            raise ValueError('compacted Git snapshot failed validation')
+        print('Compacted staged source: {} at {}'.format(tree, head), flush=True)
 
 
 def restore():
@@ -156,6 +199,6 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (RecordError, ValueError, OSError, subprocess.SubprocessError, tarfile.TarError) as error:
+    except (RecordError, RuntimeError, ValueError, OSError, subprocess.SubprocessError, tarfile.TarError) as error:
         print('error: baseline Slurm staging: ' + str(error))
         raise SystemExit(2)
