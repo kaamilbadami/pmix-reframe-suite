@@ -103,6 +103,20 @@ class AllocationTests(unittest.TestCase):
         self.fake('sbatch', 'echo 42; exit 9')
         self.assertEqual(self.launch().returncode, 9)
 
+    def test_runner_owned_allocation_does_not_submit_or_download(self):
+        self.env.update(OPENPMIX_RUNNER_ALLOCATION='1', SLURM_JOB_ID='42',
+                        SLURM_JOB_NODELIST='frontier[1-4]')
+        (self.repo / 'ci/openpmix_baseline_staging.py').write_text(
+            'import pathlib\npathlib.Path("allocation-recorded").touch()\n')
+        result = self.launch()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.repo / 'allocation-recorded').exists())
+        self.assertFalse((self.repo / 'submitted').exists())
+        self.assertFalse((self.repo / 'ci-openpmix-pr-execution/sources').exists())
+        received = (self.repo / 'received.env').read_bytes()
+        self.assertIn(b'PMIX_RFM_EXEC_POLICY=serial\0', received)
+        self.assertIn(b'SLURM_EXPORT_ENV=ALL\0', received)
+
     def test_suite_uses_serial_policy_and_preserves_test_failure(self):
         shutil.copy(ROOT / 'ci/run_pmix_python_suite.sh', self.repo / 'ci')
         (self.repo / 'Cython.py').write_text('__version__ = "test-only"\n')

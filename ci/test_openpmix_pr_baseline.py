@@ -103,10 +103,18 @@ class WorkflowTests(unittest.TestCase):
         self.assertCountEqual(selected, ["prepare-openpmix-baseline", "validate-openpmix-baseline", "finalize-openpmix-baseline"])
         execution = resolve("validate-openpmix-baseline")
         normal = resolve("run-openpmix-pr")
-        for key in ("script", "variables", "timeout", "resource_group", "tags"):
+        for key in ("resource_group",):
             self.assertEqual(execution[key], normal[key], key)
+        self.assertIn('/bin/bash ci/run_openpmix_pr_isolated.sh', str(execution['script']))
+        self.assertIn('Slurm runner allocation is required', str(execution['script']))
         self.assertTrue(set(normal['artifacts']['paths']).issubset(execution['artifacts']['paths']))
-        self.assertEqual(execution['after_script'], ['python3 ci/cleanup_openpmix_allocation.py'])
+        self.assertIn('ci/openpmix_baseline_staging.py accounting', str(execution['after_script']))
+        self.assertEqual(execution['tags'], ['frontier', 'slurm'])
+        self.assertEqual(execution['timeout'], '4h')
+        self.assertEqual(execution['variables']['RUNNER_SCRIPT_TIMEOUT'], '3h45m')
+        self.assertEqual(execution['variables']['JACAMAR_SCHEDULER_ACTION'], 'default')
+        self.assertIn('--nodes=4', execution['variables']['SCHEDULER_PARAMETERS'])
+        self.assertIn('--time=00:45:00', execution['variables']['SCHEDULER_PARAMETERS'])
         self.assertEqual(execution["needs"], [{"job": "prepare-openpmix-baseline", "artifacts": True}])
         self.assertEqual(resolve("finalize-openpmix-baseline")["script"], resolve("finalize-openpmix-pr")["script"])
         for source in ("schedule", "parent_pipeline"):

@@ -46,6 +46,24 @@ else
 fi
 
 if [[ $sanitized_stage != 1 ]]; then
+    allocation_env=()
+    if [[ $workflow == openpmix-pr && -n ${SLURM_JOB_ID:-} ]]; then
+        # Jacamar's Slurm executor starts step_script on the first compute
+        # node. Preserve only scheduler values revalidated against Slurm and
+        # the fixed baseline, never the entire caller/Slurm environment.
+        allocation_identity=$(/usr/bin/env -i PATH=/usr/bin:/bin LANG=C.UTF-8 \
+            CI_PIPELINE_ID="$CI_PIPELINE_ID" SLURM_JOB_ID="$SLURM_JOB_ID" \
+            PMIX_PYTHON=/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python \
+            /lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python \
+            "$script_dir/openpmix_baseline_staging.py" allocation)
+        read -r allocation_id allocation_nodes <<< "$allocation_identity"
+        [[ $allocation_id =~ ^[1-9][0-9]*$ && -n $allocation_nodes ]] || exit 2
+        allocation_env=("SLURM_JOB_ID=$allocation_id" "SLURM_JOBID=$allocation_id"
+            "SLURM_JOB_NODELIST=$allocation_nodes" "SLURM_NODELIST=$allocation_nodes"
+            'SLURM_NNODES=4' 'SLURM_JOB_NUM_NODES=4' 'SLURM_NTASKS=256'
+            'SLURM_TASKS_PER_NODE=64(x4)' 'SLURM_EXPORT_ENV=ALL'
+            'OPENPMIX_RUNNER_ALLOCATION=1')
+    fi
     # Clear the always-uploaded result location before any clean-boundary setup
     # can fail.  rm removes a symlink entry itself and does not follow it.
     /usr/bin/rm -rf --one-file-system -- "$output_dir"
@@ -81,6 +99,7 @@ if [[ $sanitized_stage != 1 ]]; then
         "CI_PIPELINE_ID=$CI_PIPELINE_ID" \
         "FRONTIER_PR_WORKFLOW=$workflow" \
         "$marker_assignment" \
+        "${allocation_env[@]}" \
         /bin/bash --noprofile --norc "$script_dir/run_pmix_tests_pr_isolated.sh"
 fi
 

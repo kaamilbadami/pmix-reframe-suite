@@ -101,9 +101,17 @@ printf 'Executing OpenPMIx PR author: %s\n' "$selected_author"
 printf 'Executing exact OpenPMIx SHA: %s\n' "$selected_sha"
 
 checkout_status=0
-/bin/bash "$checkout_helper" \
-    "$selected_number" "$selected_sha" "$checkout_dir" ||
-    checkout_status=$?
+if [[ ${OPENPMIX_RUNNER_ALLOCATION:-} == 1 ]]; then
+    [[ $baseline_selection != live-pr ]] || fail 'runner allocation is restricted to the baseline'
+    "$python_bin" ci/openpmix_baseline_staging.py restore
+    staged_source=$repo_root/ci-openpmix-baseline-restored/sources/openpmix
+    /bin/cp -a -- "$staged_source" "$checkout_dir"
+    "$python_bin" ci/openpmix_baseline_staging.py verify "$checkout_dir"
+else
+    /bin/bash "$checkout_helper" \
+        "$selected_number" "$selected_sha" "$checkout_dir" ||
+        checkout_status=$?
+fi
 if (( checkout_status != 0 )); then
     case $checkout_status in
         5) classification=head-changed ;;

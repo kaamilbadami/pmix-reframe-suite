@@ -9,22 +9,40 @@ path without waiting for an open upstream PR:
    Do not add other opt-in workflow variables for this run.
 
 The jobs are `prepare-openpmix-baseline`, `validate-openpmix-baseline`, and
-`finalize-openpmix-baseline`. The validation and finalization inherit the normal
-PR execution scripts, runner, credential isolation, resource lock, artifacts,
-and CI time limits. The entire suite runs; this is not an empty discovery poll.
+`finalize-openpmix-baseline`. The baseline reuses the normal PR execution scripts,
+credential isolation, resource lock, full-suite result checks, and finalizer.
+The entire suite runs; this is not an empty discovery poll.
 
-The baseline now requests **one four-node allocation for 45 minutes**, matching
-the earlier single-allocation pilot. Sources are prepared on the login node;
-the six fetch/build fixtures and eleven runtime checks run serially on the first
-compute node, reusing the four allocated nodes. Inner ReFrame jobs use the local
-scheduler and submit no additional Slurm allocations. The 45-minute limit starts
-when nodes are allocated; the existing 1h45m CI script deadline includes waiting.
+The preparation job stays on a Frontier shell runner and stages the fixed PMIx,
+PRRTE, and libevent sources in a compressed artifact. The validation job targets
+the **Frontier Slurm runners (#49/#51)** using explicit `frontier, slurm` tags.
+It sets `timeout: 4h`, `RUNNER_SCRIPT_TIMEOUT: 3h45m`, and requests **one four-node
+allocation for 45 minutes** through Jacamar's `SCHEDULER_PARAMETERS`.
+
+Jacamar's default Slurm action submits the CI script with `sbatch --wait` on the
+first compute node. Queue waiting counts toward CI's script limit, while the
+45-minute Slurm limit starts only after allocation. The isolated launcher checks
+the allocation's UID, GEN243 account, running state, four nodes, and current host
+before preserving its scheduler identity. Sources are restored and revalidated
+without network access from compute nodes. The six fetch/build fixtures and
+eleven runtime checks then run serially on the allocated nodes using ReFrame's
+local scheduler, with **no nested `sbatch` or `salloc` request**.
+
 Normal scheduled and live PR jobs retain their separate allocations until this
 baseline completes successfully and the change is promoted.
 
-Allocation ID, queue state/reason, accounting, and batch stdout/stderr are saved
-under `reframe/stage/single-allocation-<pipeline-id>/`. Timeout/cancellation
-cleanup checks ownership and the exact pipeline stage before canceling its job.
+Allocation identity is saved in `evidence/runner-allocation.json`; the login-side
+after-script saves Slurm accounting in `evidence/runner-accounting.txt`. Jacamar
+owns the outer allocation's monitoring and cancellation. If CI expires before
+the compute script ever starts, no compute-side record exists: use the Jacamar
+job trace for its submission and cancellation evidence.
+
+This integration follows the installed Jacamar 0.30.0 implementation:
+[Slurm stage dispatch](https://gitlab.com/ecp-ci/jacamar-ci/-/blob/v0.30.0/internal/executors/slurm/slurm.go),
+[submission and wait](https://gitlab.com/ecp-ci/jacamar-ci/-/blob/v0.30.0/internal/executors/slurm/run.go),
+and [termination monitoring](https://gitlab.com/ecp-ci/jacamar-ci/-/blob/v0.30.0/internal/executors/slurm/monitor.go).
+ORNL's [ADIOS2 Frontier configuration](https://github.com/ornladios/ADIOS2/blob/e2027fb66bd4ae3378f10702d994746a6441fd40/.gitlab/gitlab-ci-frontier.yml)
+also uses `frontier, slurm` tags with `SCHEDULER_PARAMETERS`.
 
 ## Fixed inputs
 

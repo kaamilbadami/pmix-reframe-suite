@@ -12,6 +12,15 @@ for key in PMIX_PYTHON RFM_BIN PMIX_COMMIT PRRTE_COMMIT PMIX_TRUSTED_SOURCE_DIR 
 done
 [[ $PMIX_COMMIT =~ ^[0-9a-f]{40}$ && $PRRTE_COMMIT =~ ^[0-9a-f]{40}$ ]] || exit 2
 [[ $PMIX_RFM_PREFIX == "$repo/ci-openpmix-pr-execution/reframe" ]] || exit 2
+if [[ ${OPENPMIX_RUNNER_ALLOCATION:-} == 1 ]]; then
+    "$PMIX_PYTHON" ci/openpmix_baseline_staging.py record
+    export PMIX_SINGLE_OFFLINE_SOURCES="$repo/ci-openpmix-baseline-restored/sources/cache"
+    export PMIX_RFM_CONFIG_FILE="$repo/ci/openpmix_single_allocation_config.py"
+    export PMIX_RFM_EXEC_POLICY=serial
+    export SLURM_EXPORT_ENV=ALL
+    printf 'Using the existing four-node Jacamar allocation; no nested sbatch.\n'
+    exec /bin/bash ci/run_exact_pmix_commit.sh
+fi
 export PMIX_SINGLE_OFFLINE_SOURCES="$repo/ci-openpmix-pr-execution/sources"
 "$PMIX_PYTHON" ci/pmix_single_sources.py prepare "$PMIX_SINGLE_OFFLINE_SOURCES"
 allocation="$PMIX_RFM_PREFIX/stage/single-allocation-$CI_PIPELINE_ID"
