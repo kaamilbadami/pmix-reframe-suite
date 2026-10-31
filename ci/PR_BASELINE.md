@@ -22,12 +22,12 @@ preparation log prints the final archive size before upload.
 
 The validation job targets the **Frontier Slurm runners (#49/#51)** using explicit
 `frontier, slurm` tags.
-It sets `timeout: 4h`, `RUNNER_SCRIPT_TIMEOUT: 3h45m`, and requests **one four-node
-allocation for 45 minutes** through Jacamar's `SCHEDULER_PARAMETERS`.
+It sets `timeout: 6h`, `RUNNER_SCRIPT_TIMEOUT: 5h45m`, and requests **one four-node
+allocation for 30 minutes** through Jacamar's `SCHEDULER_PARAMETERS`.
 
 Jacamar's default Slurm action submits the CI script with `sbatch --wait` on the
 first compute node. Queue waiting counts toward CI's script limit, while the
-45-minute Slurm limit starts only after allocation. The isolated launcher checks
+30-minute Slurm limit starts only after allocation. The isolated launcher checks
 the allocation's UID, GEN243 account, running state, four nodes, and current host
 before preserving its scheduler identity. Sources are restored and revalidated
 without network access from compute nodes. The six fetch/build fixtures and

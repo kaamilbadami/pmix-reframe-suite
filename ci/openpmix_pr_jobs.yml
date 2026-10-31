@@ -47,17 +47,17 @@ validate-openpmix-baseline:
   id_tokens:
     OLCF_ID_TOKEN:
       aud: https://code.olcf.ornl.gov
-  timeout: 4h
+  timeout: 6h
   resource_group: pmix-python-suite-frontier
   variables:
-    RUNNER_SCRIPT_TIMEOUT: "3h45m"
+    RUNNER_SCRIPT_TIMEOUT: "5h45m"
     RUNNER_AFTER_SCRIPT_TIMEOUT: "5m"
     GITHUB_PR_READ_TOKEN: ""
     GITHUB_STATUS_TOKEN: ""
     GIT_SUBMODULE_STRATEGY: none
     GIT_LFS_SKIP_SMUDGE: "1"
     JACAMAR_SCHEDULER_ACTION: default
-    SCHEDULER_PARAMETERS: "--account=gen243 --partition=batch --nodes=4 --ntasks=256 --ntasks-per-node=64 --exclusive --core-spec=0 --threads-per-core=1 --time=00:45:00"
+    SCHEDULER_PARAMETERS: "--account=gen243 --partition=batch --nodes=4 --ntasks=256 --ntasks-per-node=64 --exclusive --core-spec=0 --threads-per-core=1 --time=00:30:00"
   needs:
     - job: prepare-openpmix-baseline
       artifacts: true
