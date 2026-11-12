@@ -116,6 +116,59 @@ pmix-__SHA__:
 """
 
 
+SLURM_COMMIT_JOBS = """\
+prepare-pmix-__SHA__:
+  stage: prepare
+  extends:
+    - .frontier-shell-runner
+  timeout: 2h
+  variables:
+    PMIX_COMMIT: "__SHA__"
+    PRRTE_BRANCH: "master"
+    PRRTE_COMMIT: "__PRRTE_SHA__"
+  script:
+    - /lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python ci/pmix_scheduled_sources.py prepare
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-scheduled-sources/sources.tar.gz
+      - ci-scheduled-sources/prepare.log
+
+pmix-__SHA__:
+  stage: test
+  tags: [frontier, slurm]
+  id_tokens:
+    OLCF_ID_TOKEN:
+      aud: https://code.olcf.ornl.gov
+  timeout: 6h
+  variables:
+    PMIX_COMMIT: "__SHA__"
+    PRRTE_BRANCH: "master"
+    PRRTE_COMMIT: "__PRRTE_SHA__"
+    RUNNER_SCRIPT_TIMEOUT: "5h45m"
+    RUNNER_AFTER_SCRIPT_TIMEOUT: "5m"
+    JACAMAR_SCHEDULER_ACTION: default
+    SCHEDULER_PARAMETERS: "--account=gen243 --partition=batch --nodes=4 --ntasks=256 --ntasks-per-node=64 --exclusive --core-spec=0 --threads-per-core=1 --time=00:30:00"
+  needs:
+    - job: prepare-pmix-__SHA__
+      artifacts: true
+  script:
+    - /bin/bash ci/run_pmix_scheduled_allocation.sh
+  after_script:
+    - /lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python ci/pmix_scheduled_sources.py accounting || echo "WARNING - allocation accounting unavailable"
+    - bash ci/write_pmix_commit_result.sh ci-results
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-results/__SHA__.env
+      - .ci-work/$CI_JOB_ID/runner-allocation.json
+      - .ci-work/$CI_JOB_ID/runner-accounting.txt
+      - .ci-work/$CI_JOB_ID/reframe/
+"""
+
+
 def fail(message, status=1):
     print(f"error: {message}", file=sys.stderr)
     raise SystemExit(status)
@@ -202,7 +255,18 @@ def resolve_prrte_master():
     return fields[0]
 
 
-def render_pipeline(shas, fail_commit=None, prrte_selections=None):
+def render_pipeline(shas, fail_commit=None, prrte_selections=None, slurm_runner=False):
+    if slurm_runner:
+        if fail_commit is not None:
+            fail("the intentional failure pilot cannot use Slurm execution")
+        jobs = []
+        for sha in shas:
+            if prrte_selections is None or prrte_selections[sha][0] != "master":
+                fail("Slurm execution requires exact PRRTE master selections")
+            jobs.append(SLURM_COMMIT_JOBS.replace("__SHA__", sha.lower()).replace(
+                "__PRRTE_SHA__", prrte_selections[sha][1]))
+        header = HEADER.replace("stages:\n  - test", "stages:\n  - prepare\n  - test")
+        return "\n".join([header, *(jobs or [NOOP_JOB])])
     jobs = []
     for sha in shas:
         template = COMMIT_JOB
@@ -259,6 +323,8 @@ def parse_arguments(arguments=None):
     selection.add_argument("--select-prrte", action="store_true")
     selection.add_argument("--prrte-master", action="store_true",
                            help="use one exact PRRTE master revision for the batch")
+    parser.add_argument("--slurm-runner", action="store_true",
+                        help="prepare sources on login and run each commit in one allocation")
     parser.add_argument("--pmix-history", type=Path)
     return parser.parse_args(arguments)
 
@@ -276,6 +342,8 @@ def main(arguments=None):
     if input_path.resolve() == output_path.resolve():
         fail("input SHA file and output YAML must be different files")
 
+    if options.slurm_runner and (not options.prrte_master or options.fail_commit):
+        fail("--slurm-runner requires --prrte-master and excludes --fail-commit")
     shas = read_shas(input_path)
     fail_commit = options.fail_commit
     if fail_commit is not None:
@@ -305,7 +373,7 @@ def main(arguments=None):
                 if result.returncode:
                     fail(f"could not fetch OpenPMIx history: {result.stderr.strip()}")
                 selections = select_prrte(shas, history)
-    atomic_write(output_path, render_pipeline(shas, fail_commit, selections))
+    atomic_write(output_path, render_pipeline(shas, fail_commit, selections, options.slurm_runner))
     return 0
 
 

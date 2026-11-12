@@ -60,6 +60,32 @@ artifact upload. Slurm queue waiting counts toward CI time, but each test's
 Slurm execution limit remains unchanged. A runner maximum timeout can cap the
 configured limit; verify the effective timeout in GitLab before re-enabling.
 
+### Scheduled Slurm runner trial
+
+Set the schedule variable `PMIX_SCHEDULED_SLURM=1` on
+`fix/scheduled-batch-lifecycle` to generate Slurm-runner commit jobs. The default
+is `0`, using the existing shell jobs. Existing pipelines and their retries keep
+the configuration with which they were created.
+
+Each selected commit gets a shell preparation job and a `pmix-<SHA>` execution
+job. Preparation stages exact PMIx, OAC, PRRTE, and libevent sources in an artifact.
+The execution job targets `frontier, slurm`, with a six-hour CI timeout and a
+5h45m script limit. Jacamar requests four nodes for 30 minutes. All six fixtures
+and eleven runtime checks run serially inside that allocation, using the
+baseline's local ReFrame configuration and fixed tool installations. Compute
+execution consumes the staged sources without downloading dependencies.
+
+The commit job keeps its existing name and result record, so collection,
+reconciliation, checkpoint advancement, and individual job retries continue to
+work. Its artifacts include the ReFrame tree and JSON report, allocation identity,
+and accounting when available. If allocation waiting expires before the script
+starts, inspect the Jacamar trace for the outer Slurm job ID.
+
+This path needs a successful live Frontier trial before becoming the default.
+The 30-minute allocation includes compilation and all runtime checks. The
+six-hour CI limit allows longer queue waiting but cannot guarantee an allocation.
+PR workflows retain their separate configuration.
+
 On failure or cancellation, `cleanup_pmix_slurm_jobs.py` lists allocations owned
 by the executing UID and cancels only jobs whose working directory and batch
 script resolve inside that CI job's `.ci-work/<CI_JOB_ID>/reframe/stage/` tree.

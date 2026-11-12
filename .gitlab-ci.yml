@@ -18,6 +18,7 @@ include:
 variables:
   OLCF_SERVICE_ACCOUNT: "gen243_auser"
   FF_GIT_URLS_WITHOUT_TOKENS: "1"
+  PMIX_SCHEDULED_SLURM: "0"
   PMIX_AUTHORITATIVE_STATE_FILE: "/lustre/orion/gen243/world-shared/kbadami/openpmix-ci/pmix-master.env"
 
 workflow:
@@ -252,6 +253,7 @@ run-pmix-scheduled-batch:
   variables:
     PMIX_SCHEDULED_BATCH_INTERNAL: "1"
     PMIX_SCHEDULED_STATE_FILE: "$PMIX_AUTHORITATIVE_STATE_FILE"
+    PMIX_SCHEDULED_SLURM_INTERNAL: "$PMIX_SCHEDULED_SLURM"
   trigger:
     include:
       - local: .gitlab-ci.yml
@@ -288,10 +290,16 @@ generate-pmix-child-pipeline-scheduled:
       python3 ci/prepare_pmix_health_check.py \
           --state "$baseline_state" \
           --commits "$output_dir/pmix-untested-commits.txt"
+      executor_options=()
+      case ${PMIX_SCHEDULED_SLURM_INTERNAL:-0} in
+          0) ;;
+          1) executor_options=(--slurm-runner) ;;
+          *) printf '%s\n' 'error: PMIX_SCHEDULED_SLURM must be 0 or 1' >&2; exit 2 ;;
+      esac
       python3 ci/generate_pmix_child_pipeline.py \
           "$output_dir/pmix-untested-commits.txt" \
           "$output_dir/pmix-child-pipeline.yml" \
-          --prrte-master
+          --prrte-master "${executor_options[@]}"
 
   artifacts:
     expire_in: 14 days

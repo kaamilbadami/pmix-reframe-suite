@@ -96,12 +96,13 @@ def compact_sources(root):
         print('Compacted staged source: {} at {}'.format(tree, head), flush=True)
 
 
-def restore():
-    if ARCHIVE.is_symlink() or not ARCHIVE.is_file():
+def restore_sources(archive_path, destination):
+    """Restore a source archive without traversing links or restoring owners."""
+    if archive_path.is_symlink() or not archive_path.is_file():
         raise ValueError('baseline source archive is unavailable')
-    RESTORED.mkdir(mode=0o700)
-    root = RESTORED.resolve()
-    with tarfile.open(ARCHIVE, 'r:gz') as archive:
+    destination.mkdir(mode=0o700)
+    root = destination.resolve()
+    with tarfile.open(archive_path, 'r:gz') as archive:
         members = archive.getmembers()
         for member in members:
             name = PurePosixPath(member.name)
@@ -134,6 +135,10 @@ def restore():
                 resolved = (root / member.name).resolve()
                 if root not in resolved.parents:
                     raise ValueError('baseline archive link escapes its root')
+
+
+def restore():
+    restore_sources(ARCHIVE, RESTORED)
     verify_pmix(RESTORED / 'sources/openpmix')
     print('Fixed baseline source artifact restored and verified.')
 
