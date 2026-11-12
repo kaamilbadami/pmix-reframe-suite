@@ -87,14 +87,25 @@ def record(env, output):
     return document
 
 
+def parse_timestamp(value):
+    """Parse GitLab timestamps using APIs available on login-node Python 3.6."""
+    if not isinstance(value, str):
+        return None
+    value = re.sub(r'([+-]\d{2}):(\d{2})$', r'\1\2', value.replace('Z', '+0000'))
+    for pattern in ('%Y-%m-%dT%H:%M:%S.%f%z', '%Y-%m-%dT%H:%M:%S%z'):
+        try:
+            return datetime.strptime(value, pattern)
+        except ValueError:
+            pass
+    return None
+
+
 def latest_job(jobs):
     """Most recently finished attempt, not the newest SHA or last API page."""
     def key(job):
         timestamp = job.get('finished_at') or job.get('started_at') or job.get('created_at')
-        try:
-            epoch = datetime.fromisoformat(timestamp.replace('Z', '+00:00')).timestamp()
-        except (AttributeError, TypeError, ValueError):
-            epoch = 0
+        parsed = parse_timestamp(timestamp)
+        epoch = parsed.timestamp() if parsed else 0
         return epoch, job['id']
     return max(jobs, key=key) if jobs else None
 
@@ -113,6 +124,8 @@ def publish(collection, baseline, suite_commit, output):
         data.update(pmix_commit=job['commit'], tested_at=job.get('finished_at') or job.get('started_at'),
                     job_url=job.get('web_url'), pipeline_url=index.get('pipeline_url'),
                     ci_status=job.get('status'), ci_failure_reason=job.get('failure_reason'))
+        parsed_time = parse_timestamp(data['tested_at'])
+        data['tested_at'] = parsed_time.astimezone(timezone.utc).isoformat() if parsed_time else None
         evidence = None
         try:
             evidence = read_json(collection / 'latest-attempt.json')
@@ -163,7 +176,7 @@ def publish(collection, baseline, suite_commit, output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    commands = parser.add_subparsers(dest='action', required=True)
+    commands = parser.add_subparsers(dest='action')
     writer = commands.add_parser('record')
     writer.add_argument('--output', type=Path, required=True)
     publisher = commands.add_parser('publish')
@@ -172,6 +185,8 @@ def main():
     publisher.add_argument('--suite-commit', required=True)
     publisher.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
+    if args.action is None:
+        parser.error('a command is required: record or publish')
     if args.action == 'record':
         record(os.environ, args.output)
     else:

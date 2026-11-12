@@ -172,6 +172,36 @@ class SummaryTests(unittest.TestCase):
             self.assertFalse((self.collection / 'latest-attempt.json').exists())
             self.assertEqual(self.publish()['status'], 'incomplete')
 
+    def test_cli_and_timestamps_support_python36_api(self):
+        import argparse
+        real_add = argparse.ArgumentParser.add_subparsers
+        def old_add(parser, **kwargs):
+            if 'required' in kwargs:
+                raise TypeError('unsupported on Python 3.6')
+            return real_add(parser, **kwargs)
+        # Python 3.6 has strptime, but no datetime.fromisoformat.
+        class OldDatetime:
+            strptime = summary.datetime.strptime
+        self.report()
+        self.evidence()
+        self.job['finished_at'] = '2026-11-12T10:18:44.590-05:00'
+        self.index()
+        args = ['summary', 'publish', '--collection', str(self.collection),
+                '--baseline', str(self.baseline), '--suite-commit', SUITE,
+                '--output', str(self.output)]
+        with patch.object(argparse.ArgumentParser, 'add_subparsers', old_add), \
+                patch.object(summary, 'datetime', OldDatetime), patch('sys.argv', args):
+            summary.main()
+            jobs = [dict(id=1, finished_at='2026-11-12T11:00:00.123-05:00'),
+                    dict(id=2, finished_at='2026-11-12T15:30:00Z')]
+            self.assertEqual(summary.latest_job(jobs)['id'], 1)
+        data = json.loads((self.output / 'latest-summary.json').read_text())
+        self.assertEqual(data['tested_at'], '2026-11-12T15:18:44.590000+00:00')
+        self.assertTrue((self.output / 'latest-summary.md').is_file())
+        with patch('sys.argv', ['summary']), self.assertRaises(SystemExit) as error:
+            summary.main()
+        self.assertEqual(error.exception.code, 2)
+
     def test_generated_shell_and_slurm_jobs_record_evidence(self):
         import generate_pmix_child_pipeline as generator
         for slurm in (False, True):
