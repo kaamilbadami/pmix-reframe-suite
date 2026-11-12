@@ -76,6 +76,10 @@ pmix-__SHA__:
       - .ci-work/$CI_JOB_ID/reframe/run-console.log
       - ci-results/slurm-cleanup-$CI_JOB_ID.json
       - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.sh
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.stdout
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.stderr
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/*.dvm_output
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/prte-*node.log
       - .ci-work/$CI_JOB_ID/reframe/output/
       - .ci-work/$CI_JOB_ID/reframe/perflogs/
       - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env
@@ -115,6 +119,10 @@ pmix-__SHA__:
       - .ci-work/$CI_JOB_ID/reframe/run-console.log
       - ci-results/slurm-cleanup-$CI_JOB_ID.json
       - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.sh
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.stdout
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.stderr
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/*.dvm_output
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/prte-*node.log
       - .ci-work/$CI_JOB_ID/reframe/output/
       - .ci-work/$CI_JOB_ID/reframe/perflogs/
       - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env

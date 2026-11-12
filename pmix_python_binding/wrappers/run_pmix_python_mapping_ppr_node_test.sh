@@ -200,7 +200,11 @@ do
 
 
     # Fail if PRRTE did not become ready.
-    grep -q "DVM ready" "$LOG_FILE"
+    if ! grep -q "DVM ready" "$LOG_FILE"; then
+        printf 'PRRTE failed to become ready; complete startup log follows:\n' >&2
+        cat -- "$LOG_FILE" >&2
+        exit 1
+    fi
 
 
     # Test every requested processes-per-node mapping value.

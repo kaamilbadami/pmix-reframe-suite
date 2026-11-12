@@ -30,66 +30,96 @@ systems:
           exit 2
       }
       if [[ -n ${SLURM_JOB_ID:-} ]]; then
-          [[ $SLURM_JOB_ID =~ ^[1-9][0-9]*$ ]] || {
-              printf '%s\n' 'error: canonical Slurm job ID is unavailable' >&2
+          [[ $SLURM_JOB_ID =~ ^[1-9][0-9]*$ && -n ${SLURM_JOB_NODELIST:-} ]] || {
+              printf '%s\n' 'error: Slurm allocation identity is unavailable' >&2
               exit 2
           }
-          node_tmp_root=/tmp
-          [[ -d $node_tmp_root && ! -L $node_tmp_root ]] || {
-              printf '%s\n' 'error: Frontier node-local /tmp is unavailable' >&2
-              exit 2
-          }
-          [[ $(/usr/bin/stat -c %a -- "$node_tmp_root") == 1777 ]] || {
-              printf '%s\n' 'error: Frontier node-local /tmp mode is unsafe' >&2
-              exit 2
-          }
-          node_tmp_fstype=$(/usr/bin/stat -f -c %T -- "$node_tmp_root")
-          case $node_tmp_fstype in
-              tmpfs|xfs|ext2/ext3|ext4|btrfs) ;;
-              *)
-                  printf 'error: unapproved node-local filesystem: %s\n' \
-                      "$node_tmp_fstype" >&2
-                  exit 2
-                  ;;
-          esac
+          runtime_hosts=$(scontrol show hostnames "$SLURM_JOB_NODELIST")
+          [[ -n $runtime_hosts ]] || exit 2
+          mapfile -t runtime_host_list <<< "$runtime_hosts"
+          runtime_node_count=${#runtime_host_list[@]}
+          (( runtime_node_count > 0 )) || exit 2
           readonly openpmix_runtime_dir="/tmp/frontier-openpmix-pr-${SLURM_JOB_ID}"
-          readonly openpmix_runtime_uid=$(/usr/bin/id -u)
-          [[ ! -L $openpmix_runtime_dir && ! -e $openpmix_runtime_dir ]] || {
-              printf '%s\n' 'error: OpenPMIx runtime directory already exists' >&2
-              exit 2
+          readonly openpmix_runtime_token=$(/usr/bin/od -An -N16 -tx1 /dev/urandom | /usr/bin/tr -d ' \n')
+          [[ $openpmix_runtime_token =~ ^[0-9a-f]{32}$ ]] || exit 2
+          # Every task gets only these arguments and a fresh environment. A nonce
+          # lets rollback remove our partial setup without removing a pre-existing
+          # directory belonging to another invocation of this allocation.
+          openpmix_runtime_node_script=$(cat <<'NODE_RUNTIME'
+      set -euo pipefail
+      umask 077
+      action=$1
+      job_id=$2
+      token=$3
+      [[ $job_id =~ ^[1-9][0-9]*$ && $token =~ ^[0-9a-f]{32}$ ]] || exit 2
+      node_tmp_root=/tmp
+      [[ -d $node_tmp_root && ! -L $node_tmp_root &&
+         $(/usr/bin/stat -c %a -- "$node_tmp_root") == 1777 ]] || exit 2
+      fstype=$(/usr/bin/stat -f -c %T -- "$node_tmp_root")
+      case $fstype in
+          tmpfs|xfs|ext2/ext3|ext4|btrfs) ;;
+          *) printf 'error: unapproved node-local filesystem: %s\n' "$fstype" >&2; exit 2 ;;
+      esac
+      runtime_dir="$node_tmp_root/frontier-openpmix-pr-${job_id}"
+      marker="$runtime_dir/.ci-runtime-owner"
+      uid=$(/usr/bin/id -u)
+      case $action in
+          create)
+              [[ ! -L $runtime_dir && ! -e $runtime_dir ]] || {
+                  printf 'error: runtime directory already exists on %s\n' "$(hostname)" >&2
+                  exit 2
+              }
+              /usr/bin/mkdir -m 700 -- "$runtime_dir"
+              printf '%s\n' "$token" > "$marker"
+              [[ $(/usr/bin/stat -c %a -- "$runtime_dir") == 700 &&
+                 $(/usr/bin/stat -c %u -- "$runtime_dir") == "$uid" ]] || exit 2
+              printf 'OPENPMIX_PR_RUNTIME_READY host=%s directory=%s fstype=%s\n' "$(hostname)" "$runtime_dir" "$fstype"
+              ;;
+          cleanup)
+              [[ -e $runtime_dir || -L $runtime_dir ]] || exit 0
+              [[ -d $runtime_dir && ! -L $runtime_dir &&
+                 $(/usr/bin/stat -c %u -- "$runtime_dir") == "$uid" &&
+                 -f $marker && ! -L $marker ]] || exit 0
+              [[ $(cat -- "$marker") == "$token" ]] || exit 0
+              /usr/bin/rm -rf --one-file-system -- "$runtime_dir"
+              [[ ! -e $runtime_dir && ! -L $runtime_dir ]] || exit 2
+              printf 'OPENPMIX_PR_RUNTIME_REMOVED host=%s\n' "$(hostname)"
+              ;;
+          *) exit 2 ;;
+      esac
+      NODE_RUNTIME
+          )
+          openpmix_runtime_all_nodes()
+          {
+              # Explicitly use the existing allocation; never obtain another one.
+              # The batch retains --export=NIL; the step uses --export=NONE.
+              # env -i also excludes credentials and caller module state.
+              /usr/bin/timeout --kill-after=5s 90s srun \
+                  --jobid="$SLURM_JOB_ID" --overlap --mpi=none \
+                  --nodes="$runtime_node_count" --ntasks="$runtime_node_count" \
+                  --ntasks-per-node=1 --cpus-per-task=1 --cpu-bind=none \
+                  --export=NONE --kill-on-bad-exit=0 \
+                  /usr/bin/env -i PATH=/usr/bin:/bin LANG=C \
+                  /bin/bash --noprofile --norc -c "$openpmix_runtime_node_script" \
+                  bash "$1" "$SLURM_JOB_ID" "$openpmix_runtime_token"
           }
-          /usr/bin/mkdir -m 700 -- "$openpmix_runtime_dir"
           cleanup_openpmix_runtime()
           {
               cleanup_status=$?
               trap - EXIT
-              if [[ $openpmix_runtime_dir == \
-                        "/tmp/frontier-openpmix-pr-${SLURM_JOB_ID}" &&
-                    -d $openpmix_runtime_dir &&
-                    ! -L $openpmix_runtime_dir &&
-                    $(/usr/bin/stat -c %u -- "$openpmix_runtime_dir") == \
-                        "$openpmix_runtime_uid" ]]; then
-                  /usr/bin/rm -rf --one-file-system -- \
-                      "$openpmix_runtime_dir" || cleanup_status=2
-              fi
-              [[ ! -L $openpmix_runtime_dir &&
-                 ! -e $openpmix_runtime_dir ]] || cleanup_status=2
+              openpmix_runtime_all_nodes cleanup || cleanup_status=2
               exit "$cleanup_status"
           }
+          # Install rollback before setup: a failure on any node must prevent the
+          # workload and remove directories already created on the other nodes.
           trap cleanup_openpmix_runtime EXIT
-          [[ $(/usr/bin/stat -c %a -- "$openpmix_runtime_dir") == 700 &&
-             $(/usr/bin/stat -c %u -- "$openpmix_runtime_dir") == \
-                 "$openpmix_runtime_uid" ]] || {
-              printf '%s\n' 'error: OpenPMIx runtime directory is unsafe' >&2
-              exit 2
-          }
+          openpmix_runtime_all_nodes create
           export TMPDIR=$openpmix_runtime_dir
           export PMIX_MCA_tmpdir_base=$openpmix_runtime_dir
           export PMIX_MCA_pmix_tmpdir_base=$openpmix_runtime_dir
           export PRTE_MCA_tmpdir_base=$openpmix_runtime_dir
           export PRTE_MCA_prte_tmpdir_base=$openpmix_runtime_dir
           printf 'OPENPMIX_PR_RUNTIME_DIR=%s\n' "$openpmix_runtime_dir"
-          printf 'OPENPMIX_PR_RUNTIME_FSTYPE=%s\n' "$node_tmp_fstype"
       fi
     environs: ['pmix_test']
 

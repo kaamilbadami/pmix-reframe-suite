@@ -83,6 +83,10 @@ validate-openpmix-baseline:
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.sh
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_job.out
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_job.err
+      - ci-openpmix-pr-execution/reframe/stage/**/*.prte.stdout
+      - ci-openpmix-pr-execution/reframe/stage/**/*.prte.stderr
+      - ci-openpmix-pr-execution/reframe/stage/**/*.dvm_output
+      - ci-openpmix-pr-execution/reframe/stage/**/prte-*node.log
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.out
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.err
       - ci-openpmix-pr-execution/reframe/stage/**/PMIX_COMMIT
@@ -181,6 +185,10 @@ run-openpmix-pr:
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.sh
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_job.out
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_job.err
+      - ci-openpmix-pr-execution/reframe/stage/**/*.prte.stdout
+      - ci-openpmix-pr-execution/reframe/stage/**/*.prte.stderr
+      - ci-openpmix-pr-execution/reframe/stage/**/*.dvm_output
+      - ci-openpmix-pr-execution/reframe/stage/**/prte-*node.log
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.out
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.err
       - ci-openpmix-pr-execution/reframe/stage/**/PMIX_COMMIT

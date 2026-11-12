@@ -190,3 +190,28 @@ PR execution has a two-hour job limit and a 1h45m main-script limit.
 Results remain internal to GitLab; this workflow does not post GitHub statuses. Scheduled
 commit jobs retain the multinode scaling stage, including PRRTE launch logs,
 for investigation when ReFrame output is incomplete.
+
+## Runtime directories and startup diagnostics
+
+The OpenPMIx PR and single-allocation configurations use node-local runtime
+storage. Before PRRTE starts, initialization uses one `srun` task on every
+allocated node to validate `/tmp` and create the job's private runtime directory.
+A failed setup prevents the workload and rolls back the directories already
+created on other nodes. Cleanup runs on every allocated node and only removes
+directories whose ownership marker matches this invocation. Steps are bound to
+the existing Slurm job and do not request another allocation. The batch keeps
+`--export=NIL`; setup/cleanup steps use `--export=NONE` plus `env -i`.
+A hard allocation termination may prevent cleanup; failures are logged rather
+than treated as successful cleanup.
+
+Targeted and mixed controllers use the same bounded, file-backed PRRTE startup
+helper as worker-thread controllers. Full stdout/stderr remain in
+`*.prte.stdout` and `*.prte.stderr` even when startup fails; the controller error
+includes both log tails. Mapping and multinode wrappers also print their startup
+log on readiness failure. PR, baseline, and scheduled job artifacts include
+those streams, `*.dvm_output`, and `prte-*node.log`, including failed stages.
+
+Offline runtime tests use distinct temporary filesystems for simulated nodes;
+they verify all-node readiness, cleanup after workload failure, partial-setup
+rollback, and rejection of pre-existing directories and symlinks. These checks
+do not replace live Frontier validation of Slurm steps and remote PRRTE startup.

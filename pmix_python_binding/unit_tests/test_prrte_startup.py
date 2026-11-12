@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -50,6 +51,42 @@ class PRRTEStartupTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "exit=7") as error:
             self.start("import sys; print('launch failure',file=sys.stderr); sys.exit(7)")
         self.assertIn("launch failure", str(error.exception))
+
+    def test_real_targeted_and_mixed_controllers_retain_startup_failure_streams(self):
+        suite = Path(__file__).resolve().parents[1]
+        for kind in ('targeted', 'mixed_thread'):
+            with self.subTest(controller=kind), tempfile.TemporaryDirectory() as directory:
+                stage = Path(directory)
+                controller = suite / 'controllers' / ('run_pmix_python_' + kind + '_compat.py')
+                for helper in ('pmix_event_utils.py', 'prrte_startup.py'):
+                    shutil.copy(suite / 'common' / helper, stage)
+                (stage / 'pmix.py').write_text('# Startup fails before PMIx is used.\n')
+                binary = stage / 'bin'
+                binary.mkdir()
+                prte = binary / 'prte'
+                prte.write_text('#!' + sys.executable + '\n'
+                    'import sys\n'
+                    'print("startup banner")\n'
+                    'sys.stderr.write("site banner\\n" + "x"*200000 + "\\nREMOTE_SESSION_PARENT_MISSING\\n")\n'
+                    'sys.exit(7)\n')
+                prte.chmod(0o755)
+                sleeper = stage / 'sleeper'
+                sleeper.touch()
+                job_size = ['--job-size', '1'] if kind == 'targeted' else [
+                    '--job-size-min', '1', '--job-size-max', '1']
+                result = subprocess.run([sys.executable, str(controller), '--slots', '1',
+                    *job_size, '--min-time', '1', '--max-time', '1', '--iters', '1',
+                    '--out-file', 'controller.out', '--delay', '0', '--job', str(sleeper)],
+                    cwd=stage, env=dict(os.environ, PRRTE=str(stage), PYTHONPATH=str(stage)),
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=10)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('exit=7', result.stderr)
+                self.assertIn('REMOTE_SESSION_PARENT_MISSING', result.stderr)
+                self.assertIn('startup banner', (stage / 'controller.out.prte.stdout').read_text())
+                error_log = (stage / 'controller.out.prte.stderr').read_text()
+                self.assertTrue(error_log.startswith('site banner'))
+                self.assertGreater(len(error_log), 200000)
+                self.assertIn('REMOTE_SESSION_PARENT_MISSING', error_log)
 
     def test_invalid_deadlines_do_not_launch(self):
         for timeout in (0, -1, float("inf"), float("nan")):
