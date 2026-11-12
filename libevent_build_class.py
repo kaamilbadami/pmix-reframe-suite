@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 import os
+import shlex
 import reframe as rfm
 import reframe.utility.sanity as sn
 
