@@ -67,6 +67,30 @@ sys.exit(rc)
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                               universal_newlines=True, timeout=10)
 
+    def test_configuration_renders_through_reframe_jinja_stage(self):
+        # ReFrame processes YAML through Jinja before parsing it as YAML.
+        # Use the test interpreter, or the system interpreter's installed Jinja.
+        interpreters = [sys.executable, '/usr/bin/python3']
+        source = ROOT / 'ci/openpmix_pr_sysconfig.yaml'
+        program = (
+            'import pathlib,sys,jinja2,yaml,subprocess; '
+            'text=pathlib.Path(sys.argv[1]).read_text(); '
+            'rendered=jinja2.Environment().from_string(text).render(); '
+            'config=yaml.safe_load(rendered); '
+            'script=config["systems"][0]["partitions"][0]["prepare_cmds"][0]; '
+            'subprocess.run(["/bin/bash","-n"],input=script.encode(),check=True)'
+        )
+        for executable in interpreters:
+            probe = subprocess.run([executable, '-c', 'import jinja2,yaml'],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if probe.returncode == 0:
+                result = subprocess.run([executable, '-c', program, str(source)],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                break
+        else:
+            self.fail('Jinja2 and PyYAML are required to validate the ReFrame configuration')
+
     def test_all_nodes_ready_before_workload_and_all_cleaned_on_success(self):
         script = '\n'.join('[[ -d "{}" ]] || exit 55'.format(self.directory(h))
                            for h in ('node-a', 'node-b')) + '\necho WORKLOAD_RAN\n'

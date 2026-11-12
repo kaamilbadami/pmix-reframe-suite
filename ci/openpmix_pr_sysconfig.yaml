@@ -36,8 +36,8 @@ systems:
           }
           runtime_hosts=$(scontrol show hostnames "$SLURM_JOB_NODELIST")
           [[ -n $runtime_hosts ]] || exit 2
-          mapfile -t runtime_host_list <<< "$runtime_hosts"
-          runtime_node_count=${#runtime_host_list[@]}
+          # Avoid Bash array-length syntax here: ReFrame renders YAML as Jinja.
+          runtime_node_count=$(printf '%s\n' "$runtime_hosts" | /usr/bin/wc -l)
           (( runtime_node_count > 0 )) || exit 2
           readonly openpmix_runtime_dir="/tmp/frontier-openpmix-pr-${SLURM_JOB_ID}"
           readonly openpmix_runtime_token=$(/usr/bin/od -An -N16 -tx1 /dev/urandom | /usr/bin/tr -d ' \n')
