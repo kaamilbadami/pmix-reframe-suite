@@ -64,12 +64,16 @@ pmix-__SHA__:
       bash ci/run_exact_pmix_commit.sh
   after_script:
     - python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect Slurm cleanup errors above'
+    - python3 ci/pmix_result_summary.py record --output ci-results || echo "WARNING - runtime summary unavailable"
     - bash ci/write_pmix_commit_result.sh ci-results
   artifacts:
     when: always
     expire_in: 14 days
     paths:
       - ci-results/__RESULT_SHA__.env
+      - ci-results/__RESULT_SHA__.summary.json
+      - .ci-work/$CI_JOB_ID/reframe/run-report.json
+      - .ci-work/$CI_JOB_ID/reframe/run-console.log
       - ci-results/slurm-cleanup-$CI_JOB_ID.json
       - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.sh
       - .ci-work/$CI_JOB_ID/reframe/output/
@@ -99,12 +103,16 @@ pmix-__SHA__:
       exit 1
   after_script:
     - python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect Slurm cleanup errors above'
+    - python3 ci/pmix_result_summary.py record --output ci-results || echo "WARNING - runtime summary unavailable"
     - bash ci/write_pmix_commit_result.sh ci-results
   artifacts:
     when: always
     expire_in: 14 days
     paths:
       - ci-results/__RESULT_SHA__.env
+      - ci-results/__RESULT_SHA__.summary.json
+      - .ci-work/$CI_JOB_ID/reframe/run-report.json
+      - .ci-work/$CI_JOB_ID/reframe/run-console.log
       - ci-results/slurm-cleanup-$CI_JOB_ID.json
       - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.sh
       - .ci-work/$CI_JOB_ID/reframe/output/
@@ -157,12 +165,14 @@ pmix-__SHA__:
     - /bin/bash ci/run_pmix_scheduled_allocation.sh
   after_script:
     - /lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python ci/pmix_scheduled_sources.py accounting || echo "WARNING - allocation accounting unavailable"
+    - /lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python ci/pmix_result_summary.py record --output ci-results || echo "WARNING - runtime summary unavailable"
     - bash ci/write_pmix_commit_result.sh ci-results
   artifacts:
     when: always
     expire_in: 14 days
     paths:
       - ci-results/__SHA__.env
+      - ci-results/__SHA__.summary.json
       - .ci-work/$CI_JOB_ID/runner-allocation.json
       - .ci-work/$CI_JOB_ID/runner-accounting.txt
       - .ci-work/$CI_JOB_ID/reframe/

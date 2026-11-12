@@ -133,12 +133,15 @@ class AllocationTests(unittest.TestCase):
         env = {**self.env, 'RFM_BIN': str(self.bin / 'reframe'), 'PYTHONPATH': str(self.repo)}
         for policy in ('serial', ''):
             result = subprocess.run(['/bin/bash', 'ci/run_pmix_python_suite.sh'], cwd=self.repo,
-                                    env={**env, 'PMIX_RFM_EXEC_POLICY': policy},
+                                    env={**env, 'PMIX_RFM_EXEC_POLICY': policy,
+                                         'PMIX_RFM_PREFIX': str(self.repo / 'rfm-output')},
                                     text=True, capture_output=True, timeout=5)
             self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
             args = (self.repo / 'rfm-args').read_text().splitlines()
             self.assertEqual('--exec-policy=serial' in args, policy == 'serial')
             self.assertNotIn('--maxfail=1', args)
+            self.assertIn('--report-file', args)
+            self.assertTrue((self.repo / 'rfm-output/run-console.log').is_file())
 
     def test_invalid_baseline_never_submits(self):
         (self.repo / baseline.MANIFEST).unlink()

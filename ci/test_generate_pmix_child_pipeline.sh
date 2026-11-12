@@ -356,12 +356,15 @@ for sha in (lower_sha, upper_sha, third_sha):
         "timeout": "2h",
         "variables": {"PMIX_COMMIT": sha, "RUNNER_SCRIPT_TIMEOUT": "1h45m", "RUNNER_AFTER_SCRIPT_TIMEOUT": "5m"},
         "script": [expected_script],
-        "after_script": ["python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect Slurm cleanup errors above'", "bash ci/write_pmix_commit_result.sh ci-results"],
+        "after_script": ["python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect Slurm cleanup errors above'", 'python3 ci/pmix_result_summary.py record --output ci-results || echo "WARNING - runtime summary unavailable"', "bash ci/write_pmix_commit_result.sh ci-results"],
         "artifacts": {
             "when": "always",
             "expire_in": "14 days",
             "paths": [
                 f"ci-results/{sha.lower()}.env",
+                f"ci-results/{sha.lower()}.summary.json",
+                ".ci-work/$CI_JOB_ID/reframe/run-report.json",
+                ".ci-work/$CI_JOB_ID/reframe/run-console.log",
                 "ci-results/slurm-cleanup-$CI_JOB_ID.json",
                 ".ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.sh",
                 ".ci-work/$CI_JOB_ID/reframe/output/",

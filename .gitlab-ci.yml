@@ -345,12 +345,18 @@ collect-pmix-child-results-scheduled:
           --directory ci-scheduled
 
       collector_status=0
-      python3 ci/collect_pmix_child_results.py \
+      python3 ci/collect_pmix_child_results.py --summaries \
           --commits ci-scheduled/pmix-untested-commits.txt \
           --parent-pipeline-id "$CI_PIPELINE_ID" \
           --output ci-scheduled/collection \
           --trigger-job-name trigger-pmix-child-pipeline-scheduled || \
           collector_status=$?
+
+      python3 ci/pmix_result_summary.py publish \
+          --collection ci-scheduled/collection \
+          --baseline ci-scheduled/baseline-pmix-master.env \
+          --suite-commit "$CI_COMMIT_SHA" \
+          --output ci-scheduled/report
 
       python3 ci/pmix_scheduled_status.py publish \
           --directory ci-scheduled \
@@ -380,6 +386,9 @@ collect-pmix-child-results-scheduled:
       - ci-scheduled/collector-status.env
       - ci-scheduled/collection/collection-report.json
       - ci-scheduled/collection/*.env
+      - ci-scheduled/collection/summary-attempt.json
+      - ci-scheduled/collection/latest-attempt.json
+      - ci-scheduled/report/
 
 reconcile-pmix-child-results-scheduled:
   stage: pmix-reconcile

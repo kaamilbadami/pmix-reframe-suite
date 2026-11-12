@@ -33,6 +33,39 @@ cat /lustre/orion/gen243/world-shared/kbadami/openpmix-ci/pmix-master.env
 
 Only the scheduled state-update job changes this file. It locks and rechecks state before replacing it, preventing an older pipeline from overwriting newer state. Missing or malformed state causes an error. GitLab cache is not the authoritative checkpoint; manual and PR runs do not advance it.
 
+## Compact latest-attempt report
+
+The scheduled **Collect** job publishes `ci-scheduled/report/latest-summary.md`
+and `latest-summary.json` as artifacts (14-day retention). Open the Markdown
+file for the current batch's most recently finished commit attempt: OpenPMIx,
+PRRTE and suite revisions, UTC test time, overall status, passed/failed/incomplete
+runtime counts, last known good checkpoint, and links to the job and test
+pipeline. Historical results stay in the existing records and job artifacts.
+This is file output only; it does not publish a website or send notifications.
+
+“Latest” uses job completion time, falling back to start/creation time and job
+ID. It is not the last SHA in discovery order. Superseded retries are excluded.
+A failed or timed-out latest attempt replaces a passing attempt in this view.
+The last known good field is explicitly the **batch-start checkpoint**, since
+Collect runs before Reconcile and Apply; reporting never claims a proposed
+checkpoint update has already been applied.
+
+Counts cover the 11 runtime checks, excluding Python unit tests and fetch/build
+fixtures. New commit jobs retain a stable ReFrame JSON report and terminal
+console log. After-script creates a small reporting sidecar separately from the
+strict checkpoint `.env` record. Completed console results survive a missing or
+truncated final JSON report; missing, skipped and aborted cases are incomplete.
+A timeout does not imply an application failure or prove an allocation delay.
+The report retains CI timeout classification and points to logs/accounting.
+Requested PRRTE revisions are marked as requested when checkout provenance is
+unavailable. Missing, mismatched or expired evidence yields incomplete counts,
+including for older pipelines without these artifacts; counts are never inferred
+from a successful CI status alone.
+
+These changes apply to newly generated pipelines. Retrying an existing pipeline
+uses its original suite revision and YAML. Re-run Collect after individual job
+retries to refresh that pipeline's artifact summary when its code supports it.
+
 ## Relevant CI variables
 
 Normal runs do not require development-pilot switches. CI supplies the job identifiers, tool paths, and exact OpenPMIx SHA for each generated commit job.
