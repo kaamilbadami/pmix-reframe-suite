@@ -215,3 +215,37 @@ Offline runtime tests use distinct temporary filesystems for simulated nodes;
 they verify all-node readiness, cleanup after workload failure, partial-setup
 rollback, and rejection of pre-existing directories and symlinks. These checks
 do not replace live Frontier validation of Slurm steps and remote PRRTE startup.
+
+## Fixed multinode diagnostic (independent of live PRs)
+
+Choose **New pipeline** on the suite branch containing this option, set only
+`OPENPMIX_FIXED_DIAGNOSTIC=1`, and run it as a manual web pipeline. This is not a
+schedule option. The expected job is `run-openpmix-fixed-diagnostic` on the shell
+runner; the ordinary suite, live OpenPMIx PR workflow, and historical baseline
+are excluded in this mode. Do not combine it with other pilot switches.
+
+The pins reproduce the earlier remote-daemon failure:
+
+- OpenPMIx: `0fb45ff3d1b67a91f690b68918566acc45131062`
+- PRRTE: `9c715a9cd3d42adf8deb7246586e8712599ee55b`
+
+The diagnostic fetches the OpenPMIx commit object directly from its fixed public
+upstream and validates/populates its exact approved OAC gitlink. It never looks
+up a live PR or requires that PR to remain open. If an upstream object becomes
+unavailable, it fails rather than substituting a newer revision. PRRTE uses the
+existing exact-pin fixture. Caller-provided PMIx/PRRTE pins cannot change this
+bounded diagnostic; edit the trusted constants to select another reproduction.
+
+Build fixtures run on the shell runner. Only `PMIxPythonMappingPPRNodeTest`
+requests a test allocation: two nodes, one slot per node, one process per node,
+one trial. It uses the repaired PR runtime configuration, including all-node
+runtime-directory preparation and cleanup. The shell CI job has a two-hour
+limit with a 1h45m script limit. Build and queue time still count against CI
+walltime; there is no enclosing four-node, 30-minute allocation.
+
+The launcher enters a clean environment before fetching or building sources.
+The result is explicitly a **diagnostic**, not a live PR verdict or a full-suite
+pass. It does not post upstream statuses, run Collect/Reconcile/Apply, or change
+the scheduled checkpoint. Artifacts under `.ci-work/<job-id>/` include the pins,
+suite revision, diagnostic result/log, ReFrame report, build output, and complete
+startup logs. Cleanup is limited to Slurm jobs owned by this CI job.

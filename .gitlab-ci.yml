@@ -14,6 +14,7 @@ include:
     file:
       - /runners.yml
   - local: ci/openpmix_pr_jobs.yml
+  - local: ci/openpmix_fixed_diagnostic.yml
 
 variables:
   OLCF_SERVICE_ACCOUNT: "gen243_auser"
@@ -746,6 +747,8 @@ pmix-python-suite:
   resource_group: pmix-python-suite-frontier
 
   rules:
+    - if: '$OPENPMIX_FIXED_DIAGNOSTIC == "1"'
+      when: never
     - if: '$OPENPMIX_PR_BASELINE == "1"'
       when: never
     - if: '$PMIX_TIMEOUT_AUDIT == "1"'

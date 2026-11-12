@@ -2,6 +2,8 @@
 # an explicitly selected web pipeline or an isolated generated child pipeline.
 .openpmix-baseline-rules:
   rules:
+    - if: '$OPENPMIX_FIXED_DIAGNOSTIC == "1"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "web" && $OPENPMIX_PR_BASELINE == "1"'
       when: always
     - when: never
@@ -10,6 +12,8 @@ prepare-openpmix-baseline:
   extends: prepare-openpmix-pr
   timeout: 20m
   rules:
+    - if: '$OPENPMIX_FIXED_DIAGNOSTIC == "1"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "web" && $OPENPMIX_PR_BASELINE == "1"'
     - when: never
   variables:
@@ -105,12 +109,16 @@ finalize-openpmix-baseline:
 
 .openpmix-pr-rules:
   rules:
+    - if: '$OPENPMIX_FIXED_DIAGNOSTIC == "1"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "web" && $OPENPMIX_PR_INTERNAL == "1"'
     - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $OPENPMIX_PR_INTERNAL == "1"'
     - when: never
 
 .openpmix-pr-always-rules:
   rules:
+    - if: '$OPENPMIX_FIXED_DIAGNOSTIC == "1"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "web" && $OPENPMIX_PR_INTERNAL == "1"'
       when: always
     - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $OPENPMIX_PR_INTERNAL == "1"'
