@@ -54,7 +54,7 @@ REPORT_FIELDS = (
     "STATE_UPDATE_PROPOSED",
 )
 KNOWN_OUTPUTS = ("reconciliation.env", "proposed-pmix-master.env")
-ALLOWED_STATUSES = ("success", "failed", "canceled", "unknown")
+ALLOWED_STATUSES = ("success", "failed", "canceled", "timedout", "unknown")
 
 
 class InputError(Exception):

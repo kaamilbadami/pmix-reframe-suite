@@ -35,7 +35,7 @@ REPORT_FIELDS = (
     "FIRST_BLOCKED_REASON",
     "STATE_UPDATE_PROPOSED",
 )
-BLOCKING_REASONS = frozenset({"failed", "canceled", "unknown", "missing", "malformed"})
+BLOCKING_REASONS = frozenset({"failed", "canceled", "timedout", "unknown", "missing", "malformed"})
 
 
 class ValidationError(Exception):

@@ -129,6 +129,12 @@ grep -Fqx 'CI_JOB_STATUS=canceled' "$canceled_output/$lower_pmix_sha.env" ||
     fail 'canceled status was not preserved'
 pass 'canceled is preserved'
 
+timedout_output="$test_dir/timedout"
+"${valid_environment[@]}" CI_JOB_STATUS=timedout bash "$writer" "$timedout_output"
+grep -Fqx 'CI_JOB_STATUS=timedout' "$timedout_output/$lower_pmix_sha.env" ||
+    fail 'timedout status was not preserved'
+pass 'timedout is preserved'
+
 missing_status_output="$test_dir/missing-status"
 "${valid_environment[@]}" bash "$writer" "$missing_status_output"
 grep -Fqx 'CI_JOB_STATUS=unknown' \
