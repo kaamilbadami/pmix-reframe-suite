@@ -241,10 +241,39 @@ collect-reconcile-pmix-child-pipeline-pilot:
       - ci-pilot-results/reconciliation/reconciliation.env
       - ci-pilot-results/reconciliation/proposed-pmix-master.env
 
+# An API control token enables cancellation of this idle poll before the batch lock.
+# With no token configured, retain the existing serialized scheduling behavior.
+check-pmix-scheduled-admission:
+  stage: pilot-generate
+  extends:
+    - .frontier-shell-runner
+  timeout: 5m
+  rules:
+    - if: '$OPENPMIX_PR_AUTODISCOVERY == "1"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $GITLAB_PIPELINE_CONTROL_TOKEN'
+    - when: never
+  variables:
+    GITHUB_PR_READ_TOKEN: ""
+    GITHUB_STATUS_TOKEN: ""
+  script:
+    - |
+      set +x
+      set -euo pipefail
+      python3 ci/skip_busy_pmix_schedule.py
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-scheduled-admission/decision.json
+
 # Hold a distinct batch lock through discovery, parallel testing, and state
 # application. Discovery happens inside the lock, not before waiting for it.
 run-pmix-scheduled-batch:
   stage: pilot-trigger
+  needs:
+    - job: check-pmix-scheduled-admission
+      optional: true
   resource_group: pmix-scheduled-batch
   rules:
     - if: '$OPENPMIX_PR_AUTODISCOVERY == "1"'

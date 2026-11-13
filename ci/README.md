@@ -101,6 +101,28 @@ this longer CI budget does not change their Slurm walltimes. Verify a newly
 generated commit job shows an effective six-hour timeout; existing jobs retain
 the configuration generated for their original pipeline.
 
+### Skip redundant scheduled master polls
+
+Set a masked `GITLAB_PIPELINE_CONTROL_TOKEN` CI/CD variable with project-scoped
+API access and permission to cancel pipelines. Use a protected variable when the
+scheduled branch is protected; the variable must be available on the schedule's
+actual target ref. Do not put its value in source, logs, or chat.
+
+When configured, `check-pmix-scheduled-admission` checks active scheduled master
+batch bridges before `run-pmix-scheduled-batch` can obtain its lock. If another
+batch is running (including allocation waiting), or an older master poll is
+already starting, it cancels **only its own idle scheduled pipeline**. GitLab
+shows that redundant poll as canceled, not as a passing test. Running batches
+are not canceled, and the next scheduled check discovers any remaining commits.
+The existing whole-batch resource lock and checkpoint reconciliation remain in
+place. Concurrent polls favor the older pipeline; the resource lock remains the
+final protection against races.
+
+The ordinary CI job token cannot cancel pipelines. Without the control token,
+the admission job is not enabled and the old queued behavior remains. API or
+identity-check failures stop the new poll before its batch starts. Existing
+queued pipelines keep their old configuration and need manual cancellation.
+
 ### Scheduled Slurm runner trial
 
 Set the schedule variable `PMIX_SCHEDULED_SLURM=1` on

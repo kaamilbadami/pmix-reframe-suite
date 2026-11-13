@@ -188,7 +188,7 @@ itself from the current master tip. Discovery fetches OpenPMIx history and write
 every commit in `known-good..master`, oldest to newest, excluding the known-good
 base. An empty range produces a no-op child pipeline and leaves state unchanged.
 
-A scheduled wrapper holds the `pmix-scheduled-batch` resource group through discovery, testing, reconciliation, and application. Later scheduled runs wait before reading state. The wrapper starts an orchestration child containing the five scheduled jobs; that child generates the exact-commit child pipeline.
+A scheduled wrapper holds the `pmix-scheduled-batch` resource group through discovery, testing, reconciliation, and application. With `GITLAB_PIPELINE_CONTROL_TOKEN` configured, a preflight check cancels a redundant idle scheduled poll before it queues for that lock. Without the token, later scheduled runs wait before reading state. See [the CI guide](ci/README.md#skip-redundant-scheduled-master-polls) for setup. The wrapper starts an orchestration child containing the five scheduled jobs; that child generates the exact-commit child pipeline.
 
 When there are no new commits, scheduled discovery checks `LAST_SUCCESS_EPOCH`. If the last successful full-suite run was at least 86,400 seconds (24 hours) ago, it generates one normal exact-commit job to retest the saved PMIx commit as a Frontier health check. A successful health check refreshes the timestamp without advancing the commit; a failed or missing result leaves state unchanged and the check due for retry. An empty backlog younger than 24 hours remains a no-op. New commits always use normal per-commit testing.
 
