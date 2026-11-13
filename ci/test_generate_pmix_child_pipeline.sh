@@ -247,7 +247,7 @@ grep -Fq 'project: ci/resources/templates' "$multiple_output" &&
     fail 'approved runner include is missing'
 [[ $(grep -Fc -- '- .frontier-shell-runner' "$multiple_output") == 3 ]] ||
     fail 'not every job extends the Frontier runner'
-[[ $(grep -Fc 'timeout: 2h' "$multiple_output") == 3 ]] ||
+[[ $(grep -Fc 'timeout: 6h' "$multiple_output") == 3 ]] ||
     fail 'not every job uses the current timeout'
 if grep -Eq '^[[:space:]]*(resource_group|parallel):' "$multiple_output" ||
    grep -Eqi 'concurrency[-_ ]?lane|semaphore' "$multiple_output"; then
@@ -353,8 +353,8 @@ for sha in (lower_sha, upper_sha, third_sha):
     expected_multiple[f"pmix-{sha}"] = {
         "stage": "test",
         "extends": [".frontier-shell-runner"],
-        "timeout": "2h",
-        "variables": {"PMIX_COMMIT": sha, "RUNNER_SCRIPT_TIMEOUT": "1h45m", "RUNNER_AFTER_SCRIPT_TIMEOUT": "5m"},
+        "timeout": "6h",
+        "variables": {"PMIX_COMMIT": sha, "RUNNER_SCRIPT_TIMEOUT": "5h45m", "RUNNER_AFTER_SCRIPT_TIMEOUT": "5m"},
         "script": [expected_script],
         "after_script": ["python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect Slurm cleanup errors above'", 'python3 ci/pmix_result_summary.py record --output ci-results || echo "WARNING - runtime summary unavailable"', "bash ci/write_pmix_commit_result.sh ci-results"],
         "artifacts": {

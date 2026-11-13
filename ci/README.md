@@ -87,11 +87,19 @@ To run the full suite manually, choose **Build → Pipelines → New pipeline**,
 
 Open the pipeline's commit jobs for test logs and artifacts. Each generated commit job publishes `ci-results/<sha>.env`. Collection/reconciliation reports explain the successful boundary and any blocking result. Artifacts are generally retained for 14 days.
 
-Generated commit jobs have a two-hour CI limit. `RUNNER_SCRIPT_TIMEOUT=1h45m`
+Generated per-test-allocation commit jobs have a six-hour CI limit.
+`RUNNER_SCRIPT_TIMEOUT=5h45m`
 reserves time for `RUNNER_AFTER_SCRIPT_TIMEOUT=5m`, result records, cleanup, and
 artifact upload. Slurm queue waiting counts toward CI time, but each test's
 Slurm execution limit remains unchanged. A runner maximum timeout can cap the
-configured limit; verify the effective timeout in GitLab before re-enabling.
+configured limit. In GitLab, open **Settings → CI/CD → Runners**, edit each
+Frontier shell runner eligible for these jobs, and ensure **Maximum job timeout**
+is at least `21600` seconds (six hours), or unset if permitted by runner policy.
+Changing this shared runner setting requires runner-management permission.
+Keep `PMIX_SCHEDULED_SLURM=0` to retain separate allocations for each test;
+this longer CI budget does not change their Slurm walltimes. Verify a newly
+generated commit job shows an effective six-hour timeout; existing jobs retain
+the configuration generated for their original pipeline.
 
 ### Scheduled Slurm runner trial
 

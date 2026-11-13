@@ -41,10 +41,10 @@ pmix-__SHA__:
   stage: test
   extends:
     - .frontier-shell-runner
-  timeout: 2h
+  timeout: 6h
   variables:
     PMIX_COMMIT: "__SHA__"
-    RUNNER_SCRIPT_TIMEOUT: "1h45m"
+    RUNNER_SCRIPT_TIMEOUT: "5h45m"
     RUNNER_AFTER_SCRIPT_TIMEOUT: "5m"
   script:
     - |
@@ -93,10 +93,10 @@ pmix-__SHA__:
   stage: test
   extends:
     - .frontier-shell-runner
-  timeout: 2h
+  timeout: 6h
   variables:
     PMIX_COMMIT: "__SHA__"
-    RUNNER_SCRIPT_TIMEOUT: "1h45m"
+    RUNNER_SCRIPT_TIMEOUT: "5h45m"
     RUNNER_AFTER_SCRIPT_TIMEOUT: "5m"
   script:
     - |

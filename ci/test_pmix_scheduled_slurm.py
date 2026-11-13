@@ -45,7 +45,12 @@ class PipelineTests(unittest.TestCase):
 
     def test_existing_shell_path_and_empty_batch(self):
         shell = yaml.safe_load(generator.render_pipeline([PMIX]))
-        self.assertEqual(shell['pmix-' + PMIX]['timeout'], '2h')
+        job = shell['pmix-' + PMIX]
+        self.assertEqual(job['timeout'], '6h')
+        self.assertEqual(job['variables']['RUNNER_SCRIPT_TIMEOUT'], '5h45m')
+        self.assertEqual(job['variables']['RUNNER_AFTER_SCRIPT_TIMEOUT'], '5m')
+        self.assertEqual(job['extends'], ['.frontier-shell-runner'])
+        self.assertNotIn('SCHEDULER_PARAMETERS', job['variables'])
         empty = yaml.safe_load(generator.render_pipeline([], slurm_runner=True))
         self.assertIn('no-untested-pmix-commits', empty)
         self.assertFalse(any(name.startswith('prepare-pmix-') for name in empty))
