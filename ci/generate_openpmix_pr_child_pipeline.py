@@ -40,6 +40,7 @@ JOB = """openpmix-pr-{number}-{short_sha}:
   stage: trigger
   variables:
     OPENPMIX_PR_INTERNAL: "1"
+    OPENPMIX_PR_AUTOMATIC: "1"
     OPENPMIX_PR_NUMBER: "{number}"
     OPENPMIX_PR_EXPECTED_SHA: "{sha}"
   trigger:

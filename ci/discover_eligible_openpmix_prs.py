@@ -29,10 +29,8 @@ PIPELINE_STATES = frozenset((
     "created", "waiting_for_resource", "preparing", "pending", "running",
     "success", "failed", "canceled", "skipped", "manual", "scheduled",
 ))
-SUPPRESS_STATES = frozenset((
-    "created", "waiting_for_resource", "preparing", "pending", "running",
-    "success", "manual", "scheduled",
-))
+# One automatic attempt per exact PR head, including failures and cancellations.
+SUPPRESS_STATES = PIPELINE_STATES
 PIPELINE_NAME_RE = re.compile(r"openpmix-pr:([1-9][0-9]*):([0-9a-f]{40})\Z")
 OUTPUT_KEYS = (
     "pr_number", "head_sha", "author", "base_repository",

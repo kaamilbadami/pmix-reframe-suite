@@ -180,11 +180,19 @@ run-openpmix-pr:
     - |
       set +x
       set -euo pipefail
+      admission_status=0
+      python3 ci/openpmix_pr_queue_guard.py check || admission_status=$?
+      if (( admission_status == 3 )); then
+          printf '%s\n' 'PR tests not run: duplicate or superseded queued selection.'
+          exit 0
+      fi
+      (( admission_status == 0 )) || exit "$admission_status"
       /bin/bash ci/run_openpmix_pr_isolated.sh
   artifacts:
     when: always
     expire_in: 14 days
     paths:
+      - ci-openpmix-pr-admission.json
       - ci-openpmix-pr-execution/result.env
       - ci-openpmix-pr-execution/evidence/
       - ci-openpmix-pr-execution/reframe/run-report.json
@@ -224,6 +232,14 @@ finalize-openpmix-pr:
     - |
       set +x
       set -euo pipefail
+      skipped_status=0
+      python3 ci/openpmix_pr_queue_guard.py was-skipped || skipped_status=$?
+      if (( skipped_status == 0 )); then
+          mkdir -p ci-openpmix-pr-final
+          cp ci-openpmix-pr-admission.json ci-openpmix-pr-final/not-run.json
+          exit 0
+      fi
+      (( skipped_status == 1 )) || exit "$skipped_status"
       /bin/bash ci/finalize_openpmix_pr_result.sh \
           ci-openpmix-pr-preparation/preparation.env \
           ci-openpmix-pr-execution/result.env
@@ -232,3 +248,4 @@ finalize-openpmix-pr:
     expire_in: 14 days
     paths:
       - ci-openpmix-pr-final/final-result.env
+      - ci-openpmix-pr-final/not-run.json

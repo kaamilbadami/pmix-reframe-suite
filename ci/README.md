@@ -149,16 +149,34 @@ schedule on the lifecycle branch with that variable for a temporary PR trial
 exclude `run-pmix-scheduled-batch`; leave the normal 30-minute schedule without
 this variable. Empty discovery creates a no-op child without building or
 requesting compute nodes. PR execution jobs share their existing resource lock;
-discovery suppresses active/successful heads but overlapping discovery still
-has the duplicate-launch race noted below. Disable the temporary schedule after
-validation; this configuration does not disable it automatically.
+discovery suppresses every previously attempted PR number + head SHA, including
+failed, canceled, and skipped attempts. A new head SHA is eligible immediately;
+failures on an unchanged head require an explicit retry rather than a new
+attempt every five minutes. Disable the temporary schedule after validation;
+this configuration does not disable it automatically.
 
-It requires job-token access to the pipeline-list API (`READ_PIPELINES` where
-fine-grained permissions are used). It identifies PR heads by child pipeline
-names, suppresses active or successful attempts, and retries failed, canceled,
-or skipped attempts. Pipelines created before this naming convention are not
-recognized and can be tested again. Overlapping discovery runs can still launch
-duplicates; validate live API access and address that race before enabling it.
+It requires job-token access to the pipeline-list and individual-pipeline APIs
+(`READ_PIPELINES` where fine-grained permissions are used). Named child
+pipelines identify exact PR heads. After acquiring the execution resource lock,
+automatic jobs recheck GitLab: a newer pipeline selecting a different SHA for
+the same PR supersedes a queued selection, and only the oldest pipeline for
+an exact PR head may execute automatically. This closes the compute-launch
+race between overlapping polls; it does not prevent every duplicate lightweight
+child from being created. Other PR numbers do not supersede one another.
+Already running tests are not canceled.
+
+Duplicate or superseded queued jobs finish without builds or Slurm submissions.
+Their final artifact is `ci-openpmix-pr-final/not-run.json`, explicitly **not a
+passing test result**. GitLab may show these lightweight jobs as successful
+because the admission check completed. API errors stop execution rather than
+allowing an unchecked run. Manual PR runs without `OPENPMIX_PR_AUTOMATIC=1`
+bypass automatic admission, so a deliberate retest remains possible. Retry the
+original canonical pipeline job, or start an explicit manual PR pipeline.
+
+Existing pipelines retain their generated configuration. This change does not
+cancel an existing backlog or update jobs already created on older suite SHAs.
+Pause the PR schedule and cancel unwanted older queued pipelines in GitLab when
+switching to this revision. Continue to use a separate master-testing schedule.
 OpenPMIx PR execution resolves one exact PRRTE master SHA per execution; see the compatibility section below.
 
 Configuration: [`.gitlab-ci.yml`](../.gitlab-ci.yml), [`openpmix_pr_jobs.yml`](openpmix_pr_jobs.yml), and [`run_pmix_python_suite.sh`](run_pmix_python_suite.sh). See the [root README](../README.md) for installation and test coverage. Development-only pilots are outside this guide.

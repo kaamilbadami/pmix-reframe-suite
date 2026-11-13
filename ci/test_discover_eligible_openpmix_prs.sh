@@ -53,7 +53,7 @@ spec = importlib.util.spec_from_file_location("discovery", discover)
 module = importlib.util.module_from_spec(spec)
 sys.path.insert(0, str(ci))
 spec.loader.exec_module(module)
-for status in ("success", "running", "pending", "failed", "canceled", "skipped"):
+for status in sorted(module.PIPELINE_STATES):
     def fake_get(url, headers):
         check("/variables" not in url, "unsupported variables endpoint requested")
         query = parse_qs(urlsplit(url).query)
@@ -64,9 +64,9 @@ for status in ("success", "running", "pending", "failed", "canceled", "skipped")
     module.get_json = fake_get
     pairs = module.pipeline_pairs("https://gitlab.example/api/v4", "1", "fixture-token",
                                   [("42", "a" * 40)])
-    check((("42", "a" * 40) in pairs) == (status in module.SUPPRESS_STATES),
+    check(("42", "a" * 40) in pairs,
           "retry policy differs for " + status)
-passed("supported pipeline-list endpoint suppresses active/successful heads and retries failed/canceled heads")
+passed("supported pipeline-list endpoint suppresses every previously attempted exact head")
 
 def reject_request(url, headers):
     raise AssertionError("empty candidate set queried GitLab history")
@@ -87,8 +87,8 @@ module.get_json = paginated_get
 check(("42", "a" * 40) in module.pipeline_pairs(
     "https://gitlab.example/api/v4", "1", "fixture-token", [("42", "a" * 40)]),
     "successful head on a later retry page was missed")
-check(pages == [1, 2], "per-head pagination changed")
-passed("named-head lookup paginates retries without scanning empty polls")
+check(pages == [1], "failed attempts should suppress without scanning older pages")
+passed("named-head lookup stops at the first previously attempted head")
 
 with tempfile.TemporaryDirectory(prefix="openpmix-discovery-") as temporary:
     root = Path(temporary)
@@ -181,6 +181,7 @@ with tempfile.TemporaryDirectory(prefix="openpmix-discovery-") as temporary:
     check(generated.returncode == 0 and
           isinstance(yaml.safe_load(text), dict) and
           text.count("OPENPMIX_PR_INTERNAL:") == 2 and
+          text.count('OPENPMIX_PR_AUTOMATIC: "1"') == 2 and
           text.count("ci/openpmix_pr_child.yml") == 2 and
           ".ci-state" not in text and "GITHUB_STATUS" not in text,
           "generated child pipeline is not isolated")

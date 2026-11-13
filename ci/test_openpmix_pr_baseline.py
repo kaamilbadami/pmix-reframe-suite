@@ -107,7 +107,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(execution[key], normal[key], key)
         self.assertIn('/bin/bash ci/run_openpmix_pr_isolated.sh', str(execution['script']))
         self.assertIn('Slurm runner allocation is required', str(execution['script']))
-        self.assertTrue(set(normal['artifacts']['paths']).issubset(execution['artifacts']['paths']))
+        self.assertTrue((set(normal['artifacts']['paths']) - {'ci-openpmix-pr-admission.json'}).issubset(execution['artifacts']['paths']))
         self.assertIn('ci/openpmix_baseline_staging.py accounting', str(execution['after_script']))
         self.assertEqual(execution['tags'], ['frontier', 'slurm'])
         self.assertEqual(execution['timeout'], '6h')
