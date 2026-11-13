@@ -119,6 +119,11 @@ systems:
           export PMIX_MCA_pmix_tmpdir_base=$openpmix_runtime_dir
           export PRTE_MCA_tmpdir_base=$openpmix_runtime_dir
           export PRTE_MCA_prte_tmpdir_base=$openpmix_runtime_dir
+          # Keep the clean --export=NIL batch boundary, but let PRRTE's later
+          # srun steps inherit this job's rebuilt module and executable paths.
+          # Slurm otherwise carries the restrictive batch export policy into
+          # steps, where a bare prted cannot be found on the remote node.
+          export SLURM_EXPORT_ENV=ALL
           printf 'OPENPMIX_PR_RUNTIME_DIR=%s\n' "$openpmix_runtime_dir"
       fi
     environs: ['pmix_test']

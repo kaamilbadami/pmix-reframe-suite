@@ -62,6 +62,7 @@ sys.exit(rc)
         return subprocess.run(['/bin/bash', '--noprofile', '--norc', '-c', self.body + workload],
                               env=dict(PATH=str(self.bin) + ':/usr/bin:/bin', LANG='C',
                                        SLURM_JOB_ID=job_id, SLURM_JOB_NODELIST='node-[a-b]',
+                                       SLURM_EXPORT_ENV='NIL',
                                        MOCK_NODES=str(self.root), CI_JOB_TOKEN='SECRET',
                                        GITHUB_STATUS_TOKEN='SECRET'),
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -109,6 +110,14 @@ sys.exit(rc)
         result = self.launch('exit 7\n')
         self.assertEqual(result.returncode, 7, result.stderr)
         self.assertTrue(all(not self.directory(h).exists() for h in ('node-a', 'node-b')))
+
+    def test_runtime_overrides_inherited_export_policy_without_opening_batch_boundary(self):
+        self.assertIn('--export=NIL', self.config['systems'][0]['partitions'][0]['access'])
+        result = self.launch('[[ $SLURM_EXPORT_ENV == ALL ]] || exit 56\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # Setup and cleanup still explicitly use NONE and env -i, as checked
+        # by the simulated srun on both nodes, even with the new step default.
+        self.assertEqual(result.stdout.count('OPENPMIX_PR_RUNTIME_REMOVED'), 2)
 
     def test_partial_setup_failure_rolls_back_without_deleting_preexisting_directory(self):
         other = self.directory('node-b')
