@@ -510,13 +510,33 @@ def collect_summary(client, jobs, commits, child_id, output):
     index = {"job": job, "child_pipeline_id": child_id,
              "pipeline_url": project_url + "/-/pipelines/" + child_id if project_url and child_id else None}
     atomic_write(output / "summary-attempt.json", report_bytes(index, client.token))
+    atomic_write(output / "attempts.json", report_bytes(dict(
+        jobs=eligible, child_pipeline_id=child_id, pipeline_url=index['pipeline_url']), client.token))
     if job is None:
         return
-    artifact = quote("ci-results/" + job["commit"] + ".summary.json", safe="/")
-    kind, status, body, _ = client.get(
-        client.project_url("jobs/{}/artifacts/{}".format(job["id"], artifact)), ARTIFACT_LIMIT)
-    if kind == "ok" and status == 200 and body is not None and client.token.encode() not in body:
-        atomic_write(output / "latest-attempt.json", body)
+    # Keep detailed evidence for the headline blocker and passing boundary as
+    # well as the latest attempt. Do not download every historical test log.
+    selected = {job['id']: job}
+    by_commit = {item['commit']: item for item in eligible}
+    previous = None
+    for commit in commits:
+        item = by_commit.get(commit)
+        passed = item is not None and item['status'] == 'success'
+        if not passed:
+            if item:
+                selected[item['id']] = item
+            break
+        previous = item
+    if previous:
+        selected[previous['id']] = previous
+    for item in selected.values():
+        artifact = quote("ci-results/" + item["commit"] + ".summary.json", safe="/")
+        kind, status, body, _ = client.get(
+            client.project_url("jobs/{}/artifacts/{}".format(item["id"], artifact)), ARTIFACT_LIMIT)
+        if kind == "ok" and status == 200 and body is not None and client.token.encode() not in body:
+            atomic_write(output / (item['commit'] + '.summary.json'), body)
+            if item['id'] == job['id']:
+                atomic_write(output / "latest-attempt.json", body)
 
 
 def collect(arguments: Optional[List[str]] = None) -> int:
@@ -530,7 +550,8 @@ def collect(arguments: Optional[List[str]] = None) -> int:
         commits = parse_commits(commits_path)
         remove_stale_outputs(output, commits, commits_path)
         if options.summaries:
-            for name in ("summary-attempt.json", "latest-attempt.json"):
+            for name in (['summary-attempt.json', 'latest-attempt.json', 'attempts.json'] +
+                         [commit + '.summary.json' for commit in commits]):
                 candidate = validate_local_path(output / name, "summary")
                 if candidate.exists():
                     if not candidate.is_file():
@@ -538,6 +559,8 @@ def collect(arguments: Optional[List[str]] = None) -> int:
                     candidate.unlink()
             atomic_write(output / "summary-attempt.json", report_bytes(
                 {"job": None, "child_pipeline_id": "", "pipeline_url": None}, token))
+            atomic_write(output / "attempts.json", report_bytes(
+                {"jobs": [], "child_pipeline_id": "", "pipeline_url": None}, token))
 
         api_url = validate_api_url(os.environ.get("CI_API_V4_URL", ""), token)
         project_id = os.environ.get("CI_PROJECT_ID", "")
@@ -583,9 +606,6 @@ def collect(arguments: Optional[List[str]] = None) -> int:
             write_report(output, report, token)
             return exit_status
 
-        if options.summaries:
-            collect_summary(client, jobs, commits, child_id, output)
-
         for item in report["items"]:
             selection, job_id = select_job(jobs, item["commit"])
             item["result"] = selection
@@ -600,6 +620,9 @@ def collect(arguments: Optional[List[str]] = None) -> int:
                     atomic_write(output / f"{item['commit']}.env", content)
                 except OSError:
                     item["result"] = "invalid_local_input"
+
+        if options.summaries:
+            collect_summary(client, jobs, commits, child_id, output)
 
         overall, exit_status = result_exit(report["items"])
         report["overall_result"] = overall

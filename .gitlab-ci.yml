@@ -382,9 +382,10 @@ collect-pmix-child-results-scheduled:
           --trigger-job-name trigger-pmix-child-pipeline-scheduled || \
           collector_status=$?
 
-      python3 ci/pmix_result_summary.py publish \
+      python3 ci/pmix_batch_summary.py \
           --collection ci-scheduled/collection \
           --baseline ci-scheduled/baseline-pmix-master.env \
+          --commits ci-scheduled/pmix-untested-commits.txt \
           --suite-commit "$CI_COMMIT_SHA" \
           --output ci-scheduled/report
 
@@ -418,6 +419,8 @@ collect-pmix-child-results-scheduled:
       - ci-scheduled/collection/*.env
       - ci-scheduled/collection/summary-attempt.json
       - ci-scheduled/collection/latest-attempt.json
+      - ci-scheduled/collection/attempts.json
+      - ci-scheduled/collection/*.summary.json
       - ci-scheduled/report/
 
 reconcile-pmix-child-results-scheduled:
@@ -531,6 +534,8 @@ apply-pmix-reconciled-state-scheduled:
       artifacts: true
     - job: reconcile-pmix-child-results-scheduled
       artifacts: true
+    - job: collect-pmix-child-results-scheduled
+      artifacts: true
 
   script:
     - |
@@ -551,6 +556,7 @@ apply-pmix-reconciled-state-scheduled:
               ;;
       esac
 
+      apply_status=0
       python3 ci/apply_reconciled_pmix_state.py apply \
           --allow-baseline-retest \
           --baseline-state ci-scheduled/baseline-pmix-master.env \
@@ -558,7 +564,36 @@ apply-pmix-reconciled-state-scheduled:
           --commits ci-scheduled/pmix-untested-commits.txt \
           --report ci-scheduled/reconciliation/reconciliation.env \
           --proposal ci-scheduled/reconciliation/proposed-pmix-master.env \
-          --suite-commit "$CI_COMMIT_SHA"
+          --suite-commit "$CI_COMMIT_SHA" || apply_status=$?
+
+      saved_state=ci-scheduled/saved-after-apply.env
+      rm -f -- "$saved_state"
+      snapshot_status=0
+      python3 ci/apply_reconciled_pmix_state.py snapshot \
+          --state "${PMIX_SCHEDULED_STATE_FILE:-$PMIX_AUTHORITATIVE_STATE_FILE}" \
+          --output "$saved_state" || snapshot_status=$?
+      saved_options=()
+      if (( snapshot_status == 0 )); then
+          saved_options=(--saved-state "$saved_state")
+      fi
+      report_status=0
+      python3 ci/pmix_batch_summary.py \
+          --collection ci-scheduled/collection \
+          --baseline ci-scheduled/baseline-pmix-master.env \
+          --commits ci-scheduled/pmix-untested-commits.txt \
+          --suite-commit "$CI_COMMIT_SHA" \
+          --apply-exit-code "$apply_status" "${saved_options[@]}" \
+          --output ci-scheduled/report || report_status=$?
+      (( apply_status == 0 )) || exit "$apply_status"
+      (( snapshot_status == 0 )) || exit "$snapshot_status"
+      exit "$report_status"
+
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-scheduled/report/
+      - ci-scheduled/saved-after-apply.env
 
 trigger-pmix-failed-result-pilot:
   stage: pilot-trigger

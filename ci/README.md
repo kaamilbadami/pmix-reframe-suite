@@ -33,38 +33,49 @@ cat /lustre/orion/gen243/world-shared/kbadami/openpmix-ci/pmix-master.env
 
 Only the scheduled state-update job changes this file. It locks and rechecks state before replacing it, preventing an older pipeline from overwriting newer state. Missing or malformed state causes an error. GitLab cache is not the authoritative checkpoint; manual and PR runs do not advance it.
 
-## Compact latest-attempt report
+## Compact batch report
 
-The scheduled **Collect** job publishes `ci-scheduled/report/latest-summary.md`
-and `latest-summary.json` as artifacts (14-day retention). Open the Markdown
-file for the current batch's most recently finished commit attempt: OpenPMIx,
-PRRTE and suite revisions, UTC test time, overall status, passed/failed/incomplete
-runtime counts, last known good checkpoint, and links to the job and test
-pipeline. Historical results stay in the existing records and job artifacts.
-This is file output only; it does not publish a website or send notifications.
+Open `ci-scheduled/report/latest-summary.md` (or `latest-summary.json`) in the
+scheduled **Apply** job artifacts for the final checkpoint-first report. The
+filename is retained for compatibility; its headline now describes the batch,
+not just the most recently finished attempt. **Collect** publishes an early
+copy marked preliminary, because checkpoint application has not happened yet.
+Both jobs retain reports for 14 days. This is file output only, not a website
+or notification service.
 
-“Latest” uses job completion time, falling back to start/creation time and job
-ID. It is not the last SHA in discovery order. Superseded retries are excluded.
-A failed or timed-out latest attempt replaces a passing attempt in this view.
-The last known good field is explicitly the **batch-start checkpoint**, since
-Collect runs before Reconcile and Apply; reporting never claims a proposed
-checkpoint update has already been applied.
+The report leads with the saved last-known-good checkpoint, the batch's
+consecutive passing boundary, checkpoint update confirmation, commit counts,
+and the first blocker with its reason and job link. Commit outcomes are
+separate from the eleven runtime checks inside a job. A timeout is incomplete
+testing; a failed CI job alone does not identify a PMIx software defect.
 
-Counts cover the 11 runtime checks, excluding Python unit tests and fetch/build
-fixtures. New commit jobs retain a stable ReFrame JSON report and terminal
-console log. After-script creates a small reporting sidecar separately from the
-strict checkpoint `.env` record. Completed console results survive a missing or
-truncated final JSON report; missing, skipped and aborted cases are incomplete.
-A timeout does not imply an application failure or prove an allocation delay.
-The report retains CI timeout classification and points to logs/accounting.
-Requested PRRTE revisions are marked as requested when checkout provenance is
-unavailable. Missing, mismatched or expired evidence yields incomplete counts,
-including for older pipelines without these artifacts; counts are never inferred
-from a successful CI status alone.
+For A passed, B failed, C passed: the passing boundary is A, B is the blocker,
+and counts are 2 passed / 1 failed / 0 incomplete. C's success stays recorded
+but cannot move the checkpoint across B. Collect labels A as a candidate;
+the final report only calls it a saved update after Apply succeeds and a fresh
+state snapshot confirms it. Failed or unconfirmed application is explicit.
+The number beyond the passing boundary includes already-tested later commits;
+it is not labeled as a count of untested commits.
 
-These changes apply to newly generated pipelines. Retrying an existing pipeline
-uses its original suite revision and YAML. Re-run Collect after individual job
-retries to refresh that pipeline's artifact summary when its code supports it.
+Individual attempt details remain below the headline and under
+`report/attempt-details/`. The collector retains compact metadata for current
+non-retried jobs and downloads runtime summaries for the latest attempt, first
+non-successful job, and preceding successful boundary where available. This
+adds reporting evidence without changing strict checkpoint result records.
+Latest-attempt selection still uses completion time, falling back to start or
+creation time and job ID, rather than discovery order.
+
+Runtime counts exclude Python unit tests and fetch/build fixtures. Terminal
+console results survive missing or truncated ReFrame JSON. Missing, skipped,
+aborted, expired, or mismatched evidence remains incomplete. PRRTE revisions
+are marked as requested if checkout provenance is unavailable. Detailed
+attempt views retain exact revisions, UTC time, runtime counts, job/pipeline
+links, and timeout classification. The report does not guess whether a timeout
+was allocation waiting or test execution.
+
+These changes apply to new pipelines. Retrying an old pipeline keeps its original
+suite revision. After individual job retries, rerun Collect → Reconcile → Apply
+to refresh the final batch report and checkpoint confirmation.
 
 ## Relevant CI variables
 

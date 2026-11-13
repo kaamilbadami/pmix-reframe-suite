@@ -185,6 +185,7 @@ check("cache" not in apply, "scheduled application still writes GitLab cache")
 check(apply["needs"] == [
     {"job": generate_name, "artifacts": True},
     {"job": reconcile_name, "artifacts": True},
+    {"job": collect_name, "artifacts": True},
 ], "state application needs changed")
 apply_script = "\n".join(apply["script"])
 status_gate_position = apply_script.index(
