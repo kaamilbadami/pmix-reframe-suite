@@ -53,10 +53,43 @@ class DiagnosticTests(unittest.TestCase):
     def test_reframe_runs_only_one_small_two_node_check(self):
         args = diagnostic.command(self.env, self.root)
         self.assertEqual(args[args.index('-n') + 1], diagnostic.CHECK)
-        for selection in ('node_counts=2', 'ppr_values=1', 'trials=1', 'slots_per_node=1'):
+        for selection in ('node_counts=2', 'ppr_values=1', 'trials=1', 'slots_per_node=1', 'prrte_daemon_debug=1'):
             self.assertIn(selection, args)
         self.assertNotIn('openpmix_single_allocation_config.py', ' '.join(args))
         self.assertIn('openpmix_pr_sysconfig.yaml', ' '.join(args))
+
+    def test_wrapper_debug_flags_and_saved_launch_error(self):
+        wrapper = ROOT / 'pmix_python_binding/wrappers/run_pmix_python_mapping_ppr_node_test.sh'
+        for enabled in ('0', '1'):
+            work = self.repo / ('wrapper-' + enabled)
+            binaries = work / 'bin'
+            binaries.mkdir(parents=True)
+            for name, body in {
+                'scontrol': "printf 'node1\\nnode2\\n'",
+                'sleep': 'exit 0',
+                'prte': 'printf "%s\\n" "$@" > "$CAPTURE_ARGS"; echo "underlying srun error" >&2; exit 2',
+            }.items():
+                tool = binaries / name
+                tool.write_text('#!/bin/bash\n' + body + '\n')
+                tool.chmod(0o755)
+            staged = work / wrapper.name
+            shutil.copyfile(wrapper, staged)
+            env = dict(os.environ, PATH=str(binaries) + ':' + os.environ['PATH'],
+                       PYTHON='/usr/bin/python3', PMIX=str(work), PRRTE=str(work),
+                       LIBEVENT=str(work), PMIX_PYTHON_PACKAGE=str(work),
+                       SLURM_JOB_NODELIST='node[1-2]', CAPTURE_ARGS=str(work / 'args'),
+                       PMIX_PRRTE_DAEMON_DEBUG=enabled)
+            result = subprocess.run(['bash', str(staged)], env=env, cwd=work,
+                                    capture_output=True, text=True, timeout=20)
+            self.assertNotEqual(result.returncode, 0)
+            args = (work / 'args').read_text().splitlines()
+            self.assertEqual('--debug-daemons' in args, enabled == '1')
+            self.assertEqual('--leave-session-attached' in args, enabled == '1')
+            if enabled == '1':
+                self.assertEqual(args[:6], ['--debug-daemons', '--leave-session-attached',
+                                           '--prtemca', 'plm_base_verbose', '10', '--host'])
+            self.assertIn('underlying srun error', result.stderr)
+            self.assertIn('underlying srun error', (work / 'prte-2node.log').read_text())
 
     def test_results_are_diagnostic_not_full_suite_or_pr_success(self):
         for runtime, fixture, expected in [('pass', 'pass', 'passed'), ('fail', 'pass', 'failed'),
@@ -118,6 +151,9 @@ class DiagnosticTests(unittest.TestCase):
         jobs = yaml.safe_load((ROOT / 'ci/openpmix_fixed_diagnostic.yml').read_text())
         job = jobs['run-openpmix-fixed-diagnostic']
         self.assertEqual(job['extends'], ['.frontier-shell-runner'])
+        self.assertEqual(job['timeout'], '6h')
+        self.assertEqual(job['variables']['RUNNER_SCRIPT_TIMEOUT'], '5h45m')
+        self.assertEqual(job['variables']['RUNNER_AFTER_SCRIPT_TIMEOUT'], '5m')
         self.assertEqual(job['rules'][0]['if'], '$CI_PIPELINE_SOURCE == "web" && $OPENPMIX_FIXED_DIAGNOSTIC == "1"')
         self.assertEqual(job['rules'][-1], {'when': 'never'})
         self.assertEqual(parent['pmix-python-suite']['rules'][0],

@@ -122,6 +122,14 @@ then
 fi
 
 
+# Keep daemon and srun stderr attached for the explicit diagnostic.
+PRTE_DEBUG_ARGS=()
+case ${PMIX_PRRTE_DAEMON_DEBUG:-0} in
+    0) ;;
+    1) PRTE_DEBUG_ARGS=(--debug-daemons --leave-session-attached --prtemca plm_base_verbose 10) ;;
+    *) printf '%s\n' 'PMIX_PRRTE_DAEMON_DEBUG must be 0 or 1' >&2; exit 2 ;;
+esac
+
 # Store the running PRRTE process ID.
 PRTE_PID=""
 
@@ -183,7 +191,7 @@ do
 
 
     # Start PRRTE on only the selected hosts.
-    "$PRRTE/bin/prte" \
+    "$PRRTE/bin/prte" "${PRTE_DEBUG_ARGS[@]}" \
         --host "$PRRTE_HOSTS" \
         --report-uri dvm.uri \
         > "$LOG_FILE" 2>&1 &

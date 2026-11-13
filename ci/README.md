@@ -194,7 +194,8 @@ supplied for automatic compatibility runs.
 
 OpenPMIx PR execution resolves PRRTE master once, builds that exact SHA, and
 records it in `evidence/prrte-selection.env` and `prrte-source.env` artifacts.
-PR execution has a two-hour job limit and a 1h45m main-script limit.
+PR execution has a six-hour job limit and a 5h45m main-script limit.
+The eligible shell runner maximum must also allow six hours (see above).
 Results remain internal to GitLab; this workflow does not post GitHub statuses. Scheduled
 commit jobs retain the multinode scaling stage, including PRRTE launch logs,
 for investigation when ReFrame output is incomplete.
@@ -247,8 +248,11 @@ bounded diagnostic; edit the trusted constants to select another reproduction.
 Build fixtures run on the shell runner. Only `PMIxPythonMappingPPRNodeTest`
 requests a test allocation: two nodes, one slot per node, one process per node,
 one trial. It uses the repaired PR runtime configuration, including all-node
-runtime-directory preparation and cleanup. The shell CI job has a two-hour
-limit with a 1h45m script limit. Build and queue time still count against CI
+runtime-directory preparation and cleanup. This diagnostic enables
+`--debug-daemons --leave-session-attached --prtemca plm_base_verbose 10`
+to retain daemon-launch and `srun` errors in `prte-2node.log`. Ordinary mapping
+runs keep daemon debugging disabled. The shell CI job has a six-hour
+limit with a 5h45m script limit, subject to the runner maximum described above. Build and queue time still count against CI
 walltime; there is no enclosing four-node, 30-minute allocation.
 
 The launcher enters a clean environment before fetching or building sources.

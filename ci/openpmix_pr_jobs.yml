@@ -164,10 +164,10 @@ run-openpmix-pr:
   extends:
     - .frontier-shell-runner
     - .openpmix-pr-always-rules
-  timeout: 2h
+  timeout: 6h
   resource_group: pmix-python-suite-frontier
   variables:
-    RUNNER_SCRIPT_TIMEOUT: "1h45m"
+    RUNNER_SCRIPT_TIMEOUT: "5h45m"
     RUNNER_AFTER_SCRIPT_TIMEOUT: "5m"
     GITHUB_PR_READ_TOKEN: ""
     GITHUB_STATUS_TOKEN: ""

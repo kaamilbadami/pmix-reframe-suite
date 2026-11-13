@@ -3,13 +3,13 @@ run-openpmix-fixed-diagnostic:
   stage: test
   extends:
     - .frontier-shell-runner
-  timeout: 2h
+  timeout: 6h
   resource_group: pmix-python-suite-frontier
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web" && $OPENPMIX_FIXED_DIAGNOSTIC == "1"'
     - when: never
   variables:
-    RUNNER_SCRIPT_TIMEOUT: "1h45m"
+    RUNNER_SCRIPT_TIMEOUT: "5h45m"
     RUNNER_AFTER_SCRIPT_TIMEOUT: "5m"
     GITHUB_PR_READ_TOKEN: ""
     GITHUB_STATUS_TOKEN: ""

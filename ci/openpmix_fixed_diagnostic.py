@@ -70,7 +70,7 @@ def command(env, root):
             '-n', CHECK, '-p', 'pmix_test', '--system=frontier:batch',
             '--prefix', str(root / 'reframe'), '--report-file', str(root / 'reframe/run-report.json'),
             '-S', 'node_counts=2', '-S', 'ppr_values=1', '-S', 'trials=1',
-            '-S', 'slots_per_node=1', '--keep-stage-files', '-r']
+            '-S', 'slots_per_node=1', '-S', 'prrte_daemon_debug=1', '--keep-stage-files', '-r']
 
 
 def record(env, reason=None, runner_exit=None):
