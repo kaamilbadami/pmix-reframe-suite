@@ -43,9 +43,11 @@ copy marked preliminary, because checkpoint application has not happened yet.
 Both jobs retain reports for 14 days. This is file output only, not a website
 or notification service.
 
-The report leads with the saved last-known-good checkpoint, the batch's
-consecutive passing boundary, checkpoint update confirmation, commit counts,
-and the first blocker with its reason and job link. Commit outcomes are
+The Markdown leads with status, the saved last-known-good commit, commit
+counts, and the first blocker with its reason and runtime counts. Revisions,
+test time, and available job/pipeline links follow under Test details, focused
+on the blocker or final passing commit. An empty batch shows only status,
+last-known-good commit, and an explanation that no tests ran. Commit outcomes are
 separate from the eleven runtime checks inside a job. A timeout is incomplete
 testing; a failed CI job alone does not identify a PMIx software defect.
 
@@ -54,10 +56,9 @@ and counts are 2 passed / 1 failed / 0 incomplete. C's success stays recorded
 but cannot move the checkpoint across B. Collect labels A as a candidate;
 the final report only calls it a saved update after Apply succeeds and a fresh
 state snapshot confirms it. Failed or unconfirmed application is explicit.
-The number beyond the passing boundary includes already-tested later commits;
-it is not labeled as a count of untested commits.
+Passing-boundary and checkpoint-confirmation bookkeeping remains in JSON.
 
-Individual attempt details remain below the headline and under
+Individual attempt details remain in JSON and under
 `report/attempt-details/`. The collector retains compact metadata for current
 non-retried jobs and downloads runtime summaries for the latest attempt, first
 non-successful job, and preceding successful boundary where available. This

@@ -128,44 +128,46 @@ def batch_summary(collection, baseline, commits_file, suite, output,
                 latest_attempt=latest, pipeline_url=index.get('pipeline_url'), items=items)
     output.mkdir(parents=True, exist_ok=True)
     atomic_write(output / 'latest-summary.json', (json.dumps(data, indent=2) + '\n').encode())
-    labels = dict(blocked='Blocked', complete='All commit jobs passed', no_new_commits='No new commits',
-                  checkpoint_update_failed='Checkpoint update failed',
-                  checkpoint_update_unconfirmed='Checkpoint update unconfirmed')
-    rows = [
-        ('Batch status', labels[status]),
-        ('Last known good (saved checkpoint)', saved),
-        ('Checkpoint confirmation', saved_scope),
-        ('Passing boundary in this batch', boundary),
-        ('Checkpoint update', update.capitalize()),
-        ('Commits in batch', '{} ({} new commits)'.format(len(commits), data['new_commits'])),
-        ('Commit job outcomes', '{passed} passed / {failed} failed / {incomplete} incomplete'.format(**totals)),
-        ('Commits beyond the passing boundary', len(commits) - prefix),
-        ('Suite revision', suite),
-        ('Test pipeline', index.get('pipeline_url') or 'Unavailable'),
-    ]
+    labels = dict(blocked='Blocked', complete='All tested commits passed',
+                  no_new_commits='No new commits to test.',
+                  checkpoint_update_failed='Could not save the last-known-good update',
+                  checkpoint_update_unconfirmed='Last-known-good update could not be confirmed')
+    rows = [('Status', labels[status]), ('Last known good commit', saved)]
     if first:
-        rows += [('First blocker', first['commit']), ('Blocker reason', first['reason']),
-                 ('Blocker job', first['job_url'] or 'Unavailable')]
+        rows += [('First blocker', first['commit']), ('Reason', first['reason'])]
+    if commits:
+        rows.append(('Commits tested', '{passed} passed / {failed} failed / {incomplete} incomplete'.format(**totals)))
         if blocker:
-            rows += [('Blocker PRRTE revision', blocker['prrte_revision'] or 'Unknown'),
-                     ('Blocker runtime checks', '{passed} passed / {failed} failed / {incomplete} incomplete (11 total)'.format(**blocker['checks']))]
-    if boundary_attempt:
-        rows.append(('Passing-boundary PRRTE revision', boundary_attempt['prrte_revision'] or 'Unknown'))
-    text = '# OpenPMIx batch test summary\n\n' + '\n'.join(
+            rows.append(('Blocker runtime checks', '{passed} passed / {failed} failed / {incomplete} incomplete (11 total)'.format(**blocker['checks'])))
+    text = '# OpenPMIx testing status\n\n' + '\n'.join(
         '**{}:** {}  '.format(key, value) for key, value in rows) + '\n'
-    if first:
-        text += '\nPassing commits after the blocker remain recorded, but do not let the checkpoint skip it.\n'
+    if not commits:
+        text += '\nNo tests ran during this check.'
+        if update == 'unchanged':
+            text += ' The last-known-good commit is unchanged.'
+        text += '\n'
+    if first and len(commits) > prefix + 1:
+        text += '\nLater passing commits do not advance the last-known-good commit past this blocker.\n'
     if update == 'pending':
-        text += '\nPreliminary report: the passing boundary is a candidate, not a confirmed saved update. Check the Apply job for the final report.\n'
-    text += '\nCommit job outcomes above count commits, not the 11 runtime checks within each job.\n'
-    if latest:
-        text += '\n## Latest attempt — supporting detail\n\n'
-        text += '**OpenPMIx commit:** {}  \n**Attempt status:** {}  \n'.format(latest['pmix_commit'], latest['status'].capitalize())
-        text += '**PRRTE revision:** {}  \n**Test time (UTC):** {}  \n'.format(latest['prrte_revision'] or 'Unknown', latest['tested_at'] or 'Unknown')
-        text += '**Runtime checks:** {passed} passed / {failed} failed / {incomplete} incomplete (11 total)  \n'.format(**latest['checks'])
-        text += '**Job details:** {}\n'.format(latest['job_url'] or 'Unavailable')
-        if latest['reason']:
-            text += '\n' + latest['reason'] + '\n'
+        text += '\nPreliminary report: this is not a confirmed saved update. Check the Apply job for the final report.\n'
+    if commits:
+        details = [('Suite revision', suite)]
+        # Focus on the blocker when blocked; otherwise show the final passing
+        # commit. Other attempts and checkpoint bookkeeping remain in JSON.
+        focus = blocker if first else boundary_attempt or latest
+        if focus:
+            details += [('OpenPMIx commit', focus['pmix_commit']),
+                        ('PRRTE revision', focus['prrte_revision'] or 'Unknown'),
+                        ('Test time (UTC)', focus['tested_at'] or 'Unknown')]
+            if not first:
+                details.append(('Runtime checks', '{passed} passed / {failed} failed / {incomplete} incomplete (11 total)'.format(**focus['checks'])))
+        job_url = first['job_url'] if first else focus['job_url'] if focus else None
+        if job_url:
+            details.append(('Job details', job_url))
+        if index.get('pipeline_url'):
+            details.append(('Test pipeline', index['pipeline_url']))
+        text += '\n## Test details\n\n' + '\n'.join(
+            '**{}:** {}  '.format(key, value) for key, value in details) + '\n'
     atomic_write(output / 'latest-summary.md', text.encode())
     return data
 

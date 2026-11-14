@@ -74,7 +74,7 @@ class BatchSummaryTests(unittest.TestCase):
         self.assertEqual(data['status'], 'blocked')
         self.assertEqual(data['checkpoint_update'], 'applied')
         text = (self.output / 'latest-summary.md').read_text()
-        self.assertLess(text.index('**First blocker:**'), text.index('## Latest attempt'))
+        self.assertLess(text.index('**First blocker:**'), text.index('## Test details'))
         self.assertIn('1 failed / 0 incomplete', text)
 
     def test_collect_does_not_claim_candidate_was_saved(self):
@@ -146,6 +146,11 @@ class BatchSummaryTests(unittest.TestCase):
         data = self.render(self.baseline, 0)
         self.assertEqual(data['status'], 'no_new_commits')
         self.assertEqual(data['commits_in_batch'], 0)
+        text = (self.output / 'latest-summary.md').read_text()
+        self.assertIn('No tests ran during this check.', text)
+        self.assertNotIn('Passing boundary', text)
+        self.assertNotIn('Unavailable', text)
+        self.assertNotIn('Suite revision', text)
         self.commits.write_text(BASE + '\n')
         self.jobs = [dict(id=1, commit=BASE, status='success')]
         self.result(BASE, 'success')
