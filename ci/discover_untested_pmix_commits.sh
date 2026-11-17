@@ -7,6 +7,7 @@ Usage: ci/discover_untested_pmix_commits.sh STATE_FILE OUTPUT_FILE [UPSTREAM_URL
 
 Write every OpenPMIx master commit after the saved PMIX_COMMIT to OUTPUT_FILE,
 oldest to newest. UPSTREAM_URL defaults to the official OpenPMIx repository.
+Also write OUTPUT_FILE.head.json with the fetched master commit and its commit time.
 EOF
 }
 
@@ -77,8 +78,10 @@ fi
 
 work_dir=$(mktemp -d)
 history_repo="$work_dir/openpmix-history.git"
+metadata_tmp=
 cleanup() {
     rm -f -- "$output_tmp"
+    if [[ -n $metadata_tmp ]]; then rm -f -- "$metadata_tmp"; fi
     rm -rf -- "$work_dir"
 }
 trap cleanup EXIT
@@ -113,6 +116,14 @@ fi
 
 git --git-dir="$history_repo" rev-list --reverse --topo-order \
     "$last_known_good..$master_sha" > "$output_tmp"
+
+# Capture this while the fetched history is available. Reporting must not use
+# the CI run time or LAST_SUCCESS_EPOCH as the upstream commit's timestamp.
+master_epoch=$(git --git-dir="$history_repo" show -s --format=%ct "$master_sha")
+[[ $master_epoch =~ ^[0-9]+$ ]] || exit 1
+metadata_tmp=$(mktemp "$output_dir/.${output_name}.head.XXXXXX")
+printf '{"commit":"%s","committed_epoch":%s}\n' "$master_sha" "$master_epoch" > "$metadata_tmp"
+mv -f -- "$metadata_tmp" "$output_file.head.json"
 
 mapfile -t untested_commits < "$output_tmp"
 for commit_sha in "${untested_commits[@]}"; do

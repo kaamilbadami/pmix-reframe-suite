@@ -99,6 +99,7 @@ for forbidden in (
 check(generate["artifacts"]["paths"] == [
     "ci-scheduled/baseline-pmix-master.env",
     "ci-scheduled/pmix-untested-commits.txt",
+    "ci-scheduled/pmix-untested-commits.txt.head.json",
     "ci-scheduled/pmix-child-pipeline.yml",
 ], "scheduled generation artifacts changed")
 check(generate_script.index("discover_untested_pmix_commits.sh") < generate_script.index("prepare_pmix_health_check.py") < generate_script.index("generate_pmix_child_pipeline.py"), "health check must follow discovery and precede generation")

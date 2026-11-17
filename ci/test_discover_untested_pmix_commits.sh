@@ -97,6 +97,14 @@ grep -Fqx 'untested commits: 0' "$no_new_stderr" ||
     fail 'no-new case reported the wrong count'
 pass 'no new commits produces an empty output file'
 
+python3 - "$no_new_output.head.json" "$commit_c" "$(git -C "$upstream_repo" show -s --format=%ct "$commit_c")" <<'PY'
+import json, sys
+with open(sys.argv[1]) as stream:
+    metadata = json.load(stream)
+assert metadata == dict(commit=sys.argv[2], committed_epoch=int(sys.argv[3]))
+PY
+pass 'head metadata records the upstream commit time'
+
 one_new_state="$case_root/one-new.env"
 one_new_output="$case_root/one-new.out"
 write_state "$one_new_state" "$commit_b"

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Checkpoint-first batch reporting; never writes authoritative CI state."""
 import argparse
+from datetime import datetime, timezone
 import errno
 import json
 from pathlib import Path
@@ -46,6 +47,16 @@ def batch_summary(collection, baseline, commits_file, suite, output,
     start, _ = parse_state(baseline)
     commits = parse_commits(commits_file)
     baseline_commit = start['PMIX_COMMIT']
+    last_commit = None
+    try:
+        head = read_json(Path(str(commits_file) + '.head.json'))
+        if (isinstance(head, dict) and isinstance(head.get('commit'), str) and
+                SHA.fullmatch(head['commit']) and
+                type(head.get('committed_epoch')) is int and head['committed_epoch'] >= 0):
+            last_commit = dict(commit=head['commit'], committed_at=datetime.fromtimestamp(
+                head['committed_epoch'], timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC'))
+    except (OSError, ValueError, TypeError, OverflowError):
+        pass
     if baseline_commit in commits and commits != [baseline_commit]:
         raise ValueError('baseline may only appear as a single health-check retest')
     try:
@@ -125,13 +136,16 @@ def batch_summary(collection, baseline, commits_file, suite, output,
                 new_commits=0 if commits == [baseline_commit] else len(commits),
                 commit_counts=totals, commits_beyond_passing_boundary=len(commits) - prefix,
                 first_blocker=first, boundary_attempt=boundary_attempt,
-                latest_attempt=latest, pipeline_url=index.get('pipeline_url'), items=items)
+                latest_attempt=latest, pipeline_url=index.get('pipeline_url'), items=items,
+                last_commit=last_commit)
     output.mkdir(parents=True, exist_ok=True)
     atomic_write(output / 'latest-summary.json', (json.dumps(data, indent=2) + '\n').encode())
     labels = dict(blocked='Blocked', complete='All tested commits passed',
                   no_new_commits='No new commits to test.',
                   checkpoint_update_failed='Could not save the last-known-good update',
                   checkpoint_update_unconfirmed='Last-known-good update could not be confirmed')
+    if status == 'no_new_commits' and last_commit and last_commit['commit'] == baseline_commit:
+        labels['no_new_commits'] = 'No new commits to test since {}.'.format(last_commit['committed_at'])
     rows = [('Status', labels[status]), ('Last known good commit', saved)]
     if first:
         rows += [('First blocker', first['commit']), ('Reason', first['reason'])]

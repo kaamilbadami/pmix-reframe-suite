@@ -336,6 +336,7 @@ generate-pmix-child-pipeline-scheduled:
     paths:
       - ci-scheduled/baseline-pmix-master.env
       - ci-scheduled/pmix-untested-commits.txt
+      - ci-scheduled/pmix-untested-commits.txt.head.json
       - ci-scheduled/pmix-child-pipeline.yml
 
 trigger-pmix-child-pipeline-scheduled:

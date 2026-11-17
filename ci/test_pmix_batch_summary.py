@@ -151,6 +151,15 @@ class BatchSummaryTests(unittest.TestCase):
         self.assertNotIn('Passing boundary', text)
         self.assertNotIn('Unavailable', text)
         self.assertNotIn('Suite revision', text)
+        metadata = Path(str(self.commits) + '.head.json')
+        metadata.write_text(json.dumps(dict(commit=BASE, committed_epoch=0)))
+        self.render(self.baseline, 0)
+        text = (self.output / 'latest-summary.md').read_text()
+        self.assertIn('No new commits to test since 1970-01-01 00:00:00 UTC.', text)
+        # Never attach another commit's date to this no-new-commits result.
+        metadata.write_text(json.dumps(dict(commit=A, committed_epoch=0)))
+        self.render(self.baseline, 0)
+        self.assertNotIn('since 1970', (self.output / 'latest-summary.md').read_text())
         self.commits.write_text(BASE + '\n')
         self.jobs = [dict(id=1, commit=BASE, status='success')]
         self.result(BASE, 'success')

@@ -47,7 +47,10 @@ The Markdown leads with status, the saved last-known-good commit, commit
 counts, and the first blocker with its reason and runtime counts. Revisions,
 test time, and available job/pipeline links follow under Test details, focused
 on the blocker or final passing commit. An empty batch shows only status,
-last-known-good commit, and an explanation that no tests ran. Commit outcomes are
+last-known-good commit, and an explanation that no tests ran. Its status includes
+the fetched master commit's committer date/time in UTC, captured during discovery
+in `pmix-untested-commits.txt.head.json`. Missing metadata leaves the date out;
+the pipeline run time and last successful test time are never substituted. Commit outcomes are
 separate from the eleven runtime checks inside a job. A timeout is incomplete
 testing; a failed CI job alone does not identify a PMIx software defect.
 
