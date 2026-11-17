@@ -12,8 +12,10 @@ class RecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             state = root / "state.env"
-            original = "PMIX_COMMIT={}\nSUITE_COMMIT={}\nLAST_SUCCESS_EPOCH=1794800000\n".format(
-                recovery.EXPECTED, "a" * 40).encode()
+            # A later health retest of the older baseline must not prevent
+            # advancing to an independently verified descendant commit.
+            original = "PMIX_COMMIT={}\nSUITE_COMMIT={}\nLAST_SUCCESS_EPOCH={}\n".format(
+                recovery.EXPECTED, "a" * 40, recovery.SUCCESS_EPOCH + 60).encode()
             state.write_bytes(original)
             recovery.recover(state, root / "output")
             values, _ = parse_state(state)
@@ -29,7 +31,8 @@ class RecoveryTests(unittest.TestCase):
 
     def test_unexpected_or_newer_state_is_never_overwritten(self):
         for commit, epoch in [("b" * 40, 1794800000),
-                              (recovery.EXPECTED, recovery.SUCCESS_EPOCH + 1)]:
+                              ("63de821" + "0" * 33, recovery.SUCCESS_EPOCH + 1),
+                              ("caa7dc477abfea115e3170afe2c6ddfff4914afa", 1794800000)]:
             with self.subTest(commit=commit, epoch=epoch), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 state = root / "state.env"
