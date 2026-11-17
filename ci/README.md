@@ -33,6 +33,18 @@ cat /lustre/orion/gen243/world-shared/kbadami/openpmix-ci/pmix-master.env
 
 Only the scheduled state-update job changes this file. It locks and rechecks state before replacing it, preventing an older pipeline from overwriting newer state. Missing or malformed state causes an error. GitLab cache is not the authoritative checkpoint; manual and PR runs do not advance it.
 
+An explicitly authorized one-time recovery is also available for the November 17
+compatibility gap: start a web pipeline with `PMIX_RECOVER_CHECKPOINT_20261117=1`.
+The `recover-pmix-checkpoint-20261117` job runs as the CI service account under the
+same batch resource group and state-file lock. It accepts only the recorded
+`caa7dc47` baseline (or does nothing if already at the target), and advances to the
+verified `3b2cedde` result from job 256304. It retains the original tested suite
+revision and success timestamp, preserves a backup and recovery record alongside
+the state, and publishes before/after artifacts. This explicitly accepts the
+`24735901` PRRTE build failure as a coverage gap; it does not alter the usual
+consecutive-success policy or implement automatic PRRTE pin management. If the
+baseline or success evidence has changed, recovery stops for review.
+
 ## Compact batch report
 
 Open `ci-scheduled/report/latest-summary.md` (or `latest-summary.json`) in the
