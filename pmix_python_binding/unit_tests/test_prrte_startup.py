@@ -1,4 +1,6 @@
 import os
+import contextlib
+import io
 from pathlib import Path
 import signal
 import shutil
@@ -7,6 +9,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from pmix_python_binding.common.prrte_startup import start_prrte
 
@@ -34,6 +37,47 @@ class PRRTEStartupTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "PRRTE STARTUP TIMEOUT"):
             self.start("import time; time.sleep(30)", timeout=0.2)
         self.assertLess(time.monotonic() - started, 3)
+
+    def test_readiness_does_not_reopen_log_and_records_receive_time(self):
+        original_open = Path.open
+
+        def open_without_log_reads(path, mode='r', *args, **kwargs):
+            if str(path).endswith('.prte.stdout') and 'r' in mode:
+                raise AssertionError('readiness must not reread the shared log')
+            return original_open(path, mode, *args, **kwargs)
+
+        output = io.StringIO()
+        with mock.patch.object(Path, 'open', open_without_log_reads), contextlib.redirect_stdout(output):
+            process = self.start("import time; print('DVM ready'); time.sleep(30)")
+        try:
+            self.assertRegex(output.getvalue(),
+                             r'PRRTE READY: received_at=\S+\+00:00 elapsed=\d+\.\d+s')
+            self.assertEqual(Path(str(self.prefix) + '.prte.stdout').read_bytes(), b'DVM ready\n')
+        finally:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=5)
+
+    def test_split_ready_line_and_stdout_flood_keep_draining_after_return(self):
+        process = self.start(
+            "import sys,time; sys.stdout.write('DVM '); sys.stdout.flush(); "
+            "time.sleep(0.05); print('ready'); time.sleep(0.2); "
+            "sys.stdout.write('x'*300000 + '\\nCAPTURE COMPLETE\\n'); sys.stdout.flush()"
+        )
+        self.assertEqual(process.wait(timeout=5), 0)
+        path = Path(str(self.prefix) + '.prte.stdout')
+        deadline = time.monotonic() + 2
+        expected = b'DVM ready\n' + b'x'*300000 + b'\nCAPTURE COMPLETE\n'
+        while path.stat().st_size < len(expected) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(path.read_bytes(), expected)
+
+    def test_ready_emitted_during_shutdown_does_not_turn_timeout_into_success(self):
+        code = ("import signal,time,sys; "
+                "signal.signal(signal.SIGTERM, lambda *_: "
+                "(print('DVM ready',flush=True),sys.exit(0))); time.sleep(30)")
+        with self.assertRaisesRegex(RuntimeError, 'PRRTE STARTUP TIMEOUT') as error:
+            self.start(code, timeout=0.3)
+        self.assertIn('DVM ready', str(error.exception))
 
     def test_partial_line_cannot_block_timeout(self):
         with self.assertRaisesRegex(RuntimeError, "partial diagnostic"):
