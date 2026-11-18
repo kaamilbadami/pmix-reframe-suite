@@ -81,6 +81,9 @@ def record(env, output):
                     pipeline_id=int(env['CI_PIPELINE_ID']), ci_status=env.get('CI_JOB_STATUS', 'unknown'),
                     recorded_at=datetime.now(timezone.utc).isoformat(),
                     checks=counts(outcomes), total_checks=len(TESTS))
+    policy_path = root / 'prrte-policy.json'
+    if policy_path.exists():
+        document['prrte_policy'] = read_json(policy_path)
     output.mkdir(parents=True, exist_ok=True)
     atomic_write(output / (document['pmix_commit'] + '.summary.json'),
                  (json.dumps(document, indent=2) + '\n').encode())
@@ -141,6 +144,8 @@ def publish(collection, baseline, suite_commit, output):
                 raise ValueError('invalid counts')
             data.update(checks=values, prrte_revision=evidence.get('prrte_revision'),
                         prrte_revision_source=evidence.get('prrte_revision_source'))
+            if 'prrte_policy' in evidence:
+                data['prrte_policy'] = evidence['prrte_policy']
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             evidence = None
         status = job.get('status')

@@ -104,7 +104,7 @@ Normal runs do not require development-pilot switches. CI supplies the job ident
 | `PMIX_AUTHORITATIVE_STATE_FILE` | Selects the scheduled checkpoint; defaults to the Frontier path above. |
 | `OLCF_SERVICE_ACCOUNT` | Selects the Frontier execution account through runner configuration; defaults to `gen243_auser`. |
 | `PMIX_COMMIT` | Identifies the exact OpenPMIx commit being tested. Scheduled jobs set it individually. The normal manual web run resolves master itself rather than honoring a supplied pin. |
-| `PRRTE_BRANCH`, `PRRTE_COMMIT` | Select the PRRTE source used with OpenPMIx. Scheduled batches resolve one exact PRRTE master SHA; manual pilots retain compatibility pins. See the compatibility section below. |
+| `PRRTE_BRANCH`, `PRRTE_COMMIT` | Select the PRRTE source used with OpenPMIx. Normal scheduled jobs retain a persistent exact PRRTE pin and may try one newer master snapshot after a confirmed PRRTE build failure. Manual pilots retain compatibility pins. See below. |
 | `GITHUB_PR_READ_TOKEN` | Reads PR information for PR workflows; ordinary scheduled commit discovery does not need it. |
 | `GITHUB_STATUS_TOKEN` | Posts GitHub status in supported workflows. Scheduled multi-commit testing and internal OpenPMIx PR testing do not post GitHub status. |
 
@@ -235,14 +235,45 @@ Configuration: [`.gitlab-ci.yml`](../.gitlab-ci.yml), [`openpmix_pr_jobs.yml`](o
 
 ### PRRTE compatibility for exact OpenPMIx commits
 
-Scheduled batches temporarily use `--prrte-master`: the generator resolves
-upstream PRRTE master once and writes that exact SHA into every commit job.
-This includes a saved-commit daily health check. Empty batches do not resolve
-PRRTE. A failed or malformed lookup stops generation without falling back to
-an older revision. Child jobs retain `prrte-source.env` with the built SHA;
-the generated YAML also records the batch's chosen SHA. PRRTE changes between
-batches can affect results, and compilation success does not establish runtime
-compatibility. Normal checkpoint and successful-prefix rules still apply.
+Normal scheduled batches (`PMIX_SCHEDULED_SLURM=0`) use `--prrte-pin`. Generate
+retains the dependency in `<authoritative-state-file>.prrte.json`, alongside the
+existing checkpoint. On this installation, the initial pin is `f684f116`, the
+PRRTE master revision that passed all 11 runtime checks with OpenPMIx `3b2cedde`
+in job 256304. The seed and its provenance live in `prrte_pin_seed.json`; it is
+used only when the persistent file is absent. Without a bootstrap file, the
+generator resolves master once for initialization. It never refreshes an
+existing pin just because a new batch starts. Empty batches do not initialize
+or resolve PRRTE. Daily health retests use the same pin.
+
+Each commit job first runs with the saved pin. Only a conclusive PRRTE fixture
+failure during compilation, with prerequisite fixtures passed and runtime
+checks skipped, permits a fallback. The job resolves master to one exact SHA;
+if changed, it retries the **same PMIx commit** in a clean ReFrame tree. An
+unchanged master, lookup failure, runtime failure, PMIx build failure, missing
+report, or CI timeout does not trigger repeated rebuilds. There is at most one
+candidate attempt per job. The same runner time limit covers both attempts.
+
+The first attempt's report, compiler logs, job scripts, and checkout provenance
+are retained under `prrte-attempts/pinned/`; the final attempt retains the usual
+`reframe/` paths. `prrte-policy.json` records both revisions and outcomes, and is
+also included in the per-commit summary. Neither worker attempt can update the
+persistent dependency pin or PMIx checkpoint.
+
+After successful checkpoint application, Apply may promote the PRRTE revision
+used by the saved successful-prefix boundary. Promotion requires matching
+non-retried job/pipeline identities, exact suite and checkout provenance,
+11 passed / 0 failed / 0 incomplete runtime checks, and a recorded fallback
+from the batch's original pin. It rechecks the pin snapshot under a file lock
+and preserves previous revisions and validation evidence in its history.
+A later passing commit beyond an earlier blocker cannot promote the pin.
+Apply publishes `ci-scheduled/prrte-pin-update.json`. Normal consecutive-success
+checkpoint rules remain unchanged. A successful-prefix pin update failure makes
+Apply fail explicitly; the checkpoint and pin are separate files, so inspect
+both outputs before retrying a failed Apply.
+
+The experimental single-allocation path (`PMIX_SCHEDULED_SLURM=1`) retains its
+explicit `--prrte-master` source-staging behavior and does not use automatic pin
+management. The PR execution path also remains independent of this policy.
 
 Manual multi-commit generators continue to use `--select-prrte` to set
 `PRRTE_BRANCH` and `PRRTE_COMMIT` separately for each child job. Complete

@@ -101,6 +101,7 @@ check(generate["artifacts"]["paths"] == [
     "ci-scheduled/pmix-untested-commits.txt",
     "ci-scheduled/pmix-untested-commits.txt.head.json",
     "ci-scheduled/pmix-child-pipeline.yml",
+    "ci-scheduled/prrte-pin.json",
 ], "scheduled generation artifacts changed")
 check(generate_script.index("discover_untested_pmix_commits.sh") < generate_script.index("prepare_pmix_health_check.py") < generate_script.index("generate_pmix_child_pipeline.py"), "health check must follow discovery and precede generation")
 for job in (reconcile, apply):
@@ -115,9 +116,12 @@ check(trigger["trigger"] == {
     }],
     "strategy": "mirror",
 }, "scheduled child trigger changed")
-check("--prrte-master" in generate_script, "schedule does not resolve current PRRTE master")
+check('--prrte-pin "$state_file.prrte.json"' in generate_script,
+      "separate-allocation schedule does not retain the persistent pin")
+check('--prrte-pin-snapshot "$output_dir/prrte-pin.json"' in generate_script,
+      "pin snapshot is missing from generation")
 check("--select-prrte" not in generate_script, "schedule still uses old compatibility pins")
-passed("scheduled trigger mirrors the generated exact-commit child with batch-resolved PRRTE")
+passed("scheduled trigger mirrors exact-commit jobs with persistent PRRTE pins")
 
 check(collect["needs"] == [
     {"job": generate_name, "artifacts": True},

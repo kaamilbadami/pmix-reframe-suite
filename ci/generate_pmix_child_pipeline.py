@@ -273,7 +273,10 @@ def resolve_prrte_master():
     return fields[0]
 
 
-def render_pipeline(shas, fail_commit=None, prrte_selections=None, slurm_runner=False):
+def render_pipeline(shas, fail_commit=None, prrte_selections=None, slurm_runner=False,
+                    automatic_prrte=False):
+    if automatic_prrte and (slurm_runner or fail_commit):
+        fail("automatic PRRTE fallback requires ordinary separate-allocation jobs")
     if slurm_runner:
         if fail_commit is not None:
             fail("the intentional failure pilot cannot use Slurm execution")
@@ -290,6 +293,16 @@ def render_pipeline(shas, fail_commit=None, prrte_selections=None, slurm_runner=
         template = COMMIT_JOB
         if fail_commit is not None and sha.lower() == fail_commit:
             template = FAILED_COMMIT_JOB
+        if automatic_prrte:
+            template = template.replace(
+                '      bash ci/run_exact_pmix_commit.sh',
+                '      python3 ci/run_pmix_with_prrte_fallback.py')
+            template = template.replace(
+                '      - .ci-work/$CI_JOB_ID/reframe/run-report.json',
+                '      - .ci-work/$CI_JOB_ID/prrte-policy.json\n'
+                '      - .ci-work/$CI_JOB_ID/prrte-attempts/\n'
+                '      - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_build.*\n'
+                '      - .ci-work/$CI_JOB_ID/reframe/run-report.json')
         if prrte_selections is not None:
             branch, commit = prrte_selections[sha]
             template = template.replace(
@@ -341,6 +354,11 @@ def parse_arguments(arguments=None):
     selection.add_argument("--select-prrte", action="store_true")
     selection.add_argument("--prrte-master", action="store_true",
                            help="use one exact PRRTE master revision for the batch")
+    selection.add_argument("--prrte-pin", type=Path,
+                           help="persistent scheduled PRRTE pin; enable build-only fallback")
+    parser.add_argument("--prrte-pin-snapshot", type=Path)
+    parser.add_argument("--prrte-bootstrap", type=Path,
+                        help="optional verified initial pin for an existing installation")
     parser.add_argument("--slurm-runner", action="store_true",
                         help="prepare sources on login and run each commit in one allocation")
     parser.add_argument("--pmix-history", type=Path)
@@ -363,6 +381,10 @@ def main(arguments=None):
     if options.slurm_runner and (not options.prrte_master or options.fail_commit):
         fail("--slurm-runner requires --prrte-master and excludes --fail-commit")
     shas = read_shas(input_path)
+    if options.prrte_pin and not options.prrte_pin_snapshot:
+        fail("persistent PRRTE selection requires --prrte-pin-snapshot")
+    if not options.prrte_pin and (options.prrte_pin_snapshot or options.prrte_bootstrap):
+        fail("pin snapshot/bootstrap requires --prrte-pin")
     fail_commit = options.fail_commit
     if fail_commit is not None:
         if SHA_PATTERN.fullmatch(fail_commit) is None:
@@ -378,6 +400,11 @@ def main(arguments=None):
     if options.prrte_master and shas:
         prrte_sha = resolve_prrte_master()
         selections = {sha: ("master", prrte_sha) for sha in shas}
+    if options.prrte_pin and shas:
+        from prrte_pin import prepare
+        prrte_sha = prepare(options.prrte_pin, options.prrte_pin_snapshot,
+                            resolve_prrte_master, options.prrte_bootstrap)
+        selections = {sha: ("master", prrte_sha) for sha in shas}
     if options.select_prrte and shas:
         if options.pmix_history is not None:
             selections = select_prrte(shas, options.pmix_history)
@@ -391,7 +418,8 @@ def main(arguments=None):
                 if result.returncode:
                     fail(f"could not fetch OpenPMIx history: {result.stderr.strip()}")
                 selections = select_prrte(shas, history)
-    atomic_write(output_path, render_pipeline(shas, fail_commit, selections, options.slurm_runner))
+    atomic_write(output_path, render_pipeline(shas, fail_commit, selections,
+                 options.slurm_runner, automatic_prrte=bool(options.prrte_pin)))
     return 0
 
 

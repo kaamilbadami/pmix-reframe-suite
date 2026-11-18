@@ -70,7 +70,7 @@ class PipelineTests(unittest.TestCase):
         self.assertFalse(batch['trigger']['forward']['pipeline_variables'])
         script = '\n'.join(parent['generate-pmix-child-pipeline-scheduled']['script'])
         self.assertIn('PMIX_SCHEDULED_SLURM_INTERNAL', script)
-        self.assertIn('executor_options=(--slurm-runner)', script)
+        self.assertIn('executor_options=(--prrte-master --slurm-runner)', script)
 
 
 class ExecutionTests(unittest.TestCase):

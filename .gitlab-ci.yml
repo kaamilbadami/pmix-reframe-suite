@@ -341,16 +341,18 @@ generate-pmix-child-pipeline-scheduled:
       python3 ci/prepare_pmix_health_check.py \
           --state "$baseline_state" \
           --commits "$output_dir/pmix-untested-commits.txt"
-      executor_options=()
+      executor_options=(--prrte-pin "$state_file.prrte.json"
+          --prrte-pin-snapshot "$output_dir/prrte-pin.json"
+          --prrte-bootstrap ci/prrte_pin_seed.json)
       case ${PMIX_SCHEDULED_SLURM_INTERNAL:-0} in
           0) ;;
-          1) executor_options=(--slurm-runner) ;;
+          1) executor_options=(--prrte-master --slurm-runner) ;;
           *) printf '%s\n' 'error: PMIX_SCHEDULED_SLURM must be 0 or 1' >&2; exit 2 ;;
       esac
       python3 ci/generate_pmix_child_pipeline.py \
           "$output_dir/pmix-untested-commits.txt" \
           "$output_dir/pmix-child-pipeline.yml" \
-          --prrte-master "${executor_options[@]}"
+          "${executor_options[@]}"
 
   artifacts:
     expire_in: 14 days
@@ -359,6 +361,7 @@ generate-pmix-child-pipeline-scheduled:
       - ci-scheduled/pmix-untested-commits.txt
       - ci-scheduled/pmix-untested-commits.txt.head.json
       - ci-scheduled/pmix-child-pipeline.yml
+      - ci-scheduled/prrte-pin.json
 
 trigger-pmix-child-pipeline-scheduled:
   stage: pilot-trigger
@@ -598,6 +601,17 @@ apply-pmix-reconciled-state-scheduled:
       if (( snapshot_status == 0 )); then
           saved_options=(--saved-state "$saved_state")
       fi
+      pin_status=0
+      if (( apply_status == 0 && snapshot_status == 0 )) &&
+         [[ -f ci-scheduled/prrte-pin.json ]]; then
+          python3 ci/prrte_pin.py \
+              --state "${PMIX_SCHEDULED_STATE_FILE:-$PMIX_AUTHORITATIVE_STATE_FILE}.prrte.json" \
+              --snapshot ci-scheduled/prrte-pin.json \
+              --saved-state "$saved_state" \
+              --collection ci-scheduled/collection \
+              --suite-commit "$CI_COMMIT_SHA" \
+              --output ci-scheduled/prrte-pin-update.json || pin_status=$?
+      fi
       report_status=0
       python3 ci/pmix_batch_summary.py \
           --collection ci-scheduled/collection \
@@ -608,6 +622,7 @@ apply-pmix-reconciled-state-scheduled:
           --output ci-scheduled/report || report_status=$?
       (( apply_status == 0 )) || exit "$apply_status"
       (( snapshot_status == 0 )) || exit "$snapshot_status"
+      (( pin_status == 0 )) || exit "$pin_status"
       exit "$report_status"
 
   artifacts:
@@ -616,6 +631,7 @@ apply-pmix-reconciled-state-scheduled:
     paths:
       - ci-scheduled/report/
       - ci-scheduled/saved-after-apply.env
+      - ci-scheduled/prrte-pin-update.json
 
 trigger-pmix-failed-result-pilot:
   stage: pilot-trigger
