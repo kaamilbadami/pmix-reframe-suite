@@ -895,6 +895,7 @@ pmix-python-suite:
     - bash ci/test_discover_untested_pmix_commits.sh
     - bash ci/test_generate_pmix_child_pipeline.sh
     - python3 ci/test_prrte_selection.py
+    - python3 ci/test_prrte_pin.py
     - python3 ci/test_cleanup_pmix_slurm_jobs.py
     - bash ci/test_pmix_collection_reconciliation_pilot.sh
     - bash ci/test_pmix_failed_result_child.sh
