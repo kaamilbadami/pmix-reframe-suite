@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 
 from collect_pmix_child_results import atomic_write
 from openpmix_pr_artifacts import EXPECTED_TESTS
@@ -103,6 +104,22 @@ def parse_timestamp(value):
     return None
 
 
+def eastern_time(value):
+    """Render using system timezone data, including DST, on Python 3.6 runners."""
+    parsed = parse_timestamp(value)
+    if parsed is None:
+        return 'Unknown'
+    try:
+        return subprocess.check_output(
+            ['date', '--date=@{}'.format(parsed.timestamp()),
+             '+%Y-%m-%d %I:%M:%S %p %Z'],
+            env=dict(os.environ, TZ='America/New_York', LC_ALL='C'),
+            universal_newlines=True, timeout=5).strip()
+    except (OSError, subprocess.SubprocessError):
+        return parsed.astimezone(timezone.utc).strftime(
+            '%Y-%m-%d %H:%M:%S UTC (Eastern conversion unavailable)')
+
+
 def latest_job(jobs):
     """Most recently finished attempt, not the newest SHA or last API page."""
     def key(job):
@@ -166,12 +183,12 @@ def publish(collection, baseline, suite_commit, output):
         revision += ' (requested; checkout not recorded)'
     rows = [('OpenPMIx commit tested', data['pmix_commit'] or 'No attempt'),
             ('PRRTE revision', revision), ('Suite commit', suite_commit),
-            ('Test time (UTC)', data['tested_at'] or 'Unknown'),
+            ('Test time (Eastern)', eastern_time(data['tested_at'])),
             ('Overall status', data['status'].capitalize()),
-            ('Runtime checks', '{passed} passed / {failed} failed / {incomplete} incomplete ({} total)'.format(len(TESTS), **data['checks'])),
+            ('Runtime checks for this commit', '{passed} passed / {failed} failed / {incomplete} incomplete ({} total)'.format(len(TESTS), **data['checks'])),
             ('Last known good (batch-start checkpoint)', data['last_known_good_commit']),
-            ('Job details', data['job_url'] or 'Unavailable'),
-            ('Test pipeline', data['pipeline_url'] or 'Unavailable')]
+            ('Test job for this commit', data['job_url'] or 'Unavailable'),
+            ('Batch pipeline (all commit jobs)', data['pipeline_url'] or 'Unavailable')]
     text = '# Latest OpenPMIx test attempt\n\n' + '\n'.join('**{}:** {}  '.format(k, v) for k, v in rows) + '\n'
     if data['reason']:
         text += '\n' + data['reason'] + '\n'

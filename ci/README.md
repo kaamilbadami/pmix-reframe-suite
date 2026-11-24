@@ -75,6 +75,11 @@ the final report only calls it a saved update after Apply succeeds and a fresh
 state snapshot confirms it. Failed or unconfirmed application is explicit.
 Passing-boundary and checkpoint-confirmation bookkeeping remains in JSON.
 
+Markdown test times use Eastern time (EST or EDT as appropriate); JSON retains UTC.
+The details section describes one commit, explicitly identified as the first
+blocked commit or final passing commit. Runtime counts and the test-job link
+refer to that commit; the batch-pipeline link lists all commit jobs.
+
 Individual attempt details remain in JSON and under
 `report/attempt-details/`. The collector retains compact metadata for current
 non-retried jobs and downloads runtime summaries for the latest attempt, first

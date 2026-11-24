@@ -8,7 +8,7 @@ from pathlib import Path
 import tempfile
 
 from collect_pmix_child_results import atomic_write
-from pmix_result_summary import read_json, publish, SHA
+from pmix_result_summary import read_json, publish, SHA, eastern_time
 from reconcile_pmix_results import parse_state, parse_commits, parse_result, InputError
 
 
@@ -152,7 +152,7 @@ def batch_summary(collection, baseline, commits_file, suite, output,
     if commits:
         rows.append(('Commits tested', '{passed} passed / {failed} failed / {incomplete} incomplete'.format(**totals)))
         if blocker:
-            rows.append(('Blocker runtime checks', '{passed} passed / {failed} failed / {incomplete} incomplete (11 total)'.format(**blocker['checks'])))
+            rows.append(('Runtime checks for first blocked commit', '{passed} passed / {failed} failed / {incomplete} incomplete (11 total)'.format(**blocker['checks'])))
     text = '# OpenPMIx testing status\n\n' + '\n'.join(
         '**{}:** {}  '.format(key, value) for key, value in rows) + '\n'
     if not commits:
@@ -172,15 +172,15 @@ def batch_summary(collection, baseline, commits_file, suite, output,
         if focus:
             details += [('OpenPMIx commit', focus['pmix_commit']),
                         ('PRRTE revision', focus['prrte_revision'] or 'Unknown'),
-                        ('Test time (UTC)', focus['tested_at'] or 'Unknown')]
+                        ('Test time (Eastern)', eastern_time(focus['tested_at']))]
             if not first:
-                details.append(('Runtime checks', '{passed} passed / {failed} failed / {incomplete} incomplete (11 total)'.format(**focus['checks'])))
+                details.append(('Runtime checks for this commit', '{passed} passed / {failed} failed / {incomplete} incomplete (11 total)'.format(**focus['checks'])))
         job_url = first['job_url'] if first else focus['job_url'] if focus else None
         if job_url:
-            details.append(('Job details', job_url))
+            details.append(('Test job for this commit', job_url))
         if index.get('pipeline_url'):
-            details.append(('Test pipeline', index['pipeline_url']))
-        text += '\n## Test details\n\n' + '\n'.join(
+            details.append(('Batch pipeline (all {} commit jobs)'.format(len(commits)), index['pipeline_url']))
+        text += '\n## Test details\n\n' + ('Details below are for the first blocked commit only.\n\n' if first else 'Details below are for the final passing commit only.\n\n') + '\n'.join(
             '**{}:** {}  '.format(key, value) for key, value in details) + '\n'
     atomic_write(output / 'latest-summary.md', text.encode())
     return data

@@ -9,6 +9,7 @@ import collect_pmix_child_results as collector
 import reconcile_pmix_results as reconciler
 import apply_reconciled_pmix_state as updater
 from pmix_batch_summary import batch_summary
+from pmix_result_summary import eastern_time
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE, A, B, C, SUITE, PRRTE = [letter * 40 for letter in 'dabcfe']
@@ -57,6 +58,15 @@ class BatchSummaryTests(unittest.TestCase):
         return batch_summary(self.collection, self.baseline, self.commits, SUITE,
                              self.output, saved, code)
 
+    def test_eastern_display_tracks_daylight_saving_and_date_rollover(self):
+        self.assertEqual(eastern_time('2026-11-24T17:52:03.086000+00:00'),
+                         '2026-11-24 12:52:03 PM EST')
+        self.assertEqual(eastern_time('2026-07-24T17:52:03Z'),
+                         '2026-07-24 01:52:03 PM EDT')
+        self.assertEqual(eastern_time('2026-11-24T02:00:00Z'),
+                         '2026-11-23 09:00:00 PM EST')
+        self.assertEqual(eastern_time(None), 'Unknown')
+
     def test_a_pass_b_fail_c_pass_keeps_blocker_as_headline(self):
         self.result(A, 'success')
         self.result(B, 'failed', dict(passed=10, failed=1, incomplete=0))
@@ -76,6 +86,8 @@ class BatchSummaryTests(unittest.TestCase):
         text = (self.output / 'latest-summary.md').read_text()
         self.assertLess(text.index('**First blocker:**'), text.index('## Test details'))
         self.assertIn('1 failed / 0 incomplete', text)
+        self.assertIn('Details below are for the first blocked commit only.', text)
+        self.assertIn('Test job for this commit:** ' + self.jobs[1]['web_url'], text)
 
     def test_collect_does_not_claim_candidate_was_saved(self):
         for sha in (A, B, C):
@@ -98,6 +110,13 @@ class BatchSummaryTests(unittest.TestCase):
         self.assertEqual(data['saved_checkpoint'], C)
         self.assertIsNone(data['first_blocker'])
         self.assertEqual(data['commits_beyond_passing_boundary'], 0)
+        text = (self.output / 'latest-summary.md').read_text()
+        self.assertIn('Details below are for the final passing commit only.', text)
+        self.assertIn('Runtime checks for this commit', text)
+        self.assertIn('Test job for this commit:** ' + self.jobs[-1]['web_url'], text)
+        self.assertIn('Batch pipeline (all 3 commit jobs)', text)
+        self.assertIn('Test time (Eastern):** 2026-11-13 07:00:00 AM EST', text)
+        self.assertEqual(data['boundary_attempt']['tested_at'], '2026-11-13T12:00:00+00:00')
 
     def test_timeout_is_incomplete_even_if_latest_passes(self):
         self.result(A, 'timedout', dict(passed=8, failed=0, incomplete=3))
