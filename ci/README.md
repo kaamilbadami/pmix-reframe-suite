@@ -58,15 +58,14 @@ Both jobs retain reports for 14 days. This is file output only, not a website
 or notification service.
 
 The Markdown leads with status, the saved last-known-good commit, commit
-counts, and the first blocker with its reason and runtime counts. Revisions,
-test time, and available job/pipeline links follow under Test details, focused
-on the blocker or final passing commit. An empty batch shows only status,
-last-known-good commit, and an explanation that no tests ran. Its status includes
-the fetched master commit's committer date/time in UTC, captured during discovery
-in `pmix-untested-commits.txt.head.json`. Missing metadata leaves the date out;
-the pipeline run time and last successful test time are never substituted. Commit outcomes are
-separate from the eleven runtime checks inside a job. A timeout is incomplete
-testing; a failed CI job alone does not identify a PMIx software defect.
+counts, latest test time in Eastern time (EST/EDT), and a link to all batch
+jobs. When all commits pass, no individual commit details are shown.
+Every failed or incomplete commit gets its own section with its reason,
+PRRTE revision, runtime-check counts, time, and job link where available.
+An empty batch explicitly says no tests ran; an upstream commit date is not
+a test time. Missing evidence is shown as unknown or incomplete.
+Commit outcomes are separate from the eleven runtime checks inside each job.
+A timeout is incomplete testing, not proof of a PMIx software defect.
 
 For A passed, B failed, C passed: the passing boundary is A, B is the blocker,
 and counts are 2 passed / 1 failed / 0 incomplete. C's success stays recorded
@@ -75,16 +74,10 @@ the final report only calls it a saved update after Apply succeeds and a fresh
 state snapshot confirms it. Failed or unconfirmed application is explicit.
 Passing-boundary and checkpoint-confirmation bookkeeping remains in JSON.
 
-Markdown test times use Eastern time (EST or EDT as appropriate); JSON retains UTC.
-The details section describes one commit, explicitly identified as the first
-blocked commit or final passing commit. Runtime counts and the test-job link
-refer to that commit; the batch-pipeline link lists all commit jobs.
-
-Individual attempt details remain in JSON and under
-`report/attempt-details/`. The collector retains compact metadata for current
-non-retried jobs and downloads runtime summaries for the latest attempt, first
-non-successful job, and preceding successful boundary where available. This
-adds reporting evidence without changing strict checkpoint result records.
+JSON retains UTC timestamps and validated attempt details for every commit,
+including passing commits. The collector downloads each compact runtime
+summary without downloading the full test logs. Reporting does not change
+strict checkpoint result records or reconciliation decisions.
 Latest-attempt selection still uses completion time, falling back to start or
 creation time and job ID, rather than discovery order.
 

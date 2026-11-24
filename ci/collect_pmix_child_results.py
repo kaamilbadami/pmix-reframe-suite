@@ -514,22 +514,9 @@ def collect_summary(client, jobs, commits, child_id, output):
         jobs=eligible, child_pipeline_id=child_id, pipeline_url=index['pipeline_url']), client.token))
     if job is None:
         return
-    # Keep detailed evidence for the headline blocker and passing boundary as
-    # well as the latest attempt. Do not download every historical test log.
-    selected = {job['id']: job}
-    by_commit = {item['commit']: item for item in eligible}
-    previous = None
-    for commit in commits:
-        item = by_commit.get(commit)
-        passed = item is not None and item['status'] == 'success'
-        if not passed:
-            if item:
-                selected[item['id']] = item
-            break
-        previous = item
-    if previous:
-        selected[previous['id']] = previous
-    for item in selected.values():
+    # Fetch each compact result summary, not the full historical test logs.
+    # The readable report only expands failures; JSON preserves every commit.
+    for item in eligible:
         artifact = quote("ci-results/" + item["commit"] + ".summary.json", safe="/")
         kind, status, body, _ = client.get(
             client.project_url("jobs/{}/artifacts/{}".format(item["id"], artifact)), ARTIFACT_LIMIT)

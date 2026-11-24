@@ -84,9 +84,8 @@ class BatchSummaryTests(unittest.TestCase):
         self.assertEqual(data['status'], 'blocked')
         self.assertEqual(data['checkpoint_update'], 'applied')
         text = (self.output / 'latest-summary.md').read_text()
-        self.assertLess(text.index('**First blocker:**'), text.index('## Test details'))
+        self.assertLess(text.index('**First blocker:**'), text.index('## Failed or incomplete commits'))
         self.assertIn('1 failed / 0 incomplete', text)
-        self.assertIn('Details below are for the first blocked commit only.', text)
         self.assertIn('Test job for this commit:** ' + self.jobs[1]['web_url'], text)
 
     def test_collect_does_not_claim_candidate_was_saved(self):
@@ -111,12 +110,47 @@ class BatchSummaryTests(unittest.TestCase):
         self.assertIsNone(data['first_blocker'])
         self.assertEqual(data['commits_beyond_passing_boundary'], 0)
         text = (self.output / 'latest-summary.md').read_text()
-        self.assertIn('Details below are for the final passing commit only.', text)
-        self.assertIn('Runtime checks for this commit', text)
-        self.assertIn('Test job for this commit:** ' + self.jobs[-1]['web_url'], text)
-        self.assertIn('Batch pipeline (all 3 commit jobs)', text)
-        self.assertIn('Test time (Eastern):** 2026-11-13 07:00:00 AM EST', text)
+        self.assertNotIn('## Failed or incomplete commits', text)
+        self.assertNotIn('PRRTE revision', text)
+        self.assertNotIn('Runtime checks for this commit', text)
+        self.assertNotIn('Test job for this commit', text)
+        self.assertIn('Batch pipeline (all commit jobs)', text)
+        self.assertIn('Latest test time (Eastern):** 2026-11-13 07:00:00 AM EST', text)
+        self.assertEqual([item['attempt']['checks']['passed'] for item in data['items']], [11, 11, 11])
         self.assertEqual(data['boundary_attempt']['tested_at'], '2026-11-13T12:00:00+00:00')
+
+    def test_report_shows_every_failed_or_incomplete_commit(self):
+        self.result(A, 'success')
+        self.result(B, 'failed', dict(passed=10, failed=1, incomplete=0))
+        self.result(C, 'timedout', dict(passed=8, failed=0, incomplete=3))
+        self.render(self.baseline, 0)
+        text = (self.output / 'latest-summary.md').read_text()
+        self.assertNotIn('### ' + A, text)
+        self.assertIn('### ' + B, text)
+        self.assertIn('### ' + C, text)
+        self.assertIn('8 passed / 0 failed / 3 incomplete', text)
+        self.assertIn('Test job for this commit:** ' + self.jobs[1]['web_url'], text)
+        self.assertIn('Test job for this commit:** ' + self.jobs[2]['web_url'], text)
+        self.assertIn('timed out', text)
+
+    def test_collector_preserves_runtime_evidence_for_all_commits(self):
+        for sha in (A, B, C):
+            self.result(sha, 'success')
+        calls = []
+        outer = self
+        class Client:
+            token = 'not-a-real-token'
+            def project_url(self, path):
+                return path
+            def get(self, path, limit):
+                calls.append(path)
+                sha = path.rsplit('/', 1)[-1][:-len('.summary.json')]
+                return 'ok', 200, (outer.collection / (sha + '.summary.json')).read_bytes(), {}
+        jobs = [dict(job, name='pmix-' + job['commit']) for job in self.jobs]
+        collector.collect_summary(Client(), jobs, [A, B, C], '20', self.collection)
+        self.assertEqual(len(calls), 3)
+        data = self.render()
+        self.assertTrue(all(item['attempt']['prrte_revision'] == PRRTE for item in data['items']))
 
     def test_timeout_is_incomplete_even_if_latest_passes(self):
         self.result(A, 'timedout', dict(passed=8, failed=0, incomplete=3))

@@ -93,28 +93,33 @@ def batch_summary(collection, baseline, commits_file, suite, output,
                 first = dict(commit=commit, status=status, category=category,
                              job_url=jobs.get(commit, {}).get('web_url'))
 
-    blocker = attempt_details(collection, baseline, suite, output / 'attempt-details/blocker',
-                              jobs.get(first['commit']) if first else None, index)
-    boundary_attempt = attempt_details(collection, baseline, suite, output / 'attempt-details/boundary',
-                                      jobs.get(boundary) if prefix else None, index)
-    latest = attempt_details(collection, baseline, suite, output / 'attempt-details/latest',
-                             latest_job, latest_index)
+    descriptions = {
+        'failed': 'CI job failed; inspect the job for test, build, or infrastructure errors.',
+        'timedout': 'CI job timed out; this is incomplete testing, not proof of a software failure.',
+        'canceled': 'CI job was canceled; testing is incomplete.',
+        'missing': 'Result record is missing; successful testing is not established.',
+        'malformed': 'Result record is invalid or mismatched; successful testing is not established.',
+        'unknown': 'CI outcome is unknown; testing is incomplete.',
+    }
+    attempts = {}
+    for item in items:
+        commit = item['commit']
+        attempt = attempt_details(collection, baseline, suite,
+                                  output / 'attempt-details' / commit, jobs.get(commit), index)
+        attempts[commit] = attempt
+        item['attempt'] = attempt
+        if item['category'] != 'passed':
+            item['reason'] = descriptions[item['status']]
+            if item['status'] != 'timedout' and attempt and attempt.get('reason'):
+                item['reason'] = attempt['reason']
+    blocker = attempts.get(first['commit']) if first else None
+    boundary_attempt = attempts.get(boundary) if prefix else None
+    latest = attempts.get(latest_job['commit']) if latest_job else None
     if first:
-        descriptions = {
-            'failed': 'CI job failed; inspect the job for test, build, or infrastructure errors.',
-            'timedout': 'CI job timed out; this is incomplete testing, not proof of a software failure.',
-            'canceled': 'CI job was canceled; testing is incomplete.',
-            'missing': 'Result record is missing; successful testing is not established.',
-            'malformed': 'Result record is invalid or mismatched; successful testing is not established.',
-            'unknown': 'CI outcome is unknown; testing is incomplete.',
-        }
-        first['reason'] = descriptions[first['status']]
+        first['reason'] = next(item['reason'] for item in items if item['commit'] == first['commit'])
         if blocker:
             first['runtime_checks'] = blocker['checks']
             first['prrte_revision'] = blocker['prrte_revision']
-            # Do not let a generic failed GitLab status erase a strict timeout record.
-            if first['status'] != 'timedout' and blocker.get('reason'):
-                first['reason'] = blocker['reason']
 
     saved, saved_scope = baseline_commit, 'batch-start checkpoint; Apply not yet confirmed'
     update = 'pending'
@@ -151,8 +156,7 @@ def batch_summary(collection, baseline, commits_file, suite, output,
         rows += [('First blocker', first['commit']), ('Reason', first['reason'])]
     if commits:
         rows.append(('Commits tested', '{passed} passed / {failed} failed / {incomplete} incomplete'.format(**totals)))
-        if blocker:
-            rows.append(('Runtime checks for first blocked commit', '{passed} passed / {failed} failed / {incomplete} incomplete (11 total)'.format(**blocker['checks'])))
+        rows.append(('Latest test time (Eastern)', eastern_time(latest['tested_at']) if latest else 'Unknown'))
     text = '# OpenPMIx testing status\n\n' + '\n'.join(
         '**{}:** {}  '.format(key, value) for key, value in rows) + '\n'
     if not commits:
@@ -164,24 +168,25 @@ def batch_summary(collection, baseline, commits_file, suite, output,
         text += '\nLater passing commits do not advance the last-known-good commit past this blocker.\n'
     if update == 'pending':
         text += '\nPreliminary report: this is not a confirmed saved update. Check the Apply job for the final report.\n'
-    if commits:
-        details = [('Suite revision', suite)]
-        # Focus on the blocker when blocked; otherwise show the final passing
-        # commit. Other attempts and checkpoint bookkeeping remain in JSON.
-        focus = blocker if first else boundary_attempt or latest
-        if focus:
-            details += [('OpenPMIx commit', focus['pmix_commit']),
-                        ('PRRTE revision', focus['prrte_revision'] or 'Unknown'),
-                        ('Test time (Eastern)', eastern_time(focus['tested_at']))]
-            if not first:
-                details.append(('Runtime checks for this commit', '{passed} passed / {failed} failed / {incomplete} incomplete (11 total)'.format(**focus['checks'])))
-        job_url = first['job_url'] if first else focus['job_url'] if focus else None
-        if job_url:
-            details.append(('Test job for this commit', job_url))
-        if index.get('pipeline_url'):
-            details.append(('Batch pipeline (all {} commit jobs)'.format(len(commits)), index['pipeline_url']))
-        text += '\n## Test details\n\n' + ('Details below are for the first blocked commit only.\n\n' if first else 'Details below are for the final passing commit only.\n\n') + '\n'.join(
-            '**{}:** {}  '.format(key, value) for key, value in details) + '\n'
+    if index.get('pipeline_url'):
+        text += '\n**Batch pipeline (all commit jobs):** {}\n'.format(index['pipeline_url'])
+    affected = [item for item in items if item['category'] != 'passed']
+    if affected:
+        text += '\n## Failed or incomplete commits\n'
+        for item in affected:
+            attempt = item['attempt']
+            details = [('Result', item['category'].capitalize()), ('Reason', item['reason']),
+                       ('PRRTE revision', (attempt['prrte_revision'] or 'Unknown') if attempt else 'Unknown')]
+            if attempt:
+                details += [('Runtime checks for this commit',
+                             '{passed} passed / {failed} failed / {incomplete} incomplete (11 total)'.format(**attempt['checks'])),
+                            ('Test time (Eastern)', eastern_time(attempt['tested_at']))]
+            else:
+                details.append(('Runtime checks for this commit', 'Unavailable; successful runtime testing is not established.'))
+            job_url = jobs.get(item['commit'], {}).get('web_url')
+            details.append(('Test job for this commit', job_url or 'Unavailable'))
+            text += '\n### {}\n\n'.format(item['commit']) + '\n'.join(
+                '**{}:** {}  '.format(key, value) for key, value in details) + '\n'
     atomic_write(output / 'latest-summary.md', text.encode())
     return data
 
