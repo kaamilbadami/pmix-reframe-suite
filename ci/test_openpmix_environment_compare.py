@@ -24,6 +24,8 @@ class EnvironmentComparisonTests(unittest.TestCase):
         self.source = dict(CI_JOB_ID='123', CI_PIPELINE_ID='456', CI_COMMIT_SHA='a' * 40,
                            PATH='/normal/bin:/usr/bin:/bin', HOME='/normal/home',
                            BASH_ENV='/site/lmod', CONDA_PREFIX='/miniforge',
+                           LMOD_CMD='/site/lmod/libexec/lmod', LMOD_DIR='/site/lmod/libexec',
+                           MODULEPATH='/site/modules',
                            CI_JOB_TOKEN='secret', CUSTOM_SECRET='secret')
 
     def test_environment_preserves_startup_settings_only_in_normal_case(self):
@@ -32,7 +34,10 @@ class EnvironmentComparisonTests(unittest.TestCase):
         self.assertEqual(normal['CONDA_PREFIX'], '/miniforge')
         self.assertNotIn('CONDA_PREFIX', clean)
         self.assertNotIn('BASH_ENV', clean)
+        self.assertEqual(clean['LMOD_CMD'], self.source['LMOD_CMD'])
+        self.assertEqual(clean['MODULEPATH'], self.source['MODULEPATH'])
         for env in (normal, clean):
+            self.assertEqual(env['TMPDIR'], '/tmp')
             self.assertNotIn('CI_JOB_TOKEN', env)
             self.assertNotIn('CUSTOM_SECRET', env)
             self.assertEqual(env['PMIX_COMMIT'], diagnostic.PMIX_SHA)
@@ -48,6 +53,7 @@ class EnvironmentComparisonTests(unittest.TestCase):
         self.assertNotIn('--export=NIL', np['access'])
         self.assertIn('--export=NIL', cp['access'])
         self.assertEqual(np['prepare_cmds'], cp['prepare_cmds'])
+        self.assertIn('export TMPDIR=/tmp', np['prepare_cmds'])
         self.assertIn('site-init-start', np['prepare_cmds'][0])
         self.assertIn('site-init-finished', np['prepare_cmds'][-2])
 
@@ -80,6 +86,17 @@ class EnvironmentComparisonTests(unittest.TestCase):
         self.assertTrue((self.root / 'comparisons/normal/reframe/run-report.json').is_file())
         self.assertTrue((self.root / 'comparisons/clean/reframe/run-report.json').is_file())
         self.assertNotIn('secret', (self.root / 'comparisons/normal/startup-settings.json').read_text())
+
+    def test_missing_reports_leave_overall_comparison_incomplete(self):
+        with patch.object(diagnostic, 'ROOT', self.repo), \
+             patch.object(diagnostic, 'context', return_value=self.root), \
+             patch.object(diagnostic, 'checkout_exact'), \
+             patch.object(diagnostic.subprocess, 'run',
+                          return_value=subprocess.CompletedProcess([], 1)):
+            self.assertEqual(diagnostic.run(self.source), 1)
+        summary = json.loads((self.root / 'environment-comparison.json').read_text())
+        self.assertEqual(summary['status'], 'incomplete')
+        self.assertEqual(len(summary['attempts']), 2)
 
     def test_missing_report_never_becomes_pass(self):
         result = diagnostic.result(self.root, 'clean', 0, 'now', 1)

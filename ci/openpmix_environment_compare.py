@@ -33,7 +33,12 @@ def environment(source, root, mode):
     # caller variables. Preserve site/Python startup state only for normal.
     env = dict(PATH=str(root / 'venv/bin') + ':/usr/bin:/bin',
                LANG='C.UTF-8', LC_ALL='C.UTF-8', HOME=str(root / 'home'),
-               TMPDIR=str(root / 'tmp'))
+               TMPDIR='/tmp')
+    # ReFrame's login-side module backend must remain usable. Slurm NIL still
+    # removes this inherited state from the clean compute-node allocation.
+    for key in ('LMOD_CMD', 'LMOD_DIR', 'MODULEPATH'):
+        if key in source:
+            env[key] = source[key]
     if mode == 'normal':
         for key in ('PATH', 'HOME') + STARTUP_KEYS:
             if key in source:
@@ -55,6 +60,8 @@ def config(root, mode):
     partition['prepare_cmds'] = [
         "printf 'ENV_COMPARE site-init-start %s host=%s\\n' \"$(date -u +%FT%TZ)\" \"$(hostname)\""
     ] + prepare + [
+        # Both modes need a short, node-local socket base after site setup.
+        'export TMPDIR=/tmp',
         "printf 'ENV_COMPARE site-init-finished %s\\n' \"$(date -u +%FT%TZ)\"",
         "printf 'ENV_COMPARE BASH_ENV=%s CONDA_SHLVL=%s CONDA_PREFIX=%s\\n' \"${BASH_ENV-}\" \"${CONDA_SHLVL-}\" \"${CONDA_PREFIX-}\""
     ]
@@ -125,7 +132,9 @@ def run(source):
             shutil.move(str(root / 'reframe'), str(configuration.parent / 'reframe'))
             output.write_text(json.dumps(summary, indent=2) + '\n')
             print(json.dumps(attempt), flush=True)
-        summary.update(status='complete', finished_at=stamp())
+        summary.update(status=('incomplete' if any(a['status'] == 'incomplete'
+                                                 for a in summary['attempts']) else 'complete'),
+                       finished_at=stamp())
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         summary['error'] = str(error)
     output.write_text(json.dumps(summary, indent=2) + '\n')
