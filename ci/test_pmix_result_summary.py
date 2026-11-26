@@ -51,6 +51,42 @@ class SummaryTests(unittest.TestCase):
         (self.collection / 'latest-attempt.json').write_text(json.dumps(record))
         return record
 
+    def test_slurm_timeout_is_incomplete_but_assertion_failure_is_failed(self):
+        timed, failed = summary.TESTS[:2]
+        self.report({timed: 'fail', failed: 'fail'})
+        path = self.work / 'reframe/run-report.json'
+        doc = json.loads(path.read_text())
+        doc['runs'][0]['testcases'][0]['jobid'] = 1234
+        path.write_text(json.dumps(doc))
+        stage = self.work / 'reframe/stage/frontier/batch/pmix_test' / timed
+        stage.mkdir(parents=True)
+        (stage / 'rfm_job.err').write_text('error: JOB 1234 ON frontier00001 CANCELLED DUE TO TIME LIMIT')
+        record = self.evidence()
+        self.assertEqual(record['checks'], dict(passed=9, failed=1, incomplete=1))
+        self.assertIn(timed, record['check_reasons'])
+        self.assertNotIn(failed, record['check_reasons'])
+
+    def test_console_timeout_requires_matching_test_and_job_identity(self):
+        timed, failed = summary.TESTS[:2]
+        self.report({timed: 'fail', failed: 'fail'})
+        console = self.work / 'reframe/run-console.log'
+        console.write_text('FAILURE INFO for ' + timed + ' (run: 1/1)\n'
+                           'Job type: batch job (id=1234)\n'
+                           'error: JOB 1234 ON frontier00001 CANCELLED DUE TO TIME LIMIT\n'
+                           'FAILURE INFO for ' + failed + ' (run: 1/1)\n'
+                           'Job type: batch job (id=5678)\n'
+                           'error: JOB 9999 ON frontier00001 CANCELLED DUE TO TIME LIMIT\n')
+        result = self.evidence()
+        self.assertEqual(result['checks'], dict(passed=9, failed=1, incomplete=1))
+        self.assertEqual(result['check_outcomes'][failed], 'failed')
+
+    def test_successful_expected_timeout_test_is_not_reclassified(self):
+        self.report()
+        (self.work / 'reframe/run-console.log').write_text(
+            'FAILURE INFO for ' + summary.TESTS[0] + ' (run: 1/1)\n'
+            'Job type: batch job (id=1234)\nerror: JOB 1234 CANCELLED DUE TO TIME LIMIT\n')
+        self.assertEqual(self.evidence()['checks'], dict(passed=11, failed=0, incomplete=0))
+
     def test_success_counts_only_runtime_checks(self):
         self.report()
         record = self.evidence()

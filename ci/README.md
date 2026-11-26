@@ -49,16 +49,18 @@ its own actual test timestamp.
 
 ## Compact batch report
 
-Open `ci-scheduled/report/latest-summary.md` (or `latest-summary.json`) in the
-scheduled **Apply** job artifacts for the final checkpoint-first report. The
+Open `ci-scheduled/report/latest-summary.txt` in TextEdit, or
+`latest-summary.json` for structured data. The existing `latest-summary.md`
+contains the same plain text and is retained for compatibility. Find these
+in the scheduled **Apply** job artifacts for the final checkpoint-first report. The
 filename is retained for compatibility; its headline now describes the batch,
 not just the most recently finished attempt. **Collect** publishes an early
 copy marked preliminary, because checkpoint application has not happened yet.
 Both jobs retain reports for 14 days. This is file output only, not a website
 or notification service.
 
-The Markdown leads with status, the saved last-known-good commit, commit
-counts, latest test time in Eastern time (EST/EDT), and a link to all batch
+The plain-text report leads with status, the saved last-known-good commit, commit
+counts, last-known-good record time and age at report generation, latest test time, and a link to all batch
 jobs. When all commits pass, no individual commit details are shown.
 Every failed or incomplete commit gets its own section with its reason,
 PRRTE revision, runtime-check counts, time, and job link where available.
@@ -73,6 +75,23 @@ but cannot move the checkpoint across B. Collect labels A as a candidate;
 the final report only calls it a saved update after Apply succeeds and a fresh
 state snapshot confirms it. Failed or unconfirmed application is explicit.
 Passing-boundary and checkpoint-confirmation bookkeeping remains in JSON.
+
+Dates in the readable report use MM/DD/YY and h:mm AM/PM EST or EDT,
+without Markdown headings or emphasis characters. JSON retains UTC timestamps.
+The last-known-good record time comes from LAST_SUCCESS_EPOCH in the observed
+saved state (or the batch-start snapshot if Apply is unconfirmed). This is the
+successful checkpoint record time, not necessarily the exact test finish time
+and not the upstream commit date. Its age is computed at report generation;
+opening a downloaded report later does not update the age.
+
+Confirmed Slurm allocation time-limit kills are incomplete runtime checks even
+when ReFrame reports a sanity failure. Matching requires the test name and
+Slurm job ID in the test stderr or ReFrame's failure summary; unrelated timeout
+text cannot override an assertion failure or a passing negative test. Other
+failures remain failures without assuming a PMIx defect. Display-only commit
+counts may classify a failed CI job as incomplete when its runtime evidence has
+incomplete checks and no failed checks; strict checkpoint decisions are unchanged.
+The later-passing-commit warning appears only if a later commit actually passed.
 
 JSON retains UTC timestamps and validated attempt details for every commit,
 including passing commits. The collector downloads each compact runtime

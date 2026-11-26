@@ -8,7 +8,7 @@ from pathlib import Path
 import tempfile
 
 from collect_pmix_child_results import atomic_write
-from pmix_result_summary import read_json, publish, SHA, eastern_time
+from pmix_result_summary import read_json, publish, SHA, eastern_time, age_text, write_text_report
 from reconcile_pmix_results import parse_state, parse_commits, parse_result, InputError
 
 
@@ -41,7 +41,8 @@ def attempt_details(collection, baseline, suite, output, job, index):
 
 
 def batch_summary(collection, baseline, commits_file, suite, output,
-                  saved_state=None, apply_exit_code=None):
+                  saved_state=None, apply_exit_code=None, now=None):
+    now = now or datetime.now(timezone.utc)
     if not SHA.fullmatch(suite):
         raise ValueError('invalid suite revision')
     start, _ = parse_state(baseline)
@@ -112,15 +113,27 @@ def batch_summary(collection, baseline, commits_file, suite, output,
             item['reason'] = descriptions[item['status']]
             if item['status'] != 'timedout' and attempt and attempt.get('reason'):
                 item['reason'] = attempt['reason']
+    # Only the display category changes; strict result records and the
+    # consecutive-success boundary above remain authoritative.
+    for item in items:
+        attempt = item['attempt']
+        if (item['status'] == 'failed' and attempt and
+                attempt['checks']['failed'] == 0 and attempt['checks']['incomplete'] > 0):
+            item['category'] = 'incomplete'
+    totals = {key: sum(item['category'] == key for item in items)
+              for key in ('passed', 'failed', 'incomplete')}
     blocker = attempts.get(first['commit']) if first else None
     boundary_attempt = attempts.get(boundary) if prefix else None
     latest = attempts.get(latest_job['commit']) if latest_job else None
     if first:
-        first['reason'] = next(item['reason'] for item in items if item['commit'] == first['commit'])
+        first_item = next(item for item in items if item['commit'] == first['commit'])
+        first['reason'] = first_item['reason']
+        first['category'] = first_item['category']
         if blocker:
             first['runtime_checks'] = blocker['checks']
             first['prrte_revision'] = blocker['prrte_revision']
 
+    saved_values = start
     saved, saved_scope = baseline_commit, 'batch-start checkpoint; Apply not yet confirmed'
     update = 'pending'
     if apply_exit_code is not None:
@@ -133,7 +146,15 @@ def batch_summary(collection, baseline, commits_file, suite, output,
     status = 'blocked' if first else 'complete' if commits else 'no_new_commits'
     if apply_exit_code is not None and update not in ('applied', 'unchanged'):
         status = 'checkpoint_update_failed' if apply_exit_code else 'checkpoint_update_unconfirmed'
+    try:
+        good_time = datetime.fromtimestamp(int(saved_values['LAST_SUCCESS_EPOCH']), timezone.utc)
+        good_at = good_time.isoformat()
+        good_age = (now - good_time).total_seconds()
+    except (ValueError, OverflowError, OSError):
+        good_at, good_age = None, None
     data = dict(schema_version=2, status=status, suite_commit=suite,
+                generated_at=now.isoformat(), last_known_good_recorded_at=good_at,
+                last_known_good_age_seconds=good_age,
                 batch_start_checkpoint=baseline_commit, saved_checkpoint=saved,
                 saved_checkpoint_scope=saved_scope, passing_boundary=boundary,
                 successful_prefix_count=prefix, checkpoint_update=update,
@@ -150,29 +171,33 @@ def batch_summary(collection, baseline, commits_file, suite, output,
                   checkpoint_update_failed='Could not save the last-known-good update',
                   checkpoint_update_unconfirmed='Last-known-good update could not be confirmed')
     if status == 'no_new_commits' and last_commit and last_commit['commit'] == baseline_commit:
-        labels['no_new_commits'] = 'No new commits to test since {}.'.format(last_commit['committed_at'])
-    rows = [('Status', labels[status]), ('Last known good commit', saved)]
+        upstream_time = datetime.strptime(last_commit['committed_at'], '%Y-%m-%d %H:%M:%S UTC').replace(tzinfo=timezone.utc).isoformat()
+        labels['no_new_commits'] = 'No new commits to test since {}.'.format(eastern_time(upstream_time))
+    rows = [('Status', labels[status]), ('Last known good commit', saved),
+            ('Last known good recorded', eastern_time(good_at)),
+            ('Time since last known good', age_text(good_age)),
+            ('Report generated', eastern_time(now.isoformat()))]
     if first:
         rows += [('First blocker', first['commit']), ('Reason', first['reason'])]
     if commits:
         rows.append(('Commits tested', '{passed} passed / {failed} failed / {incomplete} incomplete'.format(**totals)))
-        rows.append(('Latest test time (Eastern)', eastern_time(latest['tested_at']) if latest else 'Unknown'))
-    text = '# OpenPMIx testing status\n\n' + '\n'.join(
-        '**{}:** {}  '.format(key, value) for key, value in rows) + '\n'
+        rows.append(('Latest test time', eastern_time(latest['tested_at']) if latest else 'Unknown'))
+    text = 'OpenPMIx testing status\n\n' + '\n'.join(
+        '{}: {}'.format(key, value) for key, value in rows) + '\n'
     if not commits:
         text += '\nNo tests ran during this check.'
         if update == 'unchanged':
             text += ' The last-known-good commit is unchanged.'
         text += '\n'
-    if first and len(commits) > prefix + 1:
+    if first and any(item['category'] == 'passed' for item in items[prefix + 1:]):
         text += '\nLater passing commits do not advance the last-known-good commit past this blocker.\n'
     if update == 'pending':
         text += '\nPreliminary report: this is not a confirmed saved update. Check the Apply job for the final report.\n'
     if index.get('pipeline_url'):
-        text += '\n**Batch pipeline (all commit jobs):** {}\n'.format(index['pipeline_url'])
+        text += '\nBatch pipeline (all commit jobs): {}\n'.format(index['pipeline_url'])
     affected = [item for item in items if item['category'] != 'passed']
     if affected:
-        text += '\n## Failed or incomplete commits\n'
+        text += '\nFailed or incomplete commits\n'
         for item in affected:
             attempt = item['attempt']
             details = [('Result', item['category'].capitalize()), ('Reason', item['reason']),
@@ -180,14 +205,17 @@ def batch_summary(collection, baseline, commits_file, suite, output,
             if attempt:
                 details += [('Runtime checks for this commit',
                              '{passed} passed / {failed} failed / {incomplete} incomplete (11 total)'.format(**attempt['checks'])),
-                            ('Test time (Eastern)', eastern_time(attempt['tested_at']))]
+                            ('Test time', eastern_time(attempt['tested_at']))]
+                if attempt.get('check_reasons'):
+                    details.append(('Incomplete checks', '\n' + '\n'.join('  {}: {}'.format(name, reason) for name, reason in sorted(attempt['check_reasons'].items()))))
             else:
                 details.append(('Runtime checks for this commit', 'Unavailable; successful runtime testing is not established.'))
             job_url = jobs.get(item['commit'], {}).get('web_url')
             details.append(('Test job for this commit', job_url or 'Unavailable'))
-            text += '\n### {}\n\n'.format(item['commit']) + '\n'.join(
-                '**{}:** {}  '.format(key, value) for key, value in details) + '\n'
-    atomic_write(output / 'latest-summary.md', text.encode())
+            text += '\nCommit: {}\n'.format(item['commit']) + '\n'.join(
+                '{}: {}'.format(key, value) for key, value in details) + '\n'
+    text += '\nLast-known-good time is the saved success/checkpoint record time, not the upstream commit date.\nAges are measured when this report was generated.\n'
+    write_text_report(output, text)
     return data
 
 

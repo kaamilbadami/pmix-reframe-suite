@@ -9,7 +9,8 @@ import collect_pmix_child_results as collector
 import reconcile_pmix_results as reconciler
 import apply_reconciled_pmix_state as updater
 from pmix_batch_summary import batch_summary
-from pmix_result_summary import eastern_time
+from pmix_result_summary import eastern_time, age_text
+from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE, A, B, C, SUITE, PRRTE = [letter * 40 for letter in 'dabcfe']
@@ -60,12 +61,48 @@ class BatchSummaryTests(unittest.TestCase):
 
     def test_eastern_display_tracks_daylight_saving_and_date_rollover(self):
         self.assertEqual(eastern_time('2026-11-24T17:52:03.086000+00:00'),
-                         '2026-11-24 12:52:03 PM EST')
+                         '11/24/26 12:52 PM EST')
         self.assertEqual(eastern_time('2026-07-24T17:52:03Z'),
-                         '2026-07-24 01:52:03 PM EDT')
+                         '07/24/26 1:52 PM EDT')
         self.assertEqual(eastern_time('2026-11-24T02:00:00Z'),
-                         '2026-11-23 09:00:00 PM EST')
+                         '11/23/26 9:00 PM EST')
         self.assertEqual(eastern_time(None), 'Unknown')
+
+    def test_no_later_pass_warning_when_all_commits_fail(self):
+        for sha in (A, B, C):
+            self.result(sha, 'failed', dict(passed=4, failed=7, incomplete=0))
+        self.render(self.baseline, 0)
+        self.assertNotIn('Later passing commits', (self.output / 'latest-summary.md').read_text())
+
+    def test_checkpoint_time_uses_saved_state_and_age_is_at_generation(self):
+        for sha in (A, B, C):
+            self.result(sha, 'success')
+        saved = self.root / 'saved.env'
+        epoch = int(datetime(2026, 11, 24, 17, 52, tzinfo=timezone.utc).timestamp())
+        saved.write_text('PMIX_COMMIT={}\nSUITE_COMMIT={}\nLAST_SUCCESS_EPOCH={}\n'.format(C, SUITE, epoch))
+        now = datetime(2026, 11, 26, 18, 0, tzinfo=timezone.utc)
+        data = batch_summary(self.collection, self.baseline, self.commits, SUITE,
+                             self.output, saved, 0, now=now)
+        text = (self.output / 'latest-summary.txt').read_text()
+        self.assertIn('Last known good recorded: 11/24/26 12:52 PM EST', text)
+        self.assertIn('Time since last known good: 2 days, 8 minutes ago', text)
+        self.assertEqual(data['last_known_good_age_seconds'], 173280)
+        self.assertEqual(data['generated_at'], now.isoformat())
+        self.assertEqual(text, (self.output / 'latest-summary.md').read_text())
+        self.assertNotIn('**', text)
+        self.assertNotIn('#', text)
+        self.assertNotIn('(Eastern)', text)
+        self.assertEqual(age_text(-1), 'Timestamp is in the future; check clock settings.')
+
+    def test_failed_job_with_only_incomplete_checks_stays_blocked(self):
+        self.result(A, 'failed', dict(passed=4, failed=0, incomplete=7))
+        self.result(B, 'success')
+        self.result(C, 'success')
+        data = self.render(self.baseline, 0)
+        self.assertEqual(data['commit_counts'], dict(passed=2, failed=0, incomplete=1))
+        self.assertEqual(data['passing_boundary'], BASE)
+        self.assertEqual(data['items'][0]['status'], 'failed')
+        self.assertEqual(data['status'], 'blocked')
 
     def test_a_pass_b_fail_c_pass_keeps_blocker_as_headline(self):
         self.result(A, 'success')
@@ -84,9 +121,9 @@ class BatchSummaryTests(unittest.TestCase):
         self.assertEqual(data['status'], 'blocked')
         self.assertEqual(data['checkpoint_update'], 'applied')
         text = (self.output / 'latest-summary.md').read_text()
-        self.assertLess(text.index('**First blocker:**'), text.index('## Failed or incomplete commits'))
+        self.assertLess(text.index('First blocker:'), text.index('Failed or incomplete commits'))
         self.assertIn('1 failed / 0 incomplete', text)
-        self.assertIn('Test job for this commit:** ' + self.jobs[1]['web_url'], text)
+        self.assertIn('Test job for this commit: ' + self.jobs[1]['web_url'], text)
 
     def test_collect_does_not_claim_candidate_was_saved(self):
         for sha in (A, B, C):
@@ -110,12 +147,12 @@ class BatchSummaryTests(unittest.TestCase):
         self.assertIsNone(data['first_blocker'])
         self.assertEqual(data['commits_beyond_passing_boundary'], 0)
         text = (self.output / 'latest-summary.md').read_text()
-        self.assertNotIn('## Failed or incomplete commits', text)
+        self.assertNotIn('Failed or incomplete commits', text)
         self.assertNotIn('PRRTE revision', text)
         self.assertNotIn('Runtime checks for this commit', text)
         self.assertNotIn('Test job for this commit', text)
         self.assertIn('Batch pipeline (all commit jobs)', text)
-        self.assertIn('Latest test time (Eastern):** 2026-11-13 07:00:00 AM EST', text)
+        self.assertIn('Latest test time: 11/13/26 7:00 AM EST', text)
         self.assertEqual([item['attempt']['checks']['passed'] for item in data['items']], [11, 11, 11])
         self.assertEqual(data['boundary_attempt']['tested_at'], '2026-11-13T12:00:00+00:00')
 
@@ -125,12 +162,12 @@ class BatchSummaryTests(unittest.TestCase):
         self.result(C, 'timedout', dict(passed=8, failed=0, incomplete=3))
         self.render(self.baseline, 0)
         text = (self.output / 'latest-summary.md').read_text()
-        self.assertNotIn('### ' + A, text)
-        self.assertIn('### ' + B, text)
-        self.assertIn('### ' + C, text)
+        self.assertNotIn('Commit: ' + A, text)
+        self.assertIn('Commit: ' + B, text)
+        self.assertIn('Commit: ' + C, text)
         self.assertIn('8 passed / 0 failed / 3 incomplete', text)
-        self.assertIn('Test job for this commit:** ' + self.jobs[1]['web_url'], text)
-        self.assertIn('Test job for this commit:** ' + self.jobs[2]['web_url'], text)
+        self.assertIn('Test job for this commit: ' + self.jobs[1]['web_url'], text)
+        self.assertIn('Test job for this commit: ' + self.jobs[2]['web_url'], text)
         self.assertIn('timed out', text)
 
     def test_collector_preserves_runtime_evidence_for_all_commits(self):
@@ -208,11 +245,11 @@ class BatchSummaryTests(unittest.TestCase):
         metadata.write_text(json.dumps(dict(commit=BASE, committed_epoch=0)))
         self.render(self.baseline, 0)
         text = (self.output / 'latest-summary.md').read_text()
-        self.assertIn('No new commits to test since 1970-01-01 00:00:00 UTC.', text)
+        self.assertIn('No new commits to test since 12/31/69 7:00 PM EST.', text)
         # Never attach another commit's date to this no-new-commits result.
         metadata.write_text(json.dumps(dict(commit=A, committed_epoch=0)))
         self.render(self.baseline, 0)
-        self.assertNotIn('since 1970', (self.output / 'latest-summary.md').read_text())
+        self.assertNotIn('since 12/31/69', (self.output / 'latest-summary.md').read_text())
         self.commits.write_text(BASE + '\n')
         self.jobs = [dict(id=1, commit=BASE, status='success')]
         self.result(BASE, 'success')

@@ -32,13 +32,17 @@ def counts(outcomes):
             for key in ('passed', 'failed', 'incomplete')}
 
 
-def runtime_outcomes(root):
+def runtime_evidence(root):
     outcomes = dict.fromkeys(TESTS, 'incomplete')
+    reasons = {}
+    cases = {}
+    console_text = ''
     # Terminal console records survive a killed ReFrame process. Ignore fixtures,
     # listings and RUN records. Later terminal records supersede earlier attempts.
     console = root / 'reframe/run-console.log'
     if console.is_file() and not console.is_symlink():
-        for line in ANSI.sub('', console.read_text(errors='replace')).splitlines():
+        console_text = ANSI.sub('', console.read_text(errors='replace'))
+        for line in console_text.splitlines():
             match = re.match(r'^\[\s*(OK|FAIL|SKIP|ABORT)\s*\]\s*(?:\(\s*\d+/\d+\)\s*)?(PMIxPython\w+)\s+/', line)
             if match and match[2] in outcomes:
                 outcomes[match[2]] = {'OK': 'passed', 'FAIL': 'failed'}.get(match[1], 'incomplete')
@@ -51,9 +55,39 @@ def runtime_outcomes(root):
                 name = case.get('name')
                 if name in outcomes and case.get('fixture') is False:
                     outcomes[name] = {'pass': 'passed', 'fail': 'failed'}.get(case.get('result'), 'incomplete')
+                    cases[name] = case
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         pass  # A truncated/missing final report does not erase console evidence.
-    return outcomes
+    for name, outcome in outcomes.items():
+        if outcome != 'failed':
+            continue
+        case = cases.get(name, {})
+        job_id = str(case.get('jobid', ''))
+        logs = []
+        if job_id.isdigit():
+            for directory in ('stage', 'output'):
+                for path in (root / 'reframe' / directory).glob('**/' + name + '/rfm_job.err'):
+                    if path.is_file() and not path.is_symlink():
+                        logs.append(path.read_text(errors='replace'))
+        # ReFrame also embeds stderr in its per-test failure summary. This
+        # survives even when that test's stage directory was not archived.
+        for block in re.split(r'FAILURE INFO for ', console_text)[1:]:
+            if block.split(' ', 1)[0] != name:
+                continue
+            identity = re.search(r'Job type: batch job \(id=(\d+)\)', block)
+            if identity and (not job_id or job_id == identity[1]):
+                job_id = identity[1]
+                logs.append(block)
+        if job_id.isdigit() and any(re.search(
+                r'\bJOB ' + re.escape(job_id) + r'\b[^\n]*DUE TO TIME LIMIT', log)
+                for log in logs):
+            outcomes[name] = 'incomplete'
+            reasons[name] = 'Slurm allocation reached its time limit.'
+    return outcomes, reasons
+
+
+def runtime_outcomes(root):
+    return runtime_evidence(root)[0]
 
 
 def record(env, output):
@@ -64,7 +98,7 @@ def record(env, output):
         if not re.fullmatch(r'[1-9][0-9]*', env.get(key, '')):
             raise ValueError('invalid reporting job identity')
     root = Path(env.get('CI_PROJECT_DIR', '.')) / '.ci-work' / env['CI_JOB_ID']
-    outcomes = runtime_outcomes(root)
+    outcomes, check_reasons = runtime_evidence(root)
     revision = env.get('PRRTE_COMMIT', '')
     revision = revision if SHA.fullmatch(revision) else None
     source = 'requested' if revision else 'unknown'
@@ -81,7 +115,8 @@ def record(env, output):
                     prrte_revision_source=source, job_id=int(env['CI_JOB_ID']),
                     pipeline_id=int(env['CI_PIPELINE_ID']), ci_status=env.get('CI_JOB_STATUS', 'unknown'),
                     recorded_at=datetime.now(timezone.utc).isoformat(),
-                    checks=counts(outcomes), total_checks=len(TESTS))
+                    checks=counts(outcomes), total_checks=len(TESTS),
+                    check_outcomes=outcomes, check_reasons=check_reasons)
     policy_path = root / 'prrte-policy.json'
     if policy_path.exists():
         document['prrte_policy'] = read_json(policy_path)
@@ -112,12 +147,36 @@ def eastern_time(value):
     try:
         return subprocess.check_output(
             ['date', '--date=@{}'.format(parsed.timestamp()),
-             '+%Y-%m-%d %I:%M:%S %p %Z'],
+             '+%m/%d/%y %-I:%M %p %Z'],
             env=dict(os.environ, TZ='America/New_York', LC_ALL='C'),
             universal_newlines=True, timeout=5).strip()
     except (OSError, subprocess.SubprocessError):
         return parsed.astimezone(timezone.utc).strftime(
-            '%Y-%m-%d %H:%M:%S UTC (Eastern conversion unavailable)')
+            '%m/%d/%y %I:%M %p UTC (Eastern conversion unavailable)')
+
+
+def age_text(seconds):
+    if seconds is None:
+        return 'Unknown'
+    if seconds < 0:
+        return 'Timestamp is in the future; check clock settings.'
+    minutes = int(seconds // 60)
+    if minutes < 1:
+        return 'Less than a minute ago'
+    days, minutes = divmod(minutes, 1440)
+    hours, minutes = divmod(minutes, 60)
+    parts = []
+    for value, unit in ((days, 'day'), (hours, 'hour'), (minutes, 'minute')):
+        if value:
+            parts.append('{} {}{}'.format(value, unit, '' if value == 1 else 's'))
+    return ', '.join(parts[:2]) + ' ago'
+
+
+def write_text_report(output, text):
+    # Keep the historical filename for existing consumers and offer a file
+    # that opens naturally in TextEdit. Both contain plain, readable text.
+    for name in ('latest-summary.md', 'latest-summary.txt'):
+        atomic_write(output / name, text.encode())
 
 
 def latest_job(jobs):
@@ -161,17 +220,22 @@ def publish(collection, baseline, suite_commit, output):
                 raise ValueError('invalid counts')
             data.update(checks=values, prrte_revision=evidence.get('prrte_revision'),
                         prrte_revision_source=evidence.get('prrte_revision_source'))
+            reasons = evidence.get('check_reasons', {})
+            data['check_reasons'] = {name: reason for name, reason in reasons.items()
+                                     if name in TESTS and reason == 'Slurm allocation reached its time limit.'} if isinstance(reasons, dict) else {}
             if 'prrte_policy' in evidence:
                 data['prrte_policy'] = evidence['prrte_policy']
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             evidence = None
         status = job.get('status')
         if data['checks']['failed']:
-            data.update(status='failed', reason='Runtime check failure; see job logs.')
+            data.update(status='failed', reason='One or more runtime checks failed; inspect logs to distinguish test, startup, and infrastructure errors.')
         elif status == 'success' and evidence and data['checks']['passed'] == len(TESTS):
             data.update(status='passed', reason=None)
         elif job.get('failure_reason') in ('job_execution_timeout', 'stuck_or_timeout_failure') or (evidence and evidence.get('ci_status') == 'timedout'):
             data['reason'] = 'CI job timed out; check logs/accounting to distinguish allocation waiting from execution.'
+        elif evidence and data.get('check_reasons') and data['checks']['incomplete']:
+            data['reason'] = 'Testing incomplete: one or more Slurm allocations reached their time limits.'
         elif status == 'failed':
             data['reason'] = 'CI job failed; inspect logs for build, setup, or infrastructure errors.'
         else:
@@ -183,16 +247,16 @@ def publish(collection, baseline, suite_commit, output):
         revision += ' (requested; checkout not recorded)'
     rows = [('OpenPMIx commit tested', data['pmix_commit'] or 'No attempt'),
             ('PRRTE revision', revision), ('Suite commit', suite_commit),
-            ('Test time (Eastern)', eastern_time(data['tested_at'])),
+            ('Test time', eastern_time(data['tested_at'])),
             ('Overall status', data['status'].capitalize()),
             ('Runtime checks for this commit', '{passed} passed / {failed} failed / {incomplete} incomplete ({} total)'.format(len(TESTS), **data['checks'])),
             ('Last known good (batch-start checkpoint)', data['last_known_good_commit']),
             ('Test job for this commit', data['job_url'] or 'Unavailable'),
             ('Batch pipeline (all commit jobs)', data['pipeline_url'] or 'Unavailable')]
-    text = '# Latest OpenPMIx test attempt\n\n' + '\n'.join('**{}:** {}  '.format(k, v) for k, v in rows) + '\n'
+    text = 'Latest OpenPMIx test attempt\n\n' + '\n'.join('{}: {}'.format(k, v) for k, v in rows) + '\n'
     if data['reason']:
         text += '\n' + data['reason'] + '\n'
-    atomic_write(output / 'latest-summary.md', text.encode())
+    write_text_report(output, text)
     return data
 
 

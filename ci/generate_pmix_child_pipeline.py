@@ -76,6 +76,8 @@ pmix-__SHA__:
       - .ci-work/$CI_JOB_ID/reframe/run-console.log
       - ci-results/slurm-cleanup-$CI_JOB_ID.json
       - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.sh
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/PMIxPython*/rfm_job.out
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/PMIxPython*/rfm_job.err
       - .ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.stdout
       - .ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.stderr
       - .ci-work/$CI_JOB_ID/reframe/stage/**/*.dvm_output
@@ -119,6 +121,8 @@ pmix-__SHA__:
       - .ci-work/$CI_JOB_ID/reframe/run-console.log
       - ci-results/slurm-cleanup-$CI_JOB_ID.json
       - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.sh
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/PMIxPython*/rfm_job.out
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/PMIxPython*/rfm_job.err
       - .ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.stdout
       - .ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.stderr
       - .ci-work/$CI_JOB_ID/reframe/stage/**/*.dvm_output
