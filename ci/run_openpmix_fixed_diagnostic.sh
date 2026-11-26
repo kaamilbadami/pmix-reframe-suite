@@ -3,6 +3,9 @@
 set +x
 set -euo pipefail
 umask 077
+if [[ ${OPENPMIX_ENV_COMPARE:-0} == 1 ]]; then
+    exec /bin/bash "${BASH_SOURCE[0]%/*}/run_openpmix_environment_compare.sh"
+fi
 cd -- "${BASH_SOURCE[0]%/*}/.."
 repo=$(pwd -P)
 python=/lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python

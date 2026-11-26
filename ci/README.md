@@ -378,3 +378,32 @@ pass. It does not post upstream statuses, run Collect/Reconcile/Apply, or change
 the scheduled checkpoint. Artifacts under `.ci-work/<job-id>/` include the pins,
 suite revision, diagnostic result/log, ReFrame report, build output, and complete
 startup logs. Cleanup is limited to Slurm jobs owned by this CI job.
+
+
+### November 26 environment comparison
+
+For the failing child-timeout check from batch 175287, start a **New pipeline**
+on `fix/scheduled-batch-lifecycle` with both variables:
+
+- `OPENPMIX_FIXED_DIAGNOSTIC=1`
+- `OPENPMIX_ENV_COMPARE=1`
+
+Only the diagnostic job runs. It pins OpenPMIx `ef46a45d` and PRRTE `f684f116`
+and selects only `PMIxPythonChildTimeoutTest`. Normal mode preserves allowlisted
+runner startup settings (including Conda/Lmod); clean mode clears those settings
+and submits the test with `--export=NIL`. Both use the same Python/ReFrame
+installation and unchanged test assertions and five-minute Slurm execution limit.
+Site initialization is marked with UTC phase timestamps in each job's output.
+
+The modes run serially with separate builds and two-node allocations, so node
+and load differences remain possible. Results establish a diagnostic comparison,
+not a full-suite pass or proof that a single environment variable caused a failure.
+No checkpoint, persistent PRRTE pin, or upstream status is changed.
+
+Download `environment-comparison.json` and the `comparisons/normal/` and
+`comparisons/clean/` reports, console, job scripts, stderr, and controller logs
+from the diagnostic artifacts. A failed first mode does not skip the second.
+A red diagnostic job can still contain both completed comparisons; inspect the
+JSON for each mode. If the CI runner kills the overall job, a partial comparison
+is retained where available. Existing scoped Slurm cleanup covers the active
+`.ci-work/<job>/reframe/stage` tree; completed modes are moved aside afterward.

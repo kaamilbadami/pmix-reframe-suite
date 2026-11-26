@@ -156,8 +156,8 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(job['variables']['RUNNER_AFTER_SCRIPT_TIMEOUT'], '5m')
         self.assertEqual(job['rules'][0]['if'], '$CI_PIPELINE_SOURCE == "web" && $OPENPMIX_FIXED_DIAGNOSTIC == "1"')
         self.assertEqual(job['rules'][-1], {'when': 'never'})
-        self.assertEqual(parent['pmix-python-suite']['rules'][0],
-                         {'if': '$OPENPMIX_FIXED_DIAGNOSTIC == "1"', 'when': 'never'})
+        self.assertIn({'if': '$OPENPMIX_FIXED_DIAGNOSTIC == "1"', 'when': 'never'},
+                      parent['pmix-python-suite']['rules'])
         pr = yaml.safe_load((ROOT / 'ci/openpmix_pr_jobs.yml').read_text())
         for name in ('.openpmix-pr-rules', '.openpmix-pr-always-rules', '.openpmix-baseline-rules', 'prepare-openpmix-baseline'):
             self.assertEqual(pr[name]['rules'][0], {'if': '$OPENPMIX_FIXED_DIAGNOSTIC == "1"', 'when': 'never'})

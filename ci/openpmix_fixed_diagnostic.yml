@@ -19,7 +19,7 @@ run-openpmix-fixed-diagnostic:
     - /bin/bash ci/run_openpmix_fixed_diagnostic.sh
   after_script:
     - python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect cleanup errors'
-    - python3 ci/openpmix_fixed_diagnostic.py record
+    - if [ "${OPENPMIX_ENV_COMPARE:-0}" != "1" ]; then python3 ci/openpmix_fixed_diagnostic.py record; fi
   artifacts:
     when: always
     expire_in: 14 days
@@ -36,4 +36,18 @@ run-openpmix-fixed-diagnostic:
       - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_build.err
       - .ci-work/$CI_JOB_ID/reframe/stage/**/prrte-source.env
       - .ci-work/$CI_JOB_ID/reframe/stage/**/prte-*node.log
+      - .ci-work/$CI_JOB_ID/environment-comparison.json
+      - .ci-work/$CI_JOB_ID/comparisons/*/config.yaml
+      - .ci-work/$CI_JOB_ID/comparisons/*/startup-settings.json
+      - .ci-work/$CI_JOB_ID/comparisons/*/reframe/run-report.json
+      - .ci-work/$CI_JOB_ID/comparisons/*/reframe/run-console.log
+      - .ci-work/$CI_JOB_ID/comparisons/*/reframe/stage/**/rfm_job.*
+      - .ci-work/$CI_JOB_ID/comparisons/*/reframe/stage/**/rfm_build.*
+      - .ci-work/$CI_JOB_ID/comparisons/*/reframe/stage/**/prrte-source.env
+      - .ci-work/$CI_JOB_ID/comparisons/*/reframe/stage/**/*.prte.stdout
+      - .ci-work/$CI_JOB_ID/comparisons/*/reframe/stage/**/*.prte.stderr
+      - .ci-work/$CI_JOB_ID/comparisons/*/reframe/stage/**/child_timeout.out*
+      - .ci-work/$CI_JOB_ID/reframe/run-console.log
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.stdout
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.stderr
       - ci-results/slurm-cleanup-$CI_JOB_ID.json
