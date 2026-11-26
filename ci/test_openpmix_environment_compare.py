@@ -25,7 +25,7 @@ class EnvironmentComparisonTests(unittest.TestCase):
                            PATH='/normal/bin:/usr/bin:/bin', HOME='/normal/home',
                            BASH_ENV='/site/lmod', CONDA_PREFIX='/miniforge',
                            LMOD_CMD='/site/lmod/libexec/lmod', LMOD_DIR='/site/lmod/libexec',
-                           MODULEPATH='/site/modules',
+                           MODULEPATH='/site/modules', LD_LIBRARY_PATH='/site/libfabric/lib64',
                            CI_JOB_TOKEN='secret', CUSTOM_SECRET='secret')
 
     def test_environment_preserves_startup_settings_only_in_normal_case(self):
@@ -38,6 +38,7 @@ class EnvironmentComparisonTests(unittest.TestCase):
         self.assertEqual(clean['MODULEPATH'], self.source['MODULEPATH'])
         for env in (normal, clean):
             self.assertEqual(env['TMPDIR'], '/tmp')
+            self.assertEqual(env['LD_LIBRARY_PATH'], '/site/libfabric/lib64')
             self.assertNotIn('CI_JOB_TOKEN', env)
             self.assertNotIn('CUSTOM_SECRET', env)
             self.assertEqual(env['PMIX_COMMIT'], diagnostic.PMIX_SHA)

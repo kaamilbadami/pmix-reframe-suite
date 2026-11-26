@@ -391,7 +391,9 @@ on `fix/scheduled-batch-lifecycle` with both variables:
 Only the diagnostic job runs. It pins OpenPMIx `ef46a45d` and PRRTE `f684f116`
 and selects only `PMIxPythonChildTimeoutTest`. Normal mode preserves allowlisted
 runner startup settings (including Conda/Lmod); clean mode removes Conda and
-BASH_ENV while retaining the login-side Lmod paths required by ReFrame. It
+BASH_ENV while retaining the login-side Lmod paths required by ReFrame and the site runtime library paths needed by
+PMIx/MPI (including libfabric). The generated test embeds those library paths
+in both modes. The clean mode
 submits the test with `--export=NIL` so the compute job initializes its own
 site environment. Both modes set `TMPDIR=/tmp` after site initialization to
 keep PMIx socket paths short. Both use the same Python/ReFrame

@@ -36,7 +36,9 @@ def environment(source, root, mode):
                TMPDIR='/tmp')
     # ReFrame's login-side module backend must remain usable. Slurm NIL still
     # removes this inherited state from the clean compute-node allocation.
-    for key in ('LMOD_CMD', 'LMOD_DIR', 'MODULEPATH'):
+    # The test embeds LD_LIBRARY_PATH at generation time; preserve required
+    # site runtime libraries (including libfabric) in both modes.
+    for key in ('LMOD_CMD', 'LMOD_DIR', 'MODULEPATH', 'LD_LIBRARY_PATH'):
         if key in source:
             env[key] = source[key]
     if mode == 'normal':
