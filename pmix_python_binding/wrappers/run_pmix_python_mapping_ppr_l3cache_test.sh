@@ -268,7 +268,7 @@ do
 
 
     # Start PRRTE on only the selected hosts.
-    "$PRRTE/bin/prte" \
+    "$PRRTE/bin/prte" --debug-daemons --leave-session-attached --prtemca plm_base_verbose 10 \
         --host "$PRRTE_HOSTS" \
         --report-uri dvm.uri \
         > "$LOG_FILE" 2>&1 &

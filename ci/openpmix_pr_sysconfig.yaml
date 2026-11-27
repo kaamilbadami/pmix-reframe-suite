@@ -15,12 +15,17 @@ systems:
     - |
       # Site initialization probes optional variables and command status.
       # Match the isolated launcher: relax only while sourcing site scripts.
+      printf 'PMIX_PHASE %s site-init-start\n' "$(date -u +%FT%TZ)" | tee -a runtime-phases.log
+      for pmix_diag_key in BASH_ENV CONDA_PREFIX CONDA_SHLVL LOADEDMODULES LD_LIBRARY_PATH TMPDIR SLURM_JOB_ID SLURM_JOB_NODELIST; do
+          printf '%s=%s\n' "$pmix_diag_key" "${!pmix_diag_key-}"
+      done > runtime-site-environment.log
       set +eu
       . /etc/profile.d/olcf-env.sh
       olcf_init_status=$?
       . /etc/bash.bashrc.local
       cray_pe_init_status=$?
       set -euo pipefail
+      printf 'PMIX_PHASE %s site-init-finished\n' "$(date -u +%FT%TZ)" | tee -a runtime-phases.log
       if (( olcf_init_status != 0 || cray_pe_init_status != 0 )); then
           printf '%s\n' 'error: Frontier system module initialization failed' >&2
           exit 2

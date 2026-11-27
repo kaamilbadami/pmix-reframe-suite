@@ -124,7 +124,7 @@ fi
 
 # Keep daemon and srun stderr attached for the explicit diagnostic.
 PRTE_DEBUG_ARGS=()
-case ${PMIX_PRRTE_DAEMON_DEBUG:-0} in
+case ${PMIX_PRRTE_DAEMON_DEBUG:-1} in
     0) ;;
     1) PRTE_DEBUG_ARGS=(--debug-daemons --leave-session-attached --prtemca plm_base_verbose 10) ;;
     *) printf '%s\n' 'PMIX_PRRTE_DAEMON_DEBUG must be 0 or 1' >&2; exit 2 ;;

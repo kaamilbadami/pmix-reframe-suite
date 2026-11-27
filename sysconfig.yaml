@@ -15,7 +15,10 @@ systems:
     # ReFrame emits any environment module commands. This is required by
     # trusted jobs that deliberately use `sbatch --export=NIL`.
     prepare_cmds:
+    - 'printf "PMIX_PHASE %s site-init-start\n" "$(date -u +%FT%TZ)" | tee -a runtime-phases.log'
+    - 'for pmix_diag_key in BASH_ENV CONDA_PREFIX CONDA_SHLVL LOADEDMODULES LD_LIBRARY_PATH TMPDIR SLURM_JOB_ID SLURM_JOB_NODELIST; do printf "%s=%s\n" "$pmix_diag_key" "${!pmix_diag_key-}"; done > runtime-site-environment.log'
     - '. /etc/profile.d/olcf-env.sh && . /etc/bash.bashrc.local'
+    - 'printf "PMIX_PHASE %s site-init-finished\n" "$(date -u +%FT%TZ)" | tee -a runtime-phases.log'
     environs: ['pmix_test']
 
 environments:

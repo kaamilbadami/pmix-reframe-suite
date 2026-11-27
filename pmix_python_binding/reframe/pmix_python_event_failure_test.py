@@ -16,6 +16,7 @@ from reframe.core.builtins import fixture, run_before, sanity_function
 from libevent_build_class import build_libevent
 from pmix_build_class import build_pmix
 from prrte_build_class import build_prrte
+from pmix_python_binding.common.reframe_diagnostics import instrument_test
 
 
 PYTHON = os.environ.get(
@@ -114,6 +115,7 @@ class PMIxPythonEventFailurePropagationTest(rfm.RunOnlyRegressionTest):
             'LIBEVENT': self.libevent.stagedir,
             'CI_HOSTFILE': f'{self.stagedir}/ci.hostfile'
         }
+        instrument_test(self)
 
     @sanity_function
     def validate_failure_propagation(self):

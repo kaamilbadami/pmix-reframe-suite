@@ -10,9 +10,31 @@ import threading
 import time
 
 
+def _startup_process_evidence(process, path):
+    """Capture the live local PRRTE session before cleanup, without argv/env."""
+    try:
+        result = subprocess.run(
+            ['ps', '--sid', str(process.pid), '-o', 'pid,ppid,stat,etimes,wchan:32,comm'],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True, timeout=3)
+        path.write_text('captured_at=' + datetime.now(timezone.utc).isoformat() +
+                        '\nLocal PRRTE session only; remote daemon stderr is in .prte.stderr.\n' +
+                        result.stdout + result.stderr)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        # Evidence collection must never replace the original startup failure.
+        print('PRRTE process snapshot unavailable: {}'.format(error), flush=True)
+
+
 def start_prrte(command, log_prefix, timeout=120.0):
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("PRRTE startup timeout must be finite and positive")
+    command = list(command)
+    if Path(command[0]).name == 'prte' and '--debug-daemons' not in command:
+        # Keep remote-daemon launch diagnostics in the existing captured streams.
+        command[1:1] = ['--debug-daemons', '--leave-session-attached',
+                        '--prtemca', 'plm_base_verbose', '10']
+    print('PRRTE START: timestamp={} timeout={}s'.format(
+        datetime.now(timezone.utc).isoformat(), timeout), flush=True)
     stdout_path = Path(str(log_prefix) + ".prte.stdout")
     stderr_path = Path(str(log_prefix) + ".prte.stderr")
     # Observe readiness on a pipe rather than by rereading a shared log file.
@@ -81,6 +103,7 @@ def start_prrte(command, log_prefix, timeout=120.0):
             process.stdout.close()
             stdout.close()
         raise
+    _startup_process_evidence(process, Path(str(log_prefix) + '.prte.processes.log'))
     _stop_process_group(process)
     reader.join(timeout=2)
     diagnostics = []

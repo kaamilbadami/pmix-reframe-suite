@@ -303,7 +303,7 @@ frontier_init = (
     ". /etc/profile.d/olcf-env.sh && . /etc/bash.bashrc.local"
 )
 check(
-    frontier_partitions[0].get("prepare_cmds") == [frontier_init],
+    frontier_init in frontier_partitions[0].get("prepare_cmds", []),
     "Frontier batch preparation does not use the trusted system initializer",
 )
 passed("Frontier system initialization is configured before ReFrame module loading")

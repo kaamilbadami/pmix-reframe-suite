@@ -80,6 +80,7 @@ validate-openpmix-baseline:
       - ci-openpmix-pr-execution/result.env
       - ci-openpmix-pr-execution/evidence/
       - ci-openpmix-pr-execution/reframe/run-report.json
+      - ci-openpmix-pr-execution/reframe/slurm-accounting.json
       - ci-openpmix-pr-execution/reframe/output/
       - ci-openpmix-pr-execution/reframe/perflogs/
       - ci-openpmix-pr-execution/reframe/stage/single-allocation-*/
@@ -87,10 +88,14 @@ validate-openpmix-baseline:
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.sh
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_job.out
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_job.err
+      - ci-openpmix-pr-execution/reframe/stage/**/runtime-*.json
+      - ci-openpmix-pr-execution/reframe/stage/**/runtime-*.log
+      - ci-openpmix-pr-execution/reframe/stage/**/*.prte.processes.log
       - ci-openpmix-pr-execution/reframe/stage/**/*.prte.stdout
       - ci-openpmix-pr-execution/reframe/stage/**/*.prte.stderr
       - ci-openpmix-pr-execution/reframe/stage/**/*.dvm_output
       - ci-openpmix-pr-execution/reframe/stage/**/prte-*node.log
+      - ci-openpmix-pr-execution/reframe/stage/**/prte-*.log
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.out
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.err
       - ci-openpmix-pr-execution/reframe/stage/**/PMIX_COMMIT
@@ -196,15 +201,20 @@ run-openpmix-pr:
       - ci-openpmix-pr-execution/result.env
       - ci-openpmix-pr-execution/evidence/
       - ci-openpmix-pr-execution/reframe/run-report.json
+      - ci-openpmix-pr-execution/reframe/slurm-accounting.json
       - ci-openpmix-pr-execution/reframe/output/
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_job.sh
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.sh
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_job.out
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_job.err
+      - ci-openpmix-pr-execution/reframe/stage/**/runtime-*.json
+      - ci-openpmix-pr-execution/reframe/stage/**/runtime-*.log
+      - ci-openpmix-pr-execution/reframe/stage/**/*.prte.processes.log
       - ci-openpmix-pr-execution/reframe/stage/**/*.prte.stdout
       - ci-openpmix-pr-execution/reframe/stage/**/*.prte.stderr
       - ci-openpmix-pr-execution/reframe/stage/**/*.dvm_output
       - ci-openpmix-pr-execution/reframe/stage/**/prte-*node.log
+      - ci-openpmix-pr-execution/reframe/stage/**/prte-*.log
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.out
       - ci-openpmix-pr-execution/reframe/stage/**/rfm_build.err
       - ci-openpmix-pr-execution/reframe/stage/**/PMIX_COMMIT

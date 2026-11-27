@@ -356,7 +356,7 @@ for sha in (lower_sha, upper_sha, third_sha):
         "timeout": "6h",
         "variables": {"PMIX_COMMIT": sha, "RUNNER_SCRIPT_TIMEOUT": "5h45m", "RUNNER_AFTER_SCRIPT_TIMEOUT": "5m"},
         "script": [expected_script],
-        "after_script": ["python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect Slurm cleanup errors above'", 'python3 ci/pmix_result_summary.py record --output ci-results || echo "WARNING - runtime summary unavailable"', "bash ci/write_pmix_commit_result.sh ci-results"],
+        "after_script": ["python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect Slurm cleanup errors above'", 'python3 ci/collect_pmix_runtime_evidence.py --root "$CI_PROJECT_DIR/.ci-work/$CI_JOB_ID/reframe" || echo \'WARNING - Slurm runtime evidence unavailable\'', 'python3 ci/pmix_result_summary.py record --output ci-results || echo "WARNING - runtime summary unavailable"', "bash ci/write_pmix_commit_result.sh ci-results"],
         "artifacts": {
             "when": "always",
             "expire_in": "14 days",
@@ -365,6 +365,10 @@ for sha in (lower_sha, upper_sha, third_sha):
                 f"ci-results/{sha.lower()}.summary.json",
                 ".ci-work/$CI_JOB_ID/reframe/run-report.json",
                 ".ci-work/$CI_JOB_ID/reframe/run-console.log",
+                ".ci-work/$CI_JOB_ID/reframe/slurm-accounting.json",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/runtime-*.json",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/runtime-*.log",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.processes.log",
                 "ci-results/slurm-cleanup-$CI_JOB_ID.json",
                 ".ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.sh",
                 ".ci-work/$CI_JOB_ID/reframe/stage/**/PMIxPython*/rfm_job.out",
@@ -373,6 +377,7 @@ for sha in (lower_sha, upper_sha, third_sha):
                 ".ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.stderr",
                 ".ci-work/$CI_JOB_ID/reframe/stage/**/*.dvm_output",
                 ".ci-work/$CI_JOB_ID/reframe/stage/**/prte-*node.log",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/prte-*.log",
                 ".ci-work/$CI_JOB_ID/reframe/output/",
                 ".ci-work/$CI_JOB_ID/reframe/perflogs/",
                 ".ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/"

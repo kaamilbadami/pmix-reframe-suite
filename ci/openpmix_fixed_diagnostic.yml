@@ -19,6 +19,7 @@ run-openpmix-fixed-diagnostic:
     - /bin/bash ci/run_openpmix_fixed_diagnostic.sh
   after_script:
     - python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect cleanup errors'
+    - python3 ci/collect_pmix_runtime_evidence.py --root "$CI_PROJECT_DIR/.ci-work/$CI_JOB_ID" || echo 'WARNING - Slurm runtime evidence unavailable'
     - if [ "${OPENPMIX_ENV_COMPARE:-0}" != "1" ]; then python3 ci/openpmix_fixed_diagnostic.py record; fi
   artifacts:
     when: always
@@ -28,20 +29,30 @@ run-openpmix-fixed-diagnostic:
       - .ci-work/$CI_JOB_ID/source-selection.json
       - .ci-work/$CI_JOB_ID/diagnostic.log
       - .ci-work/$CI_JOB_ID/reframe/run-report.json
+      - .ci-work/$CI_JOB_ID/reframe/slurm-accounting.json
       - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.sh
       - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.out
       - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.err
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/runtime-*.json
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/runtime-*.log
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.processes.log
       - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_build.sh
       - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_build.out
       - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_build.err
       - .ci-work/$CI_JOB_ID/reframe/stage/**/prrte-source.env
       - .ci-work/$CI_JOB_ID/reframe/stage/**/prte-*node.log
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/prte-*.log
+      - .ci-work/$CI_JOB_ID/slurm-accounting.json
       - .ci-work/$CI_JOB_ID/environment-comparison.json
       - .ci-work/$CI_JOB_ID/comparisons/*/config.yaml
       - .ci-work/$CI_JOB_ID/comparisons/*/startup-settings.json
       - .ci-work/$CI_JOB_ID/comparisons/*/reframe/run-report.json
+      - .ci-work/$CI_JOB_ID/comparisons/*/reframe/slurm-accounting.json
       - .ci-work/$CI_JOB_ID/comparisons/*/reframe/run-console.log
       - .ci-work/$CI_JOB_ID/comparisons/*/reframe/stage/**/rfm_job.*
+      - .ci-work/$CI_JOB_ID/comparisons/*/reframe/stage/**/runtime-*.json
+      - .ci-work/$CI_JOB_ID/comparisons/*/reframe/stage/**/runtime-*.log
+      - .ci-work/$CI_JOB_ID/comparisons/*/reframe/stage/**/*.prte.processes.log
       - .ci-work/$CI_JOB_ID/comparisons/*/reframe/stage/**/rfm_build.*
       - .ci-work/$CI_JOB_ID/comparisons/*/reframe/stage/**/prrte-source.env
       - .ci-work/$CI_JOB_ID/comparisons/*/reframe/stage/**/*.prte.stdout

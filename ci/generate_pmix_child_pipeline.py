@@ -64,6 +64,7 @@ pmix-__SHA__:
       bash ci/run_exact_pmix_commit.sh
   after_script:
     - python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect Slurm cleanup errors above'
+    - python3 ci/collect_pmix_runtime_evidence.py --root "$CI_PROJECT_DIR/.ci-work/$CI_JOB_ID/reframe" || echo 'WARNING - Slurm runtime evidence unavailable'
     - python3 ci/pmix_result_summary.py record --output ci-results || echo "WARNING - runtime summary unavailable"
     - bash ci/write_pmix_commit_result.sh ci-results
   artifacts:
@@ -74,6 +75,10 @@ pmix-__SHA__:
       - ci-results/__RESULT_SHA__.summary.json
       - .ci-work/$CI_JOB_ID/reframe/run-report.json
       - .ci-work/$CI_JOB_ID/reframe/run-console.log
+      - .ci-work/$CI_JOB_ID/reframe/slurm-accounting.json
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/runtime-*.json
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/runtime-*.log
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.processes.log
       - ci-results/slurm-cleanup-$CI_JOB_ID.json
       - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.sh
       - .ci-work/$CI_JOB_ID/reframe/stage/**/PMIxPython*/rfm_job.out
@@ -82,6 +87,7 @@ pmix-__SHA__:
       - .ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.stderr
       - .ci-work/$CI_JOB_ID/reframe/stage/**/*.dvm_output
       - .ci-work/$CI_JOB_ID/reframe/stage/**/prte-*node.log
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/prte-*.log
       - .ci-work/$CI_JOB_ID/reframe/output/
       - .ci-work/$CI_JOB_ID/reframe/perflogs/
       - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env
@@ -109,6 +115,7 @@ pmix-__SHA__:
       exit 1
   after_script:
     - python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect Slurm cleanup errors above'
+    - python3 ci/collect_pmix_runtime_evidence.py --root "$CI_PROJECT_DIR/.ci-work/$CI_JOB_ID/reframe" || echo 'WARNING - Slurm runtime evidence unavailable'
     - python3 ci/pmix_result_summary.py record --output ci-results || echo "WARNING - runtime summary unavailable"
     - bash ci/write_pmix_commit_result.sh ci-results
   artifacts:
@@ -119,6 +126,10 @@ pmix-__SHA__:
       - ci-results/__RESULT_SHA__.summary.json
       - .ci-work/$CI_JOB_ID/reframe/run-report.json
       - .ci-work/$CI_JOB_ID/reframe/run-console.log
+      - .ci-work/$CI_JOB_ID/reframe/slurm-accounting.json
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/runtime-*.json
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/runtime-*.log
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.processes.log
       - ci-results/slurm-cleanup-$CI_JOB_ID.json
       - .ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.sh
       - .ci-work/$CI_JOB_ID/reframe/stage/**/PMIxPython*/rfm_job.out
@@ -127,6 +138,7 @@ pmix-__SHA__:
       - .ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.stderr
       - .ci-work/$CI_JOB_ID/reframe/stage/**/*.dvm_output
       - .ci-work/$CI_JOB_ID/reframe/stage/**/prte-*node.log
+      - .ci-work/$CI_JOB_ID/reframe/stage/**/prte-*.log
       - .ci-work/$CI_JOB_ID/reframe/output/
       - .ci-work/$CI_JOB_ID/reframe/perflogs/
       - .ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/fetch_prrte_*/prrte-source.env
@@ -176,6 +188,7 @@ pmix-__SHA__:
   script:
     - /bin/bash ci/run_pmix_scheduled_allocation.sh
   after_script:
+    - python3 ci/collect_pmix_runtime_evidence.py --root "$CI_PROJECT_DIR/.ci-work/$CI_JOB_ID/reframe" || echo 'WARNING - Slurm runtime evidence unavailable'
     - /lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python ci/pmix_scheduled_sources.py accounting || echo "WARNING - allocation accounting unavailable"
     - /lustre/orion/gen243/proj-shared/pmix-reframe-ci-tools/pmix-py310/bin/python ci/pmix_result_summary.py record --output ci-results || echo "WARNING - runtime summary unavailable"
     - bash ci/write_pmix_commit_result.sh ci-results

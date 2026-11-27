@@ -36,7 +36,11 @@ class PRRTEStartupTests(unittest.TestCase):
         started = time.monotonic()
         with self.assertRaisesRegex(RuntimeError, "PRRTE STARTUP TIMEOUT"):
             self.start("import time; time.sleep(30)", timeout=0.2)
-        self.assertLess(time.monotonic() - started, 3)
+        self.assertLess(time.monotonic() - started, 4)
+        evidence = Path(str(self.prefix) + '.prte.processes.log').read_text()
+        self.assertIn('captured_at=', evidence)
+        self.assertIn('Local PRRTE session only', evidence)
+        self.assertIn('python', evidence)
 
     def test_readiness_does_not_reopen_log_and_records_receive_time(self):
         original_open = Path.open

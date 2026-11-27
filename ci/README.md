@@ -412,3 +412,36 @@ A red diagnostic job can still contain both completed comparisons; inspect the
 JSON for each mode. If the CI runner kills the overall job, a partial comparison
 is retained where available. Existing scoped Slurm cleanup covers the active
 `.ci-work/<job>/reframe/stage` tree; completed modes are moved aside afterward.
+
+
+### Evidence retained by normal runtime checks
+
+All 11 PMIx Python checks now retain the following evidence automatically:
+
+- `runtime-phases.log`: UTC markers before/after site initialization, each
+  preparation command, compilation, controller entry, and shell exit status.
+- `runtime-site-environment.log` and `runtime-environment.json`: selected module,
+  Conda, library, Python, temporary-directory and allocation settings before and
+  after initialization. These are allowlists, not full environment dumps.
+- `runtime-processes.log`: local batch-shell descendants every 30 seconds,
+  bounded to 30 minutes. It records names, IDs, states and wait channels, without
+  command arguments or process environments. It does not inspect remote nodes.
+- `*.prte.processes.log`: a live local PRRTE-session snapshot before startup
+  failure cleanup. Attached daemon debug output goes into the existing PRRTE
+  stdout/stderr or `prte-*.log` artifacts, including remote launch errors.
+- `l3_topology_*.progress`: L3 child markers around individual sysfs reads,
+  scan/sort completion and proof publication, plus controller spawn markers.
+- `reframe/slurm-accounting.json`: exact test job IDs and Slurm state, exit code,
+  elapsed time, limit, nodes, reason and submit/start/end times. The suite collects
+  this on exit; scheduled CI also collects it after scoped cleanup, including
+  when the main script did not write a final ReFrame report. Accounting can lag;
+  missing records are explicitly unavailable evidence.
+
+The watcher stops at shell exit, and existing PR runtime-directory cleanup and
+failure exit codes are preserved. Assertions, execution limits, dependency pins,
+checkpoint policy and retries are unchanged. A hard kill before the shell's
+first command can still leave no phase/environment evidence, and these logs do
+not guarantee that every intermittent failure's cause will be apparent.
+
+Validation here uses simulated failures, accounting responses, and a ReFrame
+4.10 dry run. A new normal full-suite Frontier run is required for live evidence.

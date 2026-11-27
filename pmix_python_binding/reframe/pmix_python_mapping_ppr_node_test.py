@@ -22,6 +22,7 @@ from reframe.core.builtins import (
 from libevent_build_class import build_libevent
 from pmix_build_class import build_pmix
 from prrte_build_class import build_prrte
+from pmix_python_binding.common.reframe_diagnostics import instrument_test
 
 
 # ReFrame test for PMIx Python PPR node mapping.
@@ -125,6 +126,7 @@ class PMIxPythonMappingPPRNodeTest(rfm.RunOnlyRegressionTest):
             'PMIX_PRRTE_DAEMON_DEBUG': str(self.prrte_daemon_debug),
             'SLOTS_PER_NODE': str(self.slots_per_node)
         }
+        instrument_test(self)
 
     # Pass only after every requested mapping test succeeds.
     @sanity_function

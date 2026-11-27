@@ -152,6 +152,17 @@ if [[ -n ${PMIX_RFM_PREFIX:-} ]]; then
     mkdir -p -- "$PMIX_RFM_PREFIX"
     export PMIX_RFM_REPORT_FILE="${PMIX_RFM_REPORT_FILE:-$PMIX_RFM_PREFIX/run-report.json}"
 fi
+# Preserve the test status; accounting is best-effort and read-only.
+collect_runtime_evidence() {
+    pmix_suite_rc=$?
+    trap - EXIT
+    if [[ -n ${PMIX_RFM_PREFIX:-} ]]; then
+        "$PMIX_PYTHON" "$script_dir/collect_pmix_runtime_evidence.py" \
+            --root "$PMIX_RFM_PREFIX" || printf '%s\n' 'WARNING - Slurm runtime evidence unavailable' >&2
+    fi
+    exit "$pmix_suite_rc"
+}
+trap collect_runtime_evidence EXIT
 rfm_report=()
 rfm_policy=()
 case ${PMIX_RFM_EXEC_POLICY:-} in
