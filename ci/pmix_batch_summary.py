@@ -237,34 +237,51 @@ def batch_summary(collection, baseline, commits_file, suite, output,
     if status == 'no_new_commits' and last_commit and last_commit['commit'] == baseline_commit:
         upstream_time = datetime.strptime(last_commit['committed_at'], '%Y-%m-%d %H:%M:%S UTC').replace(tzinfo=timezone.utc).isoformat()
         labels['no_new_commits'] = 'No new commits to test since {}.'.format(eastern_time(upstream_time))
-    rows = [('Status', labels[status]), ('Last known good commit', saved),
-            ('Last known good recorded', eastern_time(good_at)),
-            ('Time since last known good', age_text(good_age)),
-            ('Report generated', eastern_time(now.isoformat()))]
-    if tested_batch:
-        rows += [('Latest batch that tested commits', tested_batch['pipeline_url']),
-                 ('Commits tested in that batch', str(tested_batch['commits_tested'])),
-                 ('Latest test finished in that batch', eastern_time(tested_batch.get('finished_at')))]
-    else:
-        rows.append(('Latest batch that tested commits', 'Not recorded yet.'))
+    def count_label(values, count):
+        if values and values.get('passed') == count and not values.get('failed') and not values.get('incomplete'):
+            return '{} commit{} passed'.format(count, '' if count == 1 else 's')
+        if values:
+            return '{passed} passed / {failed} failed / {incomplete} incomplete'.format(**values)
+        return '{} commits with runtime results'.format(count)
+
+    result_label = labels[status]
+    if status == 'complete':
+        result_label = count_label(totals, len(commits))
+        if len(commits) > 1:
+            result_label = 'All ' + result_label
+    rows = [('Result', result_label)]
+    if commits and (totals['failed'] or totals['incomplete']):
+        rows.append(('Commits', count_label(totals, len(commits))))
+    if commits:
+        has_runtime = any(item['attempt'] and
+                          item['attempt']['checks']['passed'] + item['attempt']['checks']['failed'] > 0
+                          for item in items)
+        rows.append(('Tests finished' if has_runtime else 'Attempt finished',
+                     eastern_time(latest['tested_at']) if latest else 'Unknown'))
+        if index.get('pipeline_url'):
+            rows.append(('Pipeline', index['pipeline_url']))
     if first:
         rows += [('First blocker', first['commit']), ('Reason', first['reason'])]
-    if commits:
-        rows.append(('Commits tested', '{passed} passed / {failed} failed / {incomplete} incomplete'.format(**totals)))
-        rows.append(('Latest test time', eastern_time(latest['tested_at']) if latest else 'Unknown'))
     text = 'OpenPMIx testing status\n\n' + '\n'.join(
         '{}: {}'.format(key, value) for key, value in rows) + '\n'
     if not commits:
-        text += '\nNo tests ran during this check.'
-        if update == 'unchanged':
-            text += ' The last-known-good commit is unchanged.'
-        text += '\n'
+        text += '\nNo tests ran during this check.\n'
+    # Current results already identify this pipeline. Show retained history only
+    # for no-work runs or when it points to a different batch.
+    if tested_batch and (not commits or tested_batch['pipeline_url'] != index.get('pipeline_url')):
+        text += '\nMost recent tested batch: {}\nTests finished: {}\nPipeline: {}\n'.format(
+            count_label(tested_batch.get('commit_counts'), tested_batch['commits_tested']),
+            eastern_time(tested_batch.get('finished_at')), tested_batch['pipeline_url'])
+    elif not tested_batch and not commits:
+        text += '\nMost recent tested batch: Not recorded yet.\n'
+    recorded = eastern_time(good_at)
+    if good_age is not None:
+        recorded += ' ({})'.format(age_text(good_age))
+    text += '\nLast known good commit:\n{}\nCheckpoint saved: {}\n'.format(saved, recorded)
     if first and any(item['category'] == 'passed' for item in items[prefix + 1:]):
         text += '\nLater passing commits do not advance the last-known-good commit past this blocker.\n'
     if update == 'pending':
         text += '\nPreliminary report: this is not a confirmed saved update. Check the Apply job for the final report.\n'
-    if index.get('pipeline_url'):
-        text += '\nBatch pipeline (all commit jobs): {}\n'.format(index['pipeline_url'])
     affected = [item for item in items if item['category'] != 'passed']
     if affected:
         text += '\nFailed or incomplete commits\n'
@@ -284,7 +301,7 @@ def batch_summary(collection, baseline, commits_file, suite, output,
             details.append(('Test job for this commit', job_url or 'Unavailable'))
             text += '\nCommit: {}\n'.format(item['commit']) + '\n'.join(
                 '{}: {}'.format(key, value) for key, value in details) + '\n'
-    text += '\nLast-known-good time is the saved success/checkpoint record time, not the upstream commit date.\nAges are measured when this report was generated.\n'
+    text += '\nReport generated: {}\n'.format(eastern_time(now.isoformat()))
     write_text_report(output, text)
     return data
 

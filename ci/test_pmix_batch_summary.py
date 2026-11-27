@@ -84,8 +84,9 @@ class BatchSummaryTests(unittest.TestCase):
         self.assertEqual(record.read_bytes(), original)
         self.assertEqual(self.baseline.read_bytes(), before)
         text = (self.output / 'latest-summary.txt').read_text()
-        self.assertIn('Latest batch that tested commits: https://gitlab.example/project/-/pipelines/20', text)
-        self.assertIn('Latest test finished in that batch: 11/13/26 7:00 AM EST', text)
+        self.assertIn('Pipeline: https://gitlab.example/project/-/pipelines/20', text)
+        self.assertIn('Most recent tested batch: 3 commits passed', text)
+        self.assertIn('Tests finished: 11/13/26 7:00 AM EST', text)
         self.assertIn('No tests ran during this check.', text)
 
     def test_failed_runtime_tests_count_even_if_checkpoint_apply_fails(self):
@@ -185,8 +186,8 @@ class BatchSummaryTests(unittest.TestCase):
         data = batch_summary(self.collection, self.baseline, self.commits, SUITE,
                              self.output, saved, 0, now=now)
         text = (self.output / 'latest-summary.txt').read_text()
-        self.assertIn('Last known good recorded: 11/24/26 12:52 PM EST', text)
-        self.assertIn('Time since last known good: 2 days, 8 minutes ago', text)
+        self.assertIn('Checkpoint saved: 11/24/26 12:52 PM EST', text)
+        self.assertIn('(2 days, 8 minutes ago)', text)
         self.assertEqual(data['last_known_good_age_seconds'], 173280)
         self.assertEqual(data['generated_at'], now.isoformat())
         self.assertEqual(text, (self.output / 'latest-summary.md').read_text())
@@ -252,10 +253,25 @@ class BatchSummaryTests(unittest.TestCase):
         self.assertNotIn('PRRTE revision', text)
         self.assertNotIn('Runtime checks for this commit', text)
         self.assertNotIn('Test job for this commit', text)
-        self.assertIn('Batch pipeline (all commit jobs)', text)
-        self.assertIn('Latest test time: 11/13/26 7:00 AM EST', text)
+        self.assertIn('Pipeline: https://gitlab.example/project/-/pipelines/20', text)
+        self.assertIn('Tests finished: 11/13/26 7:00 AM EST', text)
         self.assertEqual([item['attempt']['checks']['passed'] for item in data['items']], [11, 11, 11])
         self.assertEqual(data['boundary_attempt']['tested_at'], '2026-11-13T12:00:00+00:00')
+
+    def test_current_passing_batch_has_one_result_time_and_link(self):
+        for sha in (A, B, C):
+            self.result(sha, 'success')
+        saved = self.root / 'saved.env'
+        self.state(saved, C)
+        self.render(saved, 0)
+        text = (self.output / 'latest-summary.txt').read_text()
+        self.assertIn('Result: All 3 commits passed', text)
+        self.assertEqual(text.count('https://gitlab.example/project/-/pipelines/20'), 1)
+        self.assertEqual(text.count('Tests finished:'), 1)
+        self.assertNotIn('Most recent tested batch', text)
+        self.assertNotIn('Commits tested', text)
+        self.assertNotIn('0 failed / 0 incomplete', text)
+        self.assertNotIn('Ages are measured', text)
 
     def test_report_shows_every_failed_or_incomplete_commit(self):
         self.result(A, 'success')
