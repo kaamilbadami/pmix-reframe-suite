@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "prrte_commit": "f684f116a2ae797923364a1274871ad2dd9691f7",
+  "initialized_from": "Previously verified PRRTE master; seed for the existing Frontier installation only",
+  "validated_on": {
+    "pmix_commit": "3b2cedde4d2c796b3a2e99452f9d8d8fc82e2b3b",
+    "suite_commit": "4bd310411f5ce4a2c83470f49f43dded96025a35",
+    "job_id": 256304,
+    "pipeline_id": 173147,
+    "checks": {"passed": 11, "failed": 0, "incomplete": 0}
+  },
+  "history": []
+}

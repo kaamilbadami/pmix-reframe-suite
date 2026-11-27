@@ -442,6 +442,9 @@ try:
         'context="${diag}.context"; '
         'child_stderr="${diag}.stderr"; '
         'status_file="${diag}.status"; '
+        'progress="${diag}.progress"; '
+        'mark() { printf "%s phase=%s file=%s\\n" "${EPOCHREALTIME:-$SECONDS}" "$1" "${2-}" >> "$progress" || :; }; '
+        'mark child-body-start; '
         'printf "shell_pid=%s\n" "$pid" > "$started"; '
         'set +e; '
         'set -o pipefail; '
@@ -505,10 +508,12 @@ try:
         '} > "$context"; '
         '{ '
         'scan_read_status=0; '
+        'mark cache-scan-start; '
         'for level_file in '
         '/sys/devices/system/cpu/cpu[0-9]*/cache/index*/level; '
         'do '
         '    [ -r "$level_file" ] || continue; '
+        '    mark read-level "$level_file"; '
         '    if ! level=$(cat "$level_file"); '
         '    then '
         '        scan_read_status=1; '
@@ -516,11 +521,13 @@ try:
         '    fi; '
         '    [ "$level" = "3" ] || continue; '
         '    cache_dir=${level_file%/level}; '
+        '    mark read-cache-id "$cache_dir/id"; '
         '    if ! cache_id=$(cat "$cache_dir/id"); '
         '    then '
         '        scan_read_status=1; '
         '        continue; '
         '    fi; '
+        '    mark read-shared-cpus "$cache_dir/shared_cpu_list"; '
         '    if ! shared=$(cat "$cache_dir/shared_cpu_list"); '
         '    then '
         '        scan_read_status=1; '
@@ -533,8 +540,10 @@ try:
         '[ "$scan_read_status" -eq 0 ]; '
         '} | sort -u > "$tmp"; '
         'scan_status=$?; '
+        'mark cache-scan-and-sort-finished; '
         'if [ "$scan_status" -eq 0 ]; '
         'then '
+        '    mark proof-rename-start; '
         '    mv "$tmp" "$out"; '
         '    scan_status=$?; '
         'fi; '
@@ -568,11 +577,13 @@ try:
 
     print("topology probe policy: ppr:1:node")
 
+    print('L3_PHASE', time.time(), 'topology-spawn-start', flush=True)
     topology_spawn_result = tool.spawn(
         topology_job_info,
         topology_apps
     )
 
+    print("L3_PHASE", time.time(), "topology-spawn-returned", flush=True)
     print("topology spawn:", topology_spawn_result)
 
     if topology_spawn_result[0] != 0:
@@ -750,6 +761,7 @@ try:
     print("map-by policy:", map_policy)
     print("bind-to policy: core")
 
+    print('L3_PHASE', time.time(), 'mapped-spawn-and-completion-wait-start', flush=True)
     process_spawn_result = spawn_after_topology_completion(
         tool,
         process_job_info,
@@ -766,6 +778,7 @@ try:
         flush=True
     )
 
+    print("L3_PHASE", time.time(), "mapped-spawn-returned", flush=True)
     print("process spawn:", process_spawn_result)
 
     if process_spawn_result[0] != 0:

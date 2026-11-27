@@ -270,7 +270,7 @@ check(report["FIRST_BLOCKED_REASON"] == "malformed", "malformed result misclassi
 check(report["SUCCESSFUL_PREFIX_COUNT"] == "0", "malformed result advanced prefix")
 passed("a malformed result is a blocking result rather than an input crash")
 
-for status in ("canceled", "unknown"):
+for status in ("canceled", "timedout", "unknown"):
     case = Case()
     case.set_commits(commit_b)
     case.result(commit_b, status)

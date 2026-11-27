@@ -195,7 +195,7 @@ do
 
 
     # Start PRRTE on only the selected hosts.
-    "$PRRTE/bin/prte" \
+    "$PRRTE/bin/prte" --debug-daemons --leave-session-attached --prtemca plm_base_verbose 10 \
         --host "$PRRTE_HOSTS" \
         --report-uri dvm.uri \
         > "$LOG_FILE" 2>&1 &
@@ -212,7 +212,11 @@ do
 
 
     # Fail if PRRTE did not become ready.
-    grep -q "DVM ready" "$LOG_FILE"
+    if ! grep -q "DVM ready" "$LOG_FILE"; then
+        printf 'PRRTE failed to become ready; complete startup log follows:\n' >&2
+        cat -- "$LOG_FILE" >&2
+        exit 1
+    fi
 
 
     # Run the PMIx spawn and placement test.

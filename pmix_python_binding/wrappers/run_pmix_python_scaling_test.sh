@@ -70,7 +70,7 @@ rm -f dvm.uri prte-test.log process_*_worked
 
 
 # Start the PRRTE DVM on the current compute node.
-"$PRRTE/bin/prte" \
+"$PRRTE/bin/prte" --debug-daemons --leave-session-attached --prtemca plm_base_verbose 10 \
     --host "$HOSTS" \
     --report-uri dvm.uri \
     > prte-test.log 2>&1 &

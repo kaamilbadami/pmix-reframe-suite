@@ -22,6 +22,7 @@ from reframe.core.builtins import (
 from libevent_build_class import build_libevent
 from pmix_build_class import build_pmix
 from prrte_build_class import build_prrte
+from pmix_python_binding.common.reframe_diagnostics import instrument_test
 
 
 # ReFrame test for PMIx Python PPR node mapping.
@@ -49,6 +50,7 @@ class PMIxPythonMappingPPRNodeTest(rfm.RunOnlyRegressionTest):
     ppr_values = variable(typ.List[int], value=[1])
     trials = variable(int, value=5)
     slots_per_node = variable(int, value=32)
+    prrte_daemon_debug = variable(int, value=0)
 
     # Default resources. The post-init hook recalculates these values.
     num_tasks = 64
@@ -72,6 +74,9 @@ class PMIxPythonMappingPPRNodeTest(rfm.RunOnlyRegressionTest):
             raise ValueError(
                 "ppr_values must contain at least one positive integer"
             )
+
+        if self.prrte_daemon_debug not in (0, 1):
+            raise ValueError('prrte_daemon_debug must be 0 or 1')
 
         if self.slots_per_node < 1:
             raise ValueError("slots_per_node must be positive")
@@ -118,8 +123,10 @@ class PMIxPythonMappingPPRNodeTest(rfm.RunOnlyRegressionTest):
                 str(value) for value in self.ppr_values
             ),
             'TRIALS': str(self.trials),
+            'PMIX_PRRTE_DAEMON_DEBUG': str(self.prrte_daemon_debug),
             'SLOTS_PER_NODE': str(self.slots_per_node)
         }
+        instrument_test(self)
 
     # Pass only after every requested mapping test succeeds.
     @sanity_function

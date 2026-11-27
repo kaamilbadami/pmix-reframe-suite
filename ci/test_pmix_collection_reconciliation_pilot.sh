@@ -271,6 +271,7 @@ job = parent["collect-reconcile-pmix-child-pipeline-pilot"]
 check(parent["workflow"]["rules"] == [
     {"if": '$CI_PIPELINE_SOURCE == "web"'},
     {"if": '$CI_PIPELINE_SOURCE == "schedule"'},
+    {"if": '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'},
     {"when": "never"},
 ], "workflow guard changed")
 check(generation["rules"] == guarded_rules, "generation pilot guard changed")

@@ -35,7 +35,7 @@ pmix_commit=${PMIX_COMMIT,,}
 suite_commit=${CI_COMMIT_SHA,,}
 
 case ${CI_JOB_STATUS:-} in
-    success|failed|canceled)
+    success|failed|canceled|timedout)
         job_status=$CI_JOB_STATUS
         ;;
     *)

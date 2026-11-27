@@ -12,6 +12,7 @@ import sys
 import tempfile
 import importlib.util
 import yaml
+from urllib.parse import parse_qs, urlsplit
 
 
 ci = Path(sys.argv[1]).resolve()
@@ -52,16 +53,42 @@ spec = importlib.util.spec_from_file_location("discovery", discover)
 module = importlib.util.module_from_spec(spec)
 sys.path.insert(0, str(ci))
 spec.loader.exec_module(module)
-for status in ("success", "running", "pending", "failed", "canceled", "skipped"):
+for status in sorted(module.PIPELINE_STATES):
     def fake_get(url, headers):
         check("/variables" not in url, "unsupported variables endpoint requested")
+        query = parse_qs(urlsplit(url).query)
+        check(query["name"] == ["openpmix-pr:42:" + "a" * 40],
+              "discovery scanned unrelated historical pipelines")
         return [{"id": 123, "status": status,
                  "name": "openpmix-pr:42:" + "a" * 40}]
     module.get_json = fake_get
-    pairs = module.pipeline_pairs("https://gitlab.example/api/v4", "1", "fixture-token")
-    check((("42", "a" * 40) in pairs) == (status in module.SUPPRESS_STATES),
+    pairs = module.pipeline_pairs("https://gitlab.example/api/v4", "1", "fixture-token",
+                                  [("42", "a" * 40)])
+    check(("42", "a" * 40) in pairs,
           "retry policy differs for " + status)
-passed("supported pipeline-list endpoint suppresses active/successful heads and retries failed/canceled heads")
+passed("supported pipeline-list endpoint suppresses every previously attempted exact head")
+
+def reject_request(url, headers):
+    raise AssertionError("empty candidate set queried GitLab history")
+module.get_json = reject_request
+check(module.pipeline_pairs("https://gitlab.example/api/v4", "1", "fixture-token", []) == set(),
+      "empty candidate set was not empty")
+passed("no eligible open PRs require no historical pipeline scan")
+
+pages = []
+def paginated_get(url, headers):
+    page = int(parse_qs(urlsplit(url).query)["page"][0])
+    pages.append(page)
+    if page == 1:
+        return [{"id": i, "status": "failed", "name": "openpmix-pr:42:" + "a" * 40}
+                for i in range(100)]
+    return [{"id": 101, "status": "success", "name": "openpmix-pr:42:" + "a" * 40}]
+module.get_json = paginated_get
+check(("42", "a" * 40) in module.pipeline_pairs(
+    "https://gitlab.example/api/v4", "1", "fixture-token", [("42", "a" * 40)]),
+    "successful head on a later retry page was missed")
+check(pages == [1], "failed attempts should suppress without scanning older pages")
+passed("named-head lookup stops at the first previously attempted head")
 
 with tempfile.TemporaryDirectory(prefix="openpmix-discovery-") as temporary:
     root = Path(temporary)
@@ -135,6 +162,15 @@ with tempfile.TemporaryDirectory(prefix="openpmix-discovery-") as temporary:
           "empty discovery did not generate a no-op child")
     passed("empty discovery produces one harmless no-op pipeline")
 
+    pipeline = yaml.safe_load((root / "pipeline.yml").read_text())
+    check({"project": "ci/resources/templates", "ref": "main",
+           "file": ["/runners.yml"]} in pipeline["include"] and
+          pipeline["no-eligible-openpmix-prs"]["extends"] ==
+          [".frontier-shell-runner"] and
+          pipeline["variables"]["OLCF_SERVICE_ACCOUNT"] == "gen243_auser",
+          "empty discovery job has no matching Frontier shell runner")
+    passed("no-op child includes and selects the Frontier shell runner template")
+
     result = run(root, [updated, kaamil], [])
     check(result.returncode == 0, result.stderr.decode())
     generated = subprocess.run([
@@ -145,6 +181,7 @@ with tempfile.TemporaryDirectory(prefix="openpmix-discovery-") as temporary:
     check(generated.returncode == 0 and
           isinstance(yaml.safe_load(text), dict) and
           text.count("OPENPMIX_PR_INTERNAL:") == 2 and
+          text.count('OPENPMIX_PR_AUTOMATIC: "1"') == 2 and
           text.count("ci/openpmix_pr_child.yml") == 2 and
           ".ci-state" not in text and "GITHUB_STATUS" not in text,
           "generated child pipeline is not isolated")

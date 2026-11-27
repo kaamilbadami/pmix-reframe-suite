@@ -90,14 +90,28 @@ selected_author=$("$python_bin" "$records" read-preparation \
     --input "$preparation_record" --require-ready \
     --expected-pipeline-id "$CI_PIPELINE_ID" --field PR_AUTHOR)
 
+baseline_selection=$("$python_bin" ci/openpmix_pr_baseline.py select --pipeline-id "$CI_PIPELINE_ID")
+if [[ $baseline_selection != live-pr ]]; then
+    /bin/cp ci-openpmix-pr-preparation/baseline.env "$evidence_dir/baseline.env"
+    printf '%s\n' 'Running fixed historical infrastructure baseline; this is not a live PR test.'
+fi
+
 printf 'Executing OpenPMIx PR number: %s\n' "$selected_number"
 printf 'Executing OpenPMIx PR author: %s\n' "$selected_author"
 printf 'Executing exact OpenPMIx SHA: %s\n' "$selected_sha"
 
 checkout_status=0
-/bin/bash "$checkout_helper" \
-    "$selected_number" "$selected_sha" "$checkout_dir" ||
-    checkout_status=$?
+if [[ ${OPENPMIX_RUNNER_ALLOCATION:-} == 1 ]]; then
+    [[ $baseline_selection != live-pr ]] || fail 'runner allocation is restricted to the baseline'
+    "$python_bin" ci/openpmix_baseline_staging.py restore
+    staged_source=$repo_root/ci-openpmix-baseline-restored/sources/openpmix
+    /bin/cp -a -- "$staged_source" "$checkout_dir"
+    "$python_bin" ci/openpmix_baseline_staging.py verify "$checkout_dir"
+else
+    /bin/bash "$checkout_helper" \
+        "$selected_number" "$selected_sha" "$checkout_dir" ||
+        checkout_status=$?
+fi
 if (( checkout_status != 0 )); then
     case $checkout_status in
         5) classification=head-changed ;;
@@ -119,20 +133,32 @@ if (( checkout_status != 0 )); then
 fi
 
 checked_out_sha=$(/usr/bin/git -C "$checkout_dir" rev-parse --verify HEAD)
+oac_sha=$("$python_bin" ci/validate_openpmix_oac.py "$checkout_dir" --populated)
+printf 'OAC_ORIGIN=https://github.com/open-mpi/oac.git\nOAC_COMMIT=%s\n' \
+    "$oac_sha" > "$evidence_dir/oac-selection.env"
+gitlink_count=0
+[[ $oac_sha == none ]] || gitlink_count=1
 "$python_bin" "$records" write-checkout \
     --preparation "$preparation_record" \
     --pipeline-id "$CI_PIPELINE_ID" \
     --fetched-sha "$selected_sha" \
     --checked-out-sha "$checked_out_sha" \
+    --gitlink-count "$gitlink_count" \
     --output "$checkout_record"
 /usr/bin/git -C "$checkout_dir" show -s --format='%H' HEAD > \
     "$evidence_dir/checkout-commit.txt"
 /usr/bin/git -C "$checkout_dir" status --porcelain=v1 \
     --untracked-files=all > "$evidence_dir/checkout-status-before.txt"
 
-prrte_selection=$("$python_bin" ci/select_prrte_for_source.py "$checkout_dir" "$selected_sha")
+if [[ $baseline_selection == live-pr ]]; then
+    prrte_selection=$("$python_bin" ci/select_prrte_for_source.py "$checkout_dir" "$selected_sha" --prrte-master)
+else
+    prrte_selection=$baseline_selection
+fi
 read -r PRRTE_BRANCH PRRTE_COMMIT <<< "$prrte_selection"
 export PRRTE_BRANCH PRRTE_COMMIT
+printf 'PRRTE_BRANCH=%s\nPRRTE_COMMIT=%s\n' "$PRRTE_BRANCH" "$PRRTE_COMMIT" > \
+    "$evidence_dir/prrte-selection.env"
 printf 'Selected exact PRRTE commit: %s (%s)\n' "$PRRTE_COMMIT" "$PRRTE_BRANCH"
 export PMIX_COMMIT=$selected_sha
 export PMIX_TRUSTED_SOURCE_DIR=$repo_root/$checkout_dir
@@ -141,7 +167,11 @@ export PMIX_RFM_PREFIX=$repo_root/$reframe_prefix
 export PMIX_RFM_REPORT_FILE=$repo_root/$report_file
 
 runner_status=0
-/bin/bash "$exact_runner" || runner_status=$?
+if [[ $baseline_selection == live-pr ]]; then
+    /bin/bash "$exact_runner" || runner_status=$?
+else
+    /bin/bash ci/run_openpmix_single_allocation.sh || runner_status=$?
+fi
 if (( runner_status < 0 || runner_status > 255 )); then
     runner_status=255
 fi
@@ -166,6 +196,10 @@ if [[ -s $evidence_dir/checkout-status-after.txt ]] ||
 fi
 
 classification_status=0
+classification_options=()
+if [[ $baseline_selection != live-pr ]]; then
+    classification_options+=(--baseline-single-allocation)
+fi
 "$python_bin" "$records" classify-report \
     --preparation "$preparation_record" \
     --checkout "$checkout_record" \
@@ -173,7 +207,7 @@ classification_status=0
     --pipeline-id "$CI_PIPELINE_ID" \
     --execution-id "$execution_id" \
     --runner-exit-status "$runner_status" \
-    --output "$result_record" || classification_status=$?
+    --output "$result_record" "${classification_options[@]}" || classification_status=$?
 
 case $classification_status in
     0)

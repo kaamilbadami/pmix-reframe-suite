@@ -15,6 +15,7 @@ from reframe.core.builtins import fixture, run_before, sanity_function
 from libevent_build_class import build_libevent
 from pmix_build_class import build_pmix
 from prrte_build_class import build_prrte
+from pmix_python_binding.common.reframe_diagnostics import instrument_test
 
 
 # ReFrame test for PMIx Python spawning across multiple nodes.
@@ -62,6 +63,7 @@ class PMIxPythonScalingMultinodeTest(rfm.RunOnlyRegressionTest):
                 'python-site-packages'
             )
         }
+        instrument_test(self)
 
     # Pass only if the 1-, 2-, and 4-node tests succeed.
     @sanity_function

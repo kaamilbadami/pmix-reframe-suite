@@ -22,6 +22,10 @@ for path in output perflogs reports; do
 done
 
 for path in \
+    stage/frontier/batch/pmix_test/PMIxPython*/*.prte.stdout \
+    stage/frontier/batch/pmix_test/PMIxPython*/*.prte.stderr \
+    stage/frontier/batch/pmix_test/PMIxPython*/*.dvm_output \
+    stage/frontier/batch/pmix_test/PMIxPython*/prte-*node.log \
     stage/frontier/batch/pmix_test/build_pmix_*/rfm_build.sh \
     stage/frontier/batch/pmix_test/build_pmix_*/rfm_build.out \
     stage/frontier/batch/pmix_test/build_pmix_*/rfm_build.err \

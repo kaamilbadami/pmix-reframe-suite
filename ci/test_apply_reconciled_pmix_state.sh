@@ -148,7 +148,7 @@ check(case.current.read_bytes() == state_bytes(commit_b, suite, "1700000000"),
       "later success advanced across a failed commit")
 passed("a later success cannot advance across an earlier blocker")
 
-for reason in ("canceled", "unknown", "missing", "malformed"):
+for reason in ("canceled", "timedout", "unknown", "missing", "malformed"):
     case = Case([commit_b])
     case.set_report("blocked", 0, reason)
     case.run(0)

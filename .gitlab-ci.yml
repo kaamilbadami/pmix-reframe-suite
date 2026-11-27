@@ -14,17 +14,65 @@ include:
     file:
       - /runners.yml
   - local: ci/openpmix_pr_jobs.yml
+  - local: ci/openpmix_fixed_diagnostic.yml
 
 variables:
   OLCF_SERVICE_ACCOUNT: "gen243_auser"
   FF_GIT_URLS_WITHOUT_TOKENS: "1"
+  PMIX_SCHEDULED_SLURM: "0"
   PMIX_AUTHORITATIVE_STATE_FILE: "/lustre/orion/gen243/world-shared/kbadami/openpmix-ci/pmix-master.env"
 
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'
     - when: never
+
+recover-pmix-checkpoint-20261117:
+  stage: pilot-generate
+  extends:
+    - .frontier-shell-runner
+  resource_group: pmix-scheduled-batch
+  timeout: 5m
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_RECOVER_CHECKPOINT_20261117 == "1"'
+    - when: never
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    GITHUB_PR_READ_TOKEN: ""
+    GITHUB_STATUS_TOKEN: ""
+  script:
+    - python3 ci/recover_pmix_checkpoint_20261117.py --state "$PMIX_AUTHORITATIVE_STATE_FILE"
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-checkpoint-recovery/
+
+audit-pmix-schedule-timeouts:
+  stage: pilot-generate
+  extends:
+    - .frontier-shell-runner
+  timeout: 30m
+  needs: []
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_TIMEOUT_AUDIT == "1"'
+    - when: never
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    GITHUB_PR_READ_TOKEN: ""
+    GITHUB_STATUS_TOKEN: ""
+  script:
+    - |
+      set +x
+      set -euo pipefail
+      python3 ci/audit_pmix_timeouts.py --schedule-id 46
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-timeout-audit/
 
 generate-openpmix-pr-pipelines:
   stage: pilot-generate
@@ -53,11 +101,18 @@ generate-openpmix-pr-pipelines:
       python3 ci/generate_openpmix_pr_child_pipeline.py \
           .ci-openpmix-pr-discovery/eligible.jsonl \
           .ci-openpmix-pr-discovery/pipeline.yml
+      if ! python3 ci/summarize_openpmix_pr_pipelines.py \
+          > .ci-openpmix-pr-discovery/pr-summary.txt; then
+          printf '%s\n' 'PR summary unavailable; see the error above. PR discovery continues.' \
+              > .ci-openpmix-pr-discovery/pr-summary.txt
+      fi
+      cat .ci-openpmix-pr-discovery/pr-summary.txt
   artifacts:
     expire_in: 1 day
     paths:
       - .ci-openpmix-pr-discovery/eligible.jsonl
       - .ci-openpmix-pr-discovery/pipeline.yml
+      - .ci-openpmix-pr-discovery/pr-summary.txt
 
 trigger-openpmix-pr-pipelines:
   stage: pilot-trigger
@@ -207,20 +262,71 @@ collect-reconcile-pmix-child-pipeline-pilot:
       - ci-pilot-results/reconciliation/reconciliation.env
       - ci-pilot-results/reconciliation/proposed-pmix-master.env
 
+# An API control token enables cancellation of this idle poll before the batch lock.
+# With no token configured, retain the existing serialized scheduling behavior.
+check-pmix-scheduled-admission:
+  stage: pilot-generate
+  extends:
+    - .frontier-shell-runner
+  timeout: 5m
+  rules:
+    - if: '$OPENPMIX_PR_AUTODISCOVERY == "1"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $GITLAB_PIPELINE_CONTROL_TOKEN'
+    - when: never
+  variables:
+    GITHUB_PR_READ_TOKEN: ""
+    GITHUB_STATUS_TOKEN: ""
+  script:
+    - |
+      set +x
+      set -euo pipefail
+      python3 ci/skip_busy_pmix_schedule.py
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-scheduled-admission/decision.json
+
+# Hold a distinct batch lock through discovery, parallel testing, and state
+# application. Discovery happens inside the lock, not before waiting for it.
+run-pmix-scheduled-batch:
+  stage: pilot-trigger
+  needs:
+    - job: check-pmix-scheduled-admission
+      optional: true
+  resource_group: pmix-scheduled-batch
+  rules:
+    - if: '$OPENPMIX_PR_AUTODISCOVERY == "1"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - when: never
+  variables:
+    PMIX_SCHEDULED_BATCH_INTERNAL: "1"
+    PMIX_SCHEDULED_STATE_FILE: "$PMIX_AUTHORITATIVE_STATE_FILE"
+    PMIX_SCHEDULED_SLURM_INTERNAL: "$PMIX_SCHEDULED_SLURM"
+  trigger:
+    include:
+      - local: .gitlab-ci.yml
+    strategy: mirror
+    forward:
+      yaml_variables: true
+      pipeline_variables: false
+
 generate-pmix-child-pipeline-scheduled:
   stage: pilot-generate
   extends:
     - .frontier-shell-runner
 
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'
     - when: never
 
   script:
     - |
       set -euo pipefail
 
-      state_file=${PMIX_AUTHORITATIVE_STATE_FILE:?PMIX_AUTHORITATIVE_STATE_FILE is required}
+      state_file=${PMIX_SCHEDULED_STATE_FILE:-${PMIX_AUTHORITATIVE_STATE_FILE:?PMIX_AUTHORITATIVE_STATE_FILE is required}}
       output_dir=ci-scheduled
       baseline_state="$output_dir/baseline-pmix-master.env"
 
@@ -232,22 +338,35 @@ generate-pmix-child-pipeline-scheduled:
       bash ci/discover_untested_pmix_commits.sh \
           "$baseline_state" \
           "$output_dir/pmix-untested-commits.txt"
+      python3 ci/prepare_pmix_health_check.py \
+          --state "$baseline_state" \
+          --commits "$output_dir/pmix-untested-commits.txt"
+      executor_options=(--prrte-pin "$state_file.prrte.json"
+          --prrte-pin-snapshot "$output_dir/prrte-pin.json"
+          --prrte-bootstrap ci/prrte_pin_seed.json)
+      case ${PMIX_SCHEDULED_SLURM_INTERNAL:-0} in
+          0) ;;
+          1) executor_options=(--prrte-master --slurm-runner) ;;
+          *) printf '%s\n' 'error: PMIX_SCHEDULED_SLURM must be 0 or 1' >&2; exit 2 ;;
+      esac
       python3 ci/generate_pmix_child_pipeline.py \
           "$output_dir/pmix-untested-commits.txt" \
           "$output_dir/pmix-child-pipeline.yml" \
-          --select-prrte
+          "${executor_options[@]}"
 
   artifacts:
     expire_in: 14 days
     paths:
       - ci-scheduled/baseline-pmix-master.env
       - ci-scheduled/pmix-untested-commits.txt
+      - ci-scheduled/pmix-untested-commits.txt.head.json
       - ci-scheduled/pmix-child-pipeline.yml
+      - ci-scheduled/prrte-pin.json
 
 trigger-pmix-child-pipeline-scheduled:
   stage: pilot-trigger
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'
     - when: never
   trigger:
     include:
@@ -263,7 +382,7 @@ collect-pmix-child-results-scheduled:
   timeout: 15m
 
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'
       when: always
     - when: never
 
@@ -281,12 +400,19 @@ collect-pmix-child-results-scheduled:
           --directory ci-scheduled
 
       collector_status=0
-      python3 ci/collect_pmix_child_results.py \
+      python3 ci/collect_pmix_child_results.py --summaries \
           --commits ci-scheduled/pmix-untested-commits.txt \
           --parent-pipeline-id "$CI_PIPELINE_ID" \
           --output ci-scheduled/collection \
           --trigger-job-name trigger-pmix-child-pipeline-scheduled || \
           collector_status=$?
+
+      python3 ci/pmix_batch_summary.py \
+          --collection ci-scheduled/collection \
+          --baseline ci-scheduled/baseline-pmix-master.env \
+          --commits ci-scheduled/pmix-untested-commits.txt \
+          --suite-commit "$CI_COMMIT_SHA" \
+          --output ci-scheduled/report
 
       python3 ci/pmix_scheduled_status.py publish \
           --directory ci-scheduled \
@@ -316,6 +442,11 @@ collect-pmix-child-results-scheduled:
       - ci-scheduled/collector-status.env
       - ci-scheduled/collection/collection-report.json
       - ci-scheduled/collection/*.env
+      - ci-scheduled/collection/summary-attempt.json
+      - ci-scheduled/collection/latest-attempt.json
+      - ci-scheduled/collection/attempts.json
+      - ci-scheduled/collection/*.summary.json
+      - ci-scheduled/report/
 
 reconcile-pmix-child-results-scheduled:
   stage: pmix-reconcile
@@ -325,7 +456,7 @@ reconcile-pmix-child-results-scheduled:
   timeout: 15m
 
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'
       when: always
     - when: never
 
@@ -357,7 +488,7 @@ reconcile-pmix-child-results-scheduled:
               ;;
       esac
 
-      state_file=${PMIX_AUTHORITATIVE_STATE_FILE:?PMIX_AUTHORITATIVE_STATE_FILE is required}
+      state_file=${PMIX_SCHEDULED_STATE_FILE:-${PMIX_AUTHORITATIVE_STATE_FILE:?PMIX_AUTHORITATIVE_STATE_FILE is required}}
       current_state=ci-scheduled/current-pmix-master.env
       if [[ -L $current_state ]] ||
          [[ -e $current_state && ! -f $current_state ]]; then
@@ -372,6 +503,7 @@ reconcile-pmix-child-results-scheduled:
 
       reconciliation_status=0
       python3 ci/reconcile_pmix_results.py \
+          --allow-baseline-retest \
           --baseline-state ci-scheduled/baseline-pmix-master.env \
           --current-state "$current_state" \
           --commits ci-scheduled/pmix-untested-commits.txt \
@@ -418,7 +550,7 @@ apply-pmix-reconciled-state-scheduled:
   resource_group: pmix-python-suite-frontier
 
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'
       when: always
     - when: never
 
@@ -426,6 +558,8 @@ apply-pmix-reconciled-state-scheduled:
     - job: generate-pmix-child-pipeline-scheduled
       artifacts: true
     - job: reconcile-pmix-child-results-scheduled
+      artifacts: true
+    - job: collect-pmix-child-results-scheduled
       artifacts: true
 
   script:
@@ -447,13 +581,58 @@ apply-pmix-reconciled-state-scheduled:
               ;;
       esac
 
+      apply_status=0
       python3 ci/apply_reconciled_pmix_state.py apply \
+          --allow-baseline-retest \
           --baseline-state ci-scheduled/baseline-pmix-master.env \
-          --authoritative-state "$PMIX_AUTHORITATIVE_STATE_FILE" \
+          --authoritative-state "${PMIX_SCHEDULED_STATE_FILE:-$PMIX_AUTHORITATIVE_STATE_FILE}" \
           --commits ci-scheduled/pmix-untested-commits.txt \
           --report ci-scheduled/reconciliation/reconciliation.env \
           --proposal ci-scheduled/reconciliation/proposed-pmix-master.env \
-          --suite-commit "$CI_COMMIT_SHA"
+          --suite-commit "$CI_COMMIT_SHA" || apply_status=$?
+
+      saved_state=ci-scheduled/saved-after-apply.env
+      rm -f -- "$saved_state"
+      snapshot_status=0
+      python3 ci/apply_reconciled_pmix_state.py snapshot \
+          --state "${PMIX_SCHEDULED_STATE_FILE:-$PMIX_AUTHORITATIVE_STATE_FILE}" \
+          --output "$saved_state" || snapshot_status=$?
+      saved_options=()
+      if (( snapshot_status == 0 )); then
+          saved_options=(--saved-state "$saved_state")
+      fi
+      pin_status=0
+      if (( apply_status == 0 && snapshot_status == 0 )) &&
+         [[ -f ci-scheduled/prrte-pin.json ]]; then
+          python3 ci/prrte_pin.py \
+              --state "${PMIX_SCHEDULED_STATE_FILE:-$PMIX_AUTHORITATIVE_STATE_FILE}.prrte.json" \
+              --snapshot ci-scheduled/prrte-pin.json \
+              --saved-state "$saved_state" \
+              --collection ci-scheduled/collection \
+              --suite-commit "$CI_COMMIT_SHA" \
+              --output ci-scheduled/prrte-pin-update.json || pin_status=$?
+      fi
+      report_status=0
+      python3 ci/pmix_batch_summary.py \
+          --collection ci-scheduled/collection \
+          --baseline ci-scheduled/baseline-pmix-master.env \
+          --commits ci-scheduled/pmix-untested-commits.txt \
+          --suite-commit "$CI_COMMIT_SHA" \
+          --apply-exit-code "$apply_status" "${saved_options[@]}" \
+          --tested-batch-record "${PMIX_SCHEDULED_STATE_FILE:-$PMIX_AUTHORITATIVE_STATE_FILE}.last-tested-batch.json" \
+          --output ci-scheduled/report || report_status=$?
+      (( apply_status == 0 )) || exit "$apply_status"
+      (( snapshot_status == 0 )) || exit "$snapshot_status"
+      (( pin_status == 0 )) || exit "$pin_status"
+      exit "$report_status"
+
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-scheduled/report/
+      - ci-scheduled/saved-after-apply.env
+      - ci-scheduled/prrte-pin-update.json
 
 trigger-pmix-failed-result-pilot:
   stage: pilot-trigger
@@ -671,6 +850,16 @@ pmix-python-suite:
   resource_group: pmix-python-suite-frontier
 
   rules:
+    - if: '$PMIX_RECOVER_CHECKPOINT_20261117 == "1"'
+      when: never
+    - if: '$OPENPMIX_FIXED_DIAGNOSTIC == "1"'
+      when: never
+    - if: '$OPENPMIX_PR_BASELINE == "1"'
+      when: never
+    - if: '$PMIX_TIMEOUT_AUDIT == "1"'
+      when: never
+    - if: '$PMIX_CLEANUP_239019 == "1" || $PMIX_CLEANUP_ENDED_RUNS == "1" || $PMIX_TIMEOUT_CLEANUP_PILOT == "1"'
+      when: never
     - if: '$OPENPMIX_PR_INTERNAL == "1"'
       when: never
     - if: '$PMIX_TESTS_PR_EXECUTION_PILOT == "1"'
@@ -707,6 +896,8 @@ pmix-python-suite:
     - bash ci/test_discover_untested_pmix_commits.sh
     - bash ci/test_generate_pmix_child_pipeline.sh
     - python3 ci/test_prrte_selection.py
+    - python3 ci/test_prrte_pin.py
+    - python3 ci/test_cleanup_pmix_slurm_jobs.py
     - bash ci/test_pmix_collection_reconciliation_pilot.sh
     - bash ci/test_pmix_failed_result_child.sh
     - bash ci/test_probe_pmix_child_artifacts.sh
@@ -789,3 +980,169 @@ pmix-python-suite:
     expire_in: 14 days
     paths:
       - ci-artifacts/
+
+# One-time recovery for seven verified leftovers from timed-out CI job 239019.
+cleanup-pmix-leftovers-239019:
+  stage: test
+  extends:
+    - .frontier-shell-runner
+  timeout: 5m
+  needs: []
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_CLEANUP_239019 == "1"'
+      when: manual
+      allow_failure: false
+    - when: never
+  script:
+    - |
+      python3 - <<'PY'
+      import os
+      import subprocess
+      
+      allowed = {5659694, 5659695, 5659696, 5659697, 5659698, 5659699, 5659700}
+      if os.environ.get("CI_PROJECT_PATH") != "ci/gen243/dev/pmix-reframe-suite":
+          raise SystemExit("Wrong project")
+      if os.environ.get("USER") != "gen243_auser":
+          raise SystemExit("Cleanup must run as gen243_auser")
+      result = subprocess.run(
+          ["squeue", "-h", "-u", "gen243_auser", "-o", "%i|%Z|%j"],
+          check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=30)
+      targets = []
+      for line in result.stdout.splitlines():
+          job, workdir, name = line.split("|", 2)
+          if not job.isdigit() or int(job) not in allowed:
+              continue
+          if "/ci/gen243/dev/pmix-reframe-suite/.ci-work/239019/reframe/stage/" not in workdir or not name.startswith("rfm_PMIxPython"):
+              raise SystemExit("Ownership check failed for " + job)
+          targets.append(job)
+      print("Confirmed leftovers for failed CI job 239019:", targets, flush=True)
+      if targets:
+          subprocess.run(["scancel", *targets], check=True, timeout=30)
+      verify = subprocess.run(
+          ["squeue", "-h", "-u", "gen243_auser", "-o", "%i"],
+          check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=30)
+      remaining = set(verify.stdout.split()) & set(targets)
+      if remaining:
+          raise SystemExit("Jobs still present; inspect cancellation state: " + ", ".join(sorted(remaining)))
+      print("Cleanup verified; no targeted jobs remain.")
+      PY
+
+# Recovery restricted to ended CI runs verified failed/canceled on 2026-10-12.
+cleanup-pmix-ended-runs:
+  stage: test
+  extends:
+    - .frontier-shell-runner
+  timeout: 5m
+  needs: []
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_CLEANUP_ENDED_RUNS == "1"'
+      when: manual
+      allow_failure: false
+    - when: never
+  script:
+    - |
+      python3 - <<'PY'
+      import os
+      import re
+      import subprocess
+      
+      owners = {"239033", "239034", "239035", "239036", "239037", "239038",
+                "239061", "239062", "239063", "239065",
+                "239112", "239113", "239114", "239115", "239116", "239117"}
+      if os.environ.get("CI_PROJECT_PATH") != "ci/gen243/dev/pmix-reframe-suite" or os.environ.get("USER") != "gen243_auser":
+          raise SystemExit("Wrong project or service account")
+      def queue():
+          return subprocess.run(
+              ["squeue", "-h", "-u", "gen243_auser", "-o", "%i|%Z|%j"],
+              check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+              universal_newlines=True, timeout=30).stdout
+      def select(listing):
+          targets = []
+          for line in listing.splitlines():
+              job, workdir, name = line.split("|", 2)
+              match = re.search(r"/ci/gen243/dev/pmix-reframe-suite/\.ci-work/([0-9]+)/reframe/stage/", workdir)
+              if match and match.group(1) in owners:
+                  if not job.isdigit() or not name.startswith("rfm_PMIxPython"):
+                      raise SystemExit("Unexpected job in cleanup scope: " + line)
+                  targets.append(job)
+                  print("Confirmed leftover:", job, "CI owner:", match.group(1), flush=True)
+          return targets
+      targets = select(queue())
+      print("Total confirmed leftovers:", len(targets), flush=True)
+      if targets:
+          subprocess.run(["scancel", *targets], check=True, timeout=60)
+      remaining = select(queue())
+      if remaining:
+          raise SystemExit("Targeted jobs still present; inspect cancellation state")
+      print("Cleanup verified; no jobs remain for the verified ended CI runs.")
+      PY
+
+# Deliberate script timeout: expected CI failure, successful scoped cleanup.
+validate-pmix-timeout-cleanup:
+  stage: test
+  extends:
+    - .frontier-shell-runner
+  timeout: 10m
+  needs: []
+  variables:
+    RUNNER_SCRIPT_TIMEOUT: "1m"
+    RUNNER_AFTER_SCRIPT_TIMEOUT: "5m"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PMIX_TIMEOUT_CLEANUP_PILOT == "1"'
+      when: manual
+      allow_failure: false
+    - when: never
+  script:
+    - |
+      set -euo pipefail
+      stage="$CI_PROJECT_DIR/.ci-work/$CI_JOB_ID/reframe/stage/timeout-cleanup-pilot"
+      mkdir -p "$stage" ci-results
+      cd "$stage"
+      cat > rfm_job.sh <<'SH'
+      #!/bin/bash
+      #SBATCH --account=gen243
+      #SBATCH --partition=batch
+      #SBATCH --nodes=1
+      #SBATCH --ntasks=1
+      #SBATCH --time=00:01:00
+      #SBATCH --job-name=rfm_PMIxTimeoutCleanupPilot
+      sleep 30
+      SH
+      submitted=$(sbatch --parsable rfm_job.sh)
+      slurm_id=${submitted%%;*}
+      [[ "$slurm_id" =~ ^[1-9][0-9]*$ ]] || exit 2
+      printf '%s\n' "$slurm_id" > "$CI_PROJECT_DIR/ci-results/timeout-pilot-slurm-id.txt"
+      printf 'Submitted cleanup pilot Slurm job %s; deliberately waiting for script timeout.\n' "$slurm_id"
+      sleep 120
+      printf '%s\n' 'ERROR: script timeout did not trigger'
+      exit 1
+  after_script:
+    - |
+      set -eu
+      printf 'Timeout pilot after_script CI_JOB_STATUS=%s\n' "${CI_JOB_STATUS:-unset}"
+      python3 ci/cleanup_pmix_slurm_jobs.py
+      python3 - <<'PY'
+      import json
+      import os
+      import subprocess
+      from pathlib import Path
+      report = json.loads(Path("ci-results/slurm-cleanup-" + os.environ["CI_JOB_ID"] + ".json").read_text())
+      if report.get("errors") or report.get("skipped"):
+          raise SystemExit("Cleanup failed or skipped")
+      target_file = Path("ci-results/timeout-pilot-slurm-id.txt")
+      if not target_file.exists():
+          raise SystemExit("Pilot did not submit a Slurm job")
+      target = target_file.read_text().strip()
+      result = subprocess.run(["squeue", "-h", "-u", str(os.getuid()), "-o", "%i"],
+                              check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True, timeout=30)
+      if target in result.stdout.split():
+          raise SystemExit("Pilot Slurm job remains queued")
+      print("TIMEOUT CLEANUP VERIFIED: pilot job is absent; canceled IDs:", report["canceled"])
+      PY
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - ci-results/timeout-pilot-slurm-id.txt
+      - ci-results/slurm-cleanup-*.json

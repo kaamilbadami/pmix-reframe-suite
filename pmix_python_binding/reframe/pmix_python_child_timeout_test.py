@@ -16,6 +16,7 @@ from reframe.core.builtins import fixture, run_before, sanity_function
 from libevent_build_class import build_libevent
 from pmix_build_class import build_pmix
 from prrte_build_class import build_prrte
+from pmix_python_binding.common.reframe_diagnostics import instrument_test
 
 
 @rfm.simple_test
@@ -93,6 +94,7 @@ class PMIxPythonChildTimeoutTest(rfm.RunOnlyRegressionTest):
             "printf '%s slots=1\\n' \"${nodes[1]}\" > ci.hostfile",
             f'cp {os.path.join(SUITE_DIR, "controllers", "run_pmix_python_targeted_compat.py")} .',
             f'cp {os.path.join(SUITE_DIR, "common", "pmix_event_utils.py")} .',
+            f'cp {os.path.join(SUITE_DIR, "common", "prrte_startup.py")} .',
             f'cp {os.path.join(SUITE_DIR, "workloads", "sleeper_mpi_new.c")} .',
             'mpicc -o sleeper_mpi_new sleeper_mpi_new.c'
         ]
@@ -119,6 +121,7 @@ class PMIxPythonChildTimeoutTest(rfm.RunOnlyRegressionTest):
             'LIBEVENT': self.libevent.stagedir,
             'CI_HOSTFILE': f'{self.stagedir}/ci.hostfile'
         }
+        instrument_test(self)
 
     @sanity_function
     def validate_child_timeout(self):

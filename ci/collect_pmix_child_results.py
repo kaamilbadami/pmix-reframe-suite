@@ -164,6 +164,7 @@ def valid_json_id(value) -> bool:
 
 def parse_arguments(arguments: Optional[List[str]] = None) -> argparse.Namespace:
     parser = CollectorArgumentParser(description=__doc__)
+    parser.add_argument("--summaries", action="store_true", help="Collect latest-attempt display evidence without changing checkpoint results")
     parser.add_argument("--commits", required=True, type=Path)
     parser.add_argument("--parent-pipeline-id", required=True)
     parser.add_argument("--output", required=True, type=Path)
@@ -366,7 +367,9 @@ def list_jobs(client: GitLabGetClient, child_id: str) -> Tuple[str, List[dict]]:
         query = urlencode({
             "per_page": "100",
             "page": str(page),
-            "include_retried": "true",
+            # Ask the API to exclude superseded attempts; job records may omit
+            # the retried flag, so it cannot reliably filter attempt history.
+            "include_retried": "false",
         })
         suffix = f"pipelines/{quote(child_id, safe='')}/jobs?{query}"
         kind, status, body, headers = client.get(client.project_url(suffix), JSON_LIMIT)
@@ -489,6 +492,40 @@ def result_exit(items: List[dict]) -> Tuple[str, int]:
     return "collected", EXIT_OK
 
 
+def collect_summary(client, jobs, commits, child_id, output):
+    # Imported lazily to leave the original collector usable independently.
+    from pmix_result_summary import latest_job
+    eligible = []
+    for commit in commits:
+        status, job_id = select_job(jobs, commit)
+        if status != "ok":
+            continue
+        original = next(job for job in jobs if job["id"] == job_id)
+        item = {key: original.get(key) for key in (
+            "id", "status", "created_at", "started_at", "finished_at", "failure_reason", "web_url")}
+        item["commit"] = commit
+        eligible.append(item)
+    job = latest_job(eligible)
+    project_url = os.environ.get("CI_PROJECT_URL", "").rstrip("/")
+    index = {"job": job, "child_pipeline_id": child_id,
+             "pipeline_url": project_url + "/-/pipelines/" + child_id if project_url and child_id else None}
+    atomic_write(output / "summary-attempt.json", report_bytes(index, client.token))
+    atomic_write(output / "attempts.json", report_bytes(dict(
+        jobs=eligible, child_pipeline_id=child_id, pipeline_url=index['pipeline_url']), client.token))
+    if job is None:
+        return
+    # Fetch each compact result summary, not the full historical test logs.
+    # The readable report only expands failures; JSON preserves every commit.
+    for item in eligible:
+        artifact = quote("ci-results/" + item["commit"] + ".summary.json", safe="/")
+        kind, status, body, _ = client.get(
+            client.project_url("jobs/{}/artifacts/{}".format(item["id"], artifact)), ARTIFACT_LIMIT)
+        if kind == "ok" and status == 200 and body is not None and client.token.encode() not in body:
+            atomic_write(output / (item['commit'] + '.summary.json'), body)
+            if item['id'] == job['id']:
+                atomic_write(output / "latest-attempt.json", body)
+
+
 def collect(arguments: Optional[List[str]] = None) -> int:
     report = initial_report()
     output = None
@@ -499,6 +536,18 @@ def collect(arguments: Optional[List[str]] = None) -> int:
         output = prepare_output_directory(options.output)
         commits = parse_commits(commits_path)
         remove_stale_outputs(output, commits, commits_path)
+        if options.summaries:
+            for name in (['summary-attempt.json', 'latest-attempt.json', 'attempts.json'] +
+                         [commit + '.summary.json' for commit in commits]):
+                candidate = validate_local_path(output / name, "summary")
+                if candidate.exists():
+                    if not candidate.is_file():
+                        raise LocalInputError("invalid summary output")
+                    candidate.unlink()
+            atomic_write(output / "summary-attempt.json", report_bytes(
+                {"job": None, "child_pipeline_id": "", "pipeline_url": None}, token))
+            atomic_write(output / "attempts.json", report_bytes(
+                {"jobs": [], "child_pipeline_id": "", "pipeline_url": None}, token))
 
         api_url = validate_api_url(os.environ.get("CI_API_V4_URL", ""), token)
         project_id = os.environ.get("CI_PROJECT_ID", "")
@@ -514,6 +563,9 @@ def collect(arguments: Optional[List[str]] = None) -> int:
             for commit in commits
         ]
         if not commits:
+            if options.summaries:
+                atomic_write(output / "summary-attempt.json", report_bytes(
+                    {"job": None, "child_pipeline_id": "", "pipeline_url": None}, token))
             report["overall_result"] = "collected"
             write_report(output, report, token)
             return EXIT_OK
@@ -555,6 +607,9 @@ def collect(arguments: Optional[List[str]] = None) -> int:
                     atomic_write(output / f"{item['commit']}.env", content)
                 except OSError:
                     item["result"] = "invalid_local_input"
+
+        if options.summaries:
+            collect_summary(client, jobs, commits, child_id, output)
 
         overall, exit_status = result_exit(report["items"])
         report["overall_result"] = overall

@@ -247,7 +247,7 @@ grep -Fq 'project: ci/resources/templates' "$multiple_output" &&
     fail 'approved runner include is missing'
 [[ $(grep -Fc -- '- .frontier-shell-runner' "$multiple_output") == 3 ]] ||
     fail 'not every job extends the Frontier runner'
-[[ $(grep -Fc 'timeout: 1h' "$multiple_output") == 3 ]] ||
+[[ $(grep -Fc 'timeout: 6h' "$multiple_output") == 3 ]] ||
     fail 'not every job uses the current timeout'
 if grep -Eq '^[[:space:]]*(resource_group|parallel):' "$multiple_output" ||
    grep -Eqi 'concurrency[-_ ]?lane|semaphore' "$multiple_output"; then
@@ -353,15 +353,31 @@ for sha in (lower_sha, upper_sha, third_sha):
     expected_multiple[f"pmix-{sha}"] = {
         "stage": "test",
         "extends": [".frontier-shell-runner"],
-        "timeout": "1h",
-        "variables": {"PMIX_COMMIT": sha},
+        "timeout": "6h",
+        "variables": {"PMIX_COMMIT": sha, "RUNNER_SCRIPT_TIMEOUT": "5h45m", "RUNNER_AFTER_SCRIPT_TIMEOUT": "5m"},
         "script": [expected_script],
-        "after_script": ["bash ci/write_pmix_commit_result.sh ci-results"],
+        "after_script": ["python3 ci/cleanup_pmix_slurm_jobs.py || echo 'WARNING - inspect Slurm cleanup errors above'", 'python3 ci/collect_pmix_runtime_evidence.py --root "$CI_PROJECT_DIR/.ci-work/$CI_JOB_ID/reframe" || echo \'WARNING - Slurm runtime evidence unavailable\'', 'python3 ci/pmix_result_summary.py record --output ci-results || echo "WARNING - runtime summary unavailable"', "bash ci/write_pmix_commit_result.sh ci-results"],
         "artifacts": {
             "when": "always",
             "expire_in": "14 days",
             "paths": [
                 f"ci-results/{sha.lower()}.env",
+                f"ci-results/{sha.lower()}.summary.json",
+                ".ci-work/$CI_JOB_ID/reframe/run-report.json",
+                ".ci-work/$CI_JOB_ID/reframe/run-console.log",
+                ".ci-work/$CI_JOB_ID/reframe/slurm-accounting.json",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/runtime-*.json",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/runtime-*.log",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.processes.log",
+                "ci-results/slurm-cleanup-$CI_JOB_ID.json",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/rfm_job.sh",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/PMIxPython*/rfm_job.out",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/PMIxPython*/rfm_job.err",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.stdout",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/*.prte.stderr",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/*.dvm_output",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/prte-*node.log",
+                ".ci-work/$CI_JOB_ID/reframe/stage/**/prte-*.log",
                 ".ci-work/$CI_JOB_ID/reframe/output/",
                 ".ci-work/$CI_JOB_ID/reframe/perflogs/",
                 ".ci-work/$CI_JOB_ID/reframe/stage/frontier/batch/pmix_test/"
@@ -450,6 +466,11 @@ pr_metadata_pilot_exclusion = {
 assert generation["rules"] == pilot_rules
 assert trigger["rules"] == pilot_rules
 assert suite["rules"] == [
+    {"if": '$PMIX_RECOVER_CHECKPOINT_20261117 == "1"', "when": "never"},
+    {"if": '$OPENPMIX_FIXED_DIAGNOSTIC == "1"', "when": "never"},
+    {"if": '$OPENPMIX_PR_BASELINE == "1"', "when": "never"},
+    {"if": '$PMIX_TIMEOUT_AUDIT == "1"', "when": "never"},
+    {"if": '$PMIX_CLEANUP_239019 == "1" || $PMIX_CLEANUP_ENDED_RUNS == "1" || $PMIX_TIMEOUT_CLEANUP_PILOT == "1"', "when": "never"},
     openpmix_pr_exclusion,
     execution_exclusion,
     pr_metadata_pilot_exclusion,
@@ -462,6 +483,7 @@ assert suite["rules"] == [
 assert parent["workflow"]["rules"] == [
     {"if": '$CI_PIPELINE_SOURCE == "web"'},
     {"if": '$CI_PIPELINE_SOURCE == "schedule"'},
+    {"if": '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'},
     {"when": "never"},
 ]
 assert parent["stages"].index(generation["stage"]) < parent["stages"].index(

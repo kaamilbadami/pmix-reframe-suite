@@ -27,12 +27,21 @@ def passed(message):
     print(f"ok - {message}")
 
 
-schedule_rule = {"if": '$CI_PIPELINE_SOURCE == "schedule"'}
+schedule_rule = {"if": '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'}
 always_schedule_rules = [
-    {"if": '$CI_PIPELINE_SOURCE == "schedule"', "when": "always"},
+    {"if": '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"', "when": "always"},
     {"when": "never"},
 ]
 normal_schedule_rules = [schedule_rule, {"when": "never"}]
+batch = parent['run-pmix-scheduled-batch']
+check(batch['resource_group'] == 'pmix-scheduled-batch', 'missing whole-batch lock')
+check(batch['trigger']['strategy'] == 'mirror', 'batch lock released too early')
+check(batch['trigger']['include'] == [{'local': '.gitlab-ci.yml'}], 'wrong batch configuration')
+check(batch['rules'] == [{'if': '$OPENPMIX_PR_AUTODISCOVERY == "1"', 'when': 'never'}, {'if': '$CI_PIPELINE_SOURCE == "schedule"'}, {'when': 'never'}], 'PR polling must exclude normal master batches')
+check(batch['trigger']['forward']['pipeline_variables'] is False, 'dependency pins can override child selections')
+check(batch['variables']['PMIX_SCHEDULED_BATCH_INTERNAL'] == '1', 'missing batch identity')
+check(batch['variables']['PMIX_SCHEDULED_STATE_FILE'] == '$PMIX_AUTHORITATIVE_STATE_FILE', 'state override lost at wrapper')
+passed('whole scheduled batch is serialized before discovery without locking commit jobs')
 authoritative_state = (
     "/lustre/orion/gen243/world-shared/kbadami/openpmix-ci/pmix-master.env"
 )
@@ -76,6 +85,7 @@ for required in (
     "baseline-pmix-master.env",
     "discover_untested_pmix_commits.sh",
     "generate_pmix_child_pipeline.py",
+    "prepare_pmix_health_check.py",
 ):
     check(required in generate_script, f"scheduled generation omits {required}")
 for forbidden in (
@@ -89,8 +99,13 @@ for forbidden in (
 check(generate["artifacts"]["paths"] == [
     "ci-scheduled/baseline-pmix-master.env",
     "ci-scheduled/pmix-untested-commits.txt",
+    "ci-scheduled/pmix-untested-commits.txt.head.json",
     "ci-scheduled/pmix-child-pipeline.yml",
+    "ci-scheduled/prrte-pin.json",
 ], "scheduled generation artifacts changed")
+check(generate_script.index("discover_untested_pmix_commits.sh") < generate_script.index("prepare_pmix_health_check.py") < generate_script.index("generate_pmix_child_pipeline.py"), "health check must follow discovery and precede generation")
+for job in (reconcile, apply):
+    check("--allow-baseline-retest" in "\n".join(job["script"]), "scheduled health-check result cannot be applied")
 passed("scheduled generation strictly snapshots authoritative Lustre state")
 
 check(not {"PRRTE_BRANCH", "PRRTE_COMMIT"}.intersection(trigger.get("variables", {})), "scheduled trigger overrides child PRRTE pins")
@@ -101,7 +116,12 @@ check(trigger["trigger"] == {
     }],
     "strategy": "mirror",
 }, "scheduled child trigger changed")
-passed("scheduled trigger mirrors the generated exact-commit child with pinned PRRTE")
+check('--prrte-pin "$state_file.prrte.json"' in generate_script,
+      "separate-allocation schedule does not retain the persistent pin")
+check('--prrte-pin-snapshot "$output_dir/prrte-pin.json"' in generate_script,
+      "pin snapshot is missing from generation")
+check("--select-prrte" not in generate_script, "schedule still uses old compatibility pins")
+passed("scheduled trigger mirrors exact-commit jobs with persistent PRRTE pins")
 
 check(collect["needs"] == [
     {"job": generate_name, "artifacts": True},
@@ -170,6 +190,7 @@ check("cache" not in apply, "scheduled application still writes GitLab cache")
 check(apply["needs"] == [
     {"job": generate_name, "artifacts": True},
     {"job": reconcile_name, "artifacts": True},
+    {"job": collect_name, "artifacts": True},
 ], "state application needs changed")
 apply_script = "\n".join(apply["script"])
 status_gate_position = apply_script.index(
@@ -185,7 +206,7 @@ for required in (
     '--pipeline-id "$CI_PIPELINE_ID"',
     "apply_reconciled_pmix_state.py apply",
     "baseline-pmix-master.env",
-    '--authoritative-state "$PMIX_AUTHORITATIVE_STATE_FILE"',
+    '--authoritative-state "${PMIX_SCHEDULED_STATE_FILE:-$PMIX_AUTHORITATIVE_STATE_FILE}"',
     "pmix-untested-commits.txt",
     "reconciliation.env",
     "proposed-pmix-master.env",

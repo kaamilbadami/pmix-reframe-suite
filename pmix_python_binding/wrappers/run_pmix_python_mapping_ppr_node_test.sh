@@ -122,6 +122,14 @@ then
 fi
 
 
+# Keep daemon and srun stderr attached for the explicit diagnostic.
+PRTE_DEBUG_ARGS=()
+case ${PMIX_PRRTE_DAEMON_DEBUG:-1} in
+    0) ;;
+    1) PRTE_DEBUG_ARGS=(--debug-daemons --leave-session-attached --prtemca plm_base_verbose 10) ;;
+    *) printf '%s\n' 'PMIX_PRRTE_DAEMON_DEBUG must be 0 or 1' >&2; exit 2 ;;
+esac
+
 # Store the running PRRTE process ID.
 PRTE_PID=""
 
@@ -183,7 +191,7 @@ do
 
 
     # Start PRRTE on only the selected hosts.
-    "$PRRTE/bin/prte" \
+    "$PRRTE/bin/prte" "${PRTE_DEBUG_ARGS[@]}" \
         --host "$PRRTE_HOSTS" \
         --report-uri dvm.uri \
         > "$LOG_FILE" 2>&1 &
@@ -200,7 +208,11 @@ do
 
 
     # Fail if PRRTE did not become ready.
-    grep -q "DVM ready" "$LOG_FILE"
+    if ! grep -q "DVM ready" "$LOG_FILE"; then
+        printf 'PRRTE failed to become ready; complete startup log follows:\n' >&2
+        cat -- "$LOG_FILE" >&2
+        exit 1
+    fi
 
 
     # Test every requested processes-per-node mapping value.

@@ -147,9 +147,38 @@ if [[ "$mode" == list-only ]]; then
     exit 0
 fi
 
+# Stable paths retain partial terminal evidence if CI kills ReFrame before JSON is written.
+if [[ -n ${PMIX_RFM_PREFIX:-} ]]; then
+    mkdir -p -- "$PMIX_RFM_PREFIX"
+    export PMIX_RFM_REPORT_FILE="${PMIX_RFM_REPORT_FILE:-$PMIX_RFM_PREFIX/run-report.json}"
+fi
+# Preserve the test status; accounting is best-effort and read-only.
+collect_runtime_evidence() {
+    pmix_suite_rc=$?
+    trap - EXIT
+    if [[ -n ${PMIX_RFM_PREFIX:-} ]]; then
+        "$PMIX_PYTHON" "$script_dir/collect_pmix_runtime_evidence.py" \
+            --root "$PMIX_RFM_PREFIX" || printf '%s\n' 'WARNING - Slurm runtime evidence unavailable' >&2
+    fi
+    exit "$pmix_suite_rc"
+}
+trap collect_runtime_evidence EXIT
 rfm_report=()
+rfm_policy=()
+case ${PMIX_RFM_EXEC_POLICY:-} in
+    '') ;;
+    serial) rfm_policy=(--exec-policy=serial) ;;
+    *) printf 'error: unsupported ReFrame execution policy\n' >&2; exit 2 ;;
+esac
 if [[ -n ${PMIX_RFM_REPORT_FILE:-} ]]; then
     rfm_report+=(--report-file "$PMIX_RFM_REPORT_FILE")
 fi
-"$RFM_BIN" "${rfm_common[@]}" -r "${rfm_system[@]}" \
-    "${rfm_output[@]}" "${rfm_report[@]}" --keep-stage-files
+run_reframe() {
+    "$RFM_BIN" "${rfm_common[@]}" -r "${rfm_system[@]}" \
+        "${rfm_output[@]}" "${rfm_report[@]}" "${rfm_policy[@]}" --keep-stage-files
+}
+if [[ -n ${PMIX_RFM_PREFIX:-} ]]; then
+    run_reframe 2>&1 | tee "$PMIX_RFM_PREFIX/run-console.log"
+else
+    run_reframe
+fi

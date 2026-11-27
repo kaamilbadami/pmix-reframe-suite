@@ -159,7 +159,8 @@ for name in sorted(unrelated):
     schedule_only = (
         rules and all(
             rule.get("when") == "never" or
-            '$CI_PIPELINE_SOURCE == "schedule"' in rule.get("if", "")
+            '$CI_PIPELINE_SOURCE == "schedule"' in rule.get("if", "") or
+            rule.get("if") == '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'
             for rule in rules
         )
     )
@@ -198,6 +199,7 @@ passed("metadata-only pilot command and artifacts remain unchanged")
 check(parent["workflow"]["rules"] == [
     {"if": '$CI_PIPELINE_SOURCE == "web"'},
     {"if": '$CI_PIPELINE_SOURCE == "schedule"'},
+    {"if": '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'},
     {"when": "never"},
 ], "pipeline source policy changed")
 check("PMIX_TESTS_PR_EXECUTION_PILOT" not in parent.get("variables", {}),

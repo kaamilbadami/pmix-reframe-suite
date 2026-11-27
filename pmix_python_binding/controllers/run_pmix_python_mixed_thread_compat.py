@@ -7,8 +7,9 @@ import math
 import random
 import argparse
 import datetime
-import select
 import math
+
+from prrte_startup import start_prrte
 
 from pathlib import Path
 
@@ -247,24 +248,12 @@ if not sleeper.exists():
     print("ERROR: Missing executable './sleeper'\n INFO: Remember to run './build.sh' first.\n\tGiven path was: '{}'".format(str(sleeper)))
     print("Continuing")
 
-dvm_messages = []
-
-def add_to_dvm_msg(fileh, name):
-    msg = fileh.readline().decode('utf8').strip()
-    msg_list = msg.split("\n")
-    for line in msg_list:
-        dvm_messages.append("{}: {}".format(name, line))
-
-def prte_log_thread():
-    global dvm
-
-    while True:
-        ready = select.select([dvm.stdout, dvm.stderr], [], [])
-
-        if dvm.stdout in ready[0]:
-            add_to_dvm_msg(dvm.stdout, "stdout")
-        if dvm.stderr in ready[0]:
-            add_to_dvm_msg(dvm.stderr, "stderr")
+def prte_output():
+    """Read both complete streams retained by the bounded startup helper."""
+    return "\n".join(
+        "{}:\n{}".format(stream, Path(args.out_file + ".prte." + stream).read_text(errors="replace"))
+        for stream in ("stdout", "stderr")
+    )
 
 prte_prefix = os.environ["PRRTE"]
 prte_args = [f"{prte_prefix}/bin/prte", "--prefix", prte_prefix, "--report-uri", dvm_file, "--prtemca", "plm", "^slurm,lsf", "--prtemca", "ras", "^slurm,lsf"]
@@ -274,19 +263,9 @@ if "CI_HOSTFILE" in os.environ:
 
 print_info("Launching prte with args: {}".format(", ".join(prte_args)))
 
-#Popen is nonblocking, so no shell games needed, the script just owns prte
-dvm = subprocess.Popen(prte_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-while True:
-    outs = dvm.stdout.readline().decode('utf8').strip()
-    if outs:
-        print_info("dvm output: '{}'".format(outs))
-    if outs == "DVM ready":
-        break
-    if outs == "":
-        err = dvm.stderr.readline().decode('utf8').strip()
-        raise RuntimeError("PRTE exited before readiness. stderr: {}".format(err))
-
-threading.Thread(target=prte_log_thread, daemon=True).start()
+# File-backed streams retain full diagnostics without pipe deadlocks or
+# discarding all but the first stderr line when a daemon exits early.
+dvm = start_prrte(prte_args, args.out_file, timeout=120.0)
 
 def worker():
     info = [{'key':pmix.PMIX_MAPBY, 'value':"hwthread:NOLOCAL", 'val_type':pmix.PMIX_STRING},
@@ -393,9 +372,8 @@ finally:
     with open(args.out_file+".job_sizes", 'w') as job_sizes_file:
         job_sizes_file.write("\n".join(job_sizes))
 
-    dvm_messages.append("")
     with open(args.out_file+".dvm_output", 'w') as dvm_output_file:
-        dvm_output_file.write("\n".join(dvm_messages))
+        dvm_output_file.write(prte_output())
 
     # do sanity tests here
     dvm_shutdown_ok = shutdown_dvm()

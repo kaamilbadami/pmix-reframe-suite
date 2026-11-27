@@ -15,6 +15,7 @@ from reframe.core.builtins import fixture, run_before, sanity_function
 from libevent_build_class import build_libevent
 from pmix_build_class import build_pmix
 from prrte_build_class import build_prrte
+from pmix_python_binding.common.reframe_diagnostics import instrument_test
 
 
 PYTHON = os.environ.get(
@@ -81,6 +82,7 @@ class _PMIxPythonMixedThreadCompatBase(rfm.RunOnlyRegressionTest):
             "printf '%s slots=1\\n' \"${nodes[1]}\" \"${nodes[2]}\" > ci.hostfile",
             f'cp {os.path.join(SUITE_DIR, "controllers", "run_pmix_python_mixed_thread_compat.py")} .',
             f'cp {os.path.join(SUITE_DIR, "common", "pmix_event_utils.py")} .',
+            f'cp {os.path.join(SUITE_DIR, "common", "prrte_startup.py")} .',
             f'cp {os.path.join(SUITE_DIR, "workloads", "sleeper_mpi_new.c")} .',
             'mpicc -o sleeper_mpi_new sleeper_mpi_new.c'
         ]
@@ -151,6 +153,7 @@ class _PMIxPythonMixedThreadCompatBase(rfm.RunOnlyRegressionTest):
             "grep -q 'MIXED JOB SIZES PASS' \"$run_log\"; "
             "echo 'MIXED JOB SIZE SET PASS'"
         ]
+        instrument_test(self)
 
     @sanity_function
     def check_output(self):

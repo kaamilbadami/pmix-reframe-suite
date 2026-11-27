@@ -160,6 +160,11 @@ legacy_suite_rules = [
     {"when": "never"},
 ]
 assert suite["rules"] == [
+    {"if": '$PMIX_RECOVER_CHECKPOINT_20261117 == "1"', "when": "never"},
+    {"if": '$OPENPMIX_FIXED_DIAGNOSTIC == "1"', "when": "never"},
+    {"if": '$OPENPMIX_PR_BASELINE == "1"', "when": "never"},
+    {"if": '$PMIX_TIMEOUT_AUDIT == "1"', "when": "never"},
+    {"if": '$PMIX_CLEANUP_239019 == "1" || $PMIX_CLEANUP_ENDED_RUNS == "1" || $PMIX_TIMEOUT_CLEANUP_PILOT == "1"', "when": "never"},
     {"if": '$OPENPMIX_PR_INTERNAL == "1"', "when": "never"},
     execution_exclusion,
     {"if": '$PMIX_TESTS_PR_PILOT == "1"', "when": "never"},
@@ -170,6 +175,7 @@ assert suite["rules"] == [
 assert parent["workflow"]["rules"] == [
     {"if": '$CI_PIPELINE_SOURCE == "web"'},
     {"if": '$CI_PIPELINE_SOURCE == "schedule"'},
+    {"if": '$CI_PIPELINE_SOURCE == "parent_pipeline" && $PMIX_SCHEDULED_BATCH_INTERNAL == "1"'},
     {"when": "never"},
 ]
 assert parent["stages"] == [

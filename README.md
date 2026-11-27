@@ -89,7 +89,7 @@ export PRRTE_BRANCH=v5.0
 export PRRTE_COMMIT=22820a01e17547dbf1c4f9628eac327f193caa45
 ```
 
-Scheduled and manual multi-commit jobs automatically select an exact compatible PRRTE pin for each OpenPMIx commit. OpenPMIx PR jobs select the pin from the exact PR source. See [PRRTE compatibility](ci/README.md#prrte-compatibility-for-exact-openpmix-commits) for the supported pairings and limitations. Direct local runs must select a compatible dependency themselves.
+Scheduled jobs resolve PRRTE master once per nonempty batch and use that exact SHA for every PMIx job, including daily health checks. Manual multi-commit pilots retain the existing per-PMIx-commit compatibility pins. OpenPMIx PR jobs resolve PRRTE master once per execution and record the exact SHA. See [PRRTE compatibility](ci/README.md#prrte-compatibility-for-exact-openpmix-commits) for the supported pairings and limitations. Direct local runs must select a compatible dependency themselves.
 
 Git checkouts run `autogen.pl` before configure. Release tarballs retain the
 existing extraction and build path and do not run `autogen.pl`.
@@ -187,6 +187,10 @@ inaccessible state is a hard failure; the scheduled path does not initialize
 itself from the current master tip. Discovery fetches OpenPMIx history and writes
 every commit in `known-good..master`, oldest to newest, excluding the known-good
 base. An empty range produces a no-op child pipeline and leaves state unchanged.
+
+A scheduled wrapper holds the `pmix-scheduled-batch` resource group through discovery, testing, reconciliation, and application. With `GITLAB_PIPELINE_CONTROL_TOKEN` configured, a preflight check cancels a redundant idle scheduled poll before it queues for that lock. Without the token, later scheduled runs wait before reading state. See [the CI guide](ci/README.md#skip-redundant-scheduled-master-polls) for setup. The wrapper starts an orchestration child containing the five scheduled jobs; that child generates the exact-commit child pipeline.
+
+When there are no new commits, scheduled discovery checks `LAST_SUCCESS_EPOCH`. If the last successful full-suite run was at least 86,400 seconds (24 hours) ago, it generates one normal exact-commit job to retest the saved PMIx commit as a Frontier health check. A successful health check refreshes the timestamp without advancing the commit; a failed or missing result leaves state unchanged and the check due for retry. An empty backlog younger than 24 hours remains a no-op. New commits always use normal per-commit testing.
 
 For a nonempty range, a generated child pipeline runs one existing exact-commit PMIx Python suite job per SHA. Child jobs may run concurrently as runner and Slurm capacity permit; they do not use a resource group or an artificial concurrency cap. Each job uses a job-specific workspace, virtual environment, ReFrame prefix, and pip cache, and always publishes a strict result record. Result collection is allowed to continue after failed child jobs or incomplete artifact retrieval so that reconciliation can identify a safe prefix.
 

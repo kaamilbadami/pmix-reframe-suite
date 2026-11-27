@@ -30,6 +30,13 @@ class fetch_prrte(rfm.RunOnlyRegressionTest):
 
     @run_before('run')
     def prepare_download(self):
+        offline = os.environ.get('PMIX_SINGLE_OFFLINE_SOURCES', '')
+        if offline:
+            helper = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  'ci', 'pmix_single_sources.py')
+            self.executable = os.environ['PMIX_PYTHON']
+            self.executable_opts = [shlex.quote(helper), 'use', 'prrte', shlex.quote(offline)]
+            return
         if not self.commit:
             self.url = (
                 'https://github.com/openpmix/prrte/releases/download/'

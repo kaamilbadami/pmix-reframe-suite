@@ -18,6 +18,26 @@ child = yaml.safe_load(child_text)
 assert isinstance(parent, dict) and isinstance(jobs, dict) and isinstance(child, dict)
 print("ok - parent, reusable workflow, and child configurations parse as YAML")
 
+# Exercise the first-match schedule rules for ordinary and PR-only schedules.
+def scheduled_job_enabled(name, pr_polling):
+    env = {"CI_PIPELINE_SOURCE": "schedule", "OPENPMIX_PR_AUTODISCOVERY": pr_polling}
+    for rule in parent[name]["rules"]:
+        expression = rule.get("if")
+        if expression:
+            for key, value in env.items():
+                expression = expression.replace("$" + key, repr(value))
+            if not eval(expression.replace("&&", " and "), {"__builtins__": {}}, {}):
+                continue
+        return rule.get("when") != "never"
+    return False
+
+for pr_polling in ("", "0", "1"):
+    assert scheduled_job_enabled("run-pmix-scheduled-batch", pr_polling) == (pr_polling != "1")
+    for name in ("generate-openpmix-pr-pipelines", "trigger-openpmix-pr-pipelines"):
+        assert scheduled_job_enabled(name, pr_polling) == (pr_polling == "1")
+print("ok - ordinary schedules run master batches; PR schedules run only PR discovery")
+
+
 for name in (
         "prepare-openpmix-pr", "run-openpmix-pr",
         "finalize-openpmix-pr"):
@@ -76,9 +96,14 @@ assert "run_pmix_tests_pr_isolated.sh" in parent_text
 assert child["workflow"]["name"] == "openpmix-pr:${OPENPMIX_PR_NUMBER}:${OPENPMIX_PR_EXPECTED_SHA}"
 runner = Path("ci/run_trusted_openpmix_pr.sh").read_text()
 assert 'ci/select_prrte_for_source.py "$checkout_dir" "$selected_sha"' in runner
+assert '"$selected_sha" --prrte-master)' in runner
+assert 'prrte-selection.env' in runner
 assert "export PRRTE_BRANCH PRRTE_COMMIT" in runner
-print("ok - named children select compatible PRRTE and keep the pmix-tests pilot separate")
+assert jobs['run-openpmix-pr']['timeout'] == '6h'
+assert jobs['run-openpmix-pr']['variables']['RUNNER_SCRIPT_TIMEOUT'] == '5h45m'
+assert jobs['run-openpmix-pr']['variables']['RUNNER_AFTER_SCRIPT_TIMEOUT'] == '5m'
+print("ok - named children resolve exact PRRTE master and keep the pmix-tests pilot separate")
 
-print("1..6")
+print("1..8")
 PY
 

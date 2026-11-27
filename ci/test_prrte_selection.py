@@ -12,6 +12,57 @@ spec.loader.exec_module(generator)
 
 
 class SelectionTests(unittest.TestCase):
+    def test_master_is_resolved_once_and_shared_by_all_jobs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commits = Path(directory) / "commits"
+            output = Path(directory) / "child.yml"
+            shas = ["a" * 40, "b" * 40]
+            commits.write_text("\n".join(shas) + "\n")
+            master = "c" * 40
+            response = subprocess.CompletedProcess([], 0, master + "\trefs/heads/master\n", "")
+            with patch.object(generator.subprocess, "run", return_value=response) as run:
+                generator.main([str(commits), str(output), "--prrte-master"])
+                self.assertEqual(run.call_count, 1)
+                self.assertIn("refs/heads/master", run.call_args[0][0])
+            yaml = output.read_text()
+            self.assertEqual(yaml.count('PRRTE_COMMIT: "' + master + '"'), 2)
+            for sha in shas:
+                self.assertIn('PMIX_COMMIT: "' + sha + '"', yaml)
+
+    def test_empty_batch_does_not_contact_prrte(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commits = Path(directory) / "commits"
+            output = Path(directory) / "child.yml"
+            commits.write_text("")
+            with patch.object(generator.subprocess, "run") as run:
+                generator.main([str(commits), str(output), "--prrte-master"])
+                run.assert_not_called()
+            self.assertNotIn("PRRTE_COMMIT:", output.read_text())
+
+    def test_failed_master_lookup_preserves_output(self):
+        responses = [
+            subprocess.CompletedProcess([], 2, "", "network failure"),
+            subprocess.CompletedProcess([], 0, "bad refs/heads/master\n", ""),
+            subprocess.CompletedProcess([], 0, "c" * 40 + " refs/heads/other\n", ""),
+            subprocess.TimeoutExpired("git", 60),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            commits = Path(directory) / "commits"
+            output = Path(directory) / "child.yml"
+            commits.write_text("a" * 40 + "\n")
+            output.write_text("previous output")
+            for response in responses:
+                kwargs = ({"side_effect": response} if isinstance(response, Exception)
+                          else {"return_value": response})
+                with patch.object(generator.subprocess, "run", **kwargs):
+                    with self.assertRaises(SystemExit):
+                        generator.main([str(commits), str(output), "--prrte-master"])
+                self.assertEqual(output.read_text(), "previous output")
+
+    def test_master_and_ancestry_selection_are_exclusive(self):
+        with self.assertRaises(SystemExit):
+            generator.parse_arguments(["in", "out", "--prrte-master", "--select-prrte"])
+
     def test_exact_source_declarations(self):
         self.assertEqual(select("PMIX_EXPORT char *pmix_getline(FILE *fp);"), generator.PRRTE_LEGACY)
         self.assertEqual(select("PMIX_EXPORT char *pmix_getline(FILE *fp, bool *failed);"), generator.PRRTE_GETLINE)
