@@ -445,3 +445,17 @@ not guarantee that every intermittent failure's cause will be apparent.
 
 Validation here uses simulated failures, accounting responses, and a ReFrame
 4.10 dry run. A new normal full-suite Frontier run is required for live evidence.
+
+
+### Latest batch that actually tested commits
+
+The final Apply report includes `latest_tested_batch` and a plain-text link to
+its commit-job pipeline, commit count, and latest test finish time in Eastern.
+Apply saves this display metadata beside the selected authoritative state as
+`.last-tested-batch.json`, under a separate lock. It does not change the
+last-known-good checkpoint or require that tests pass. A commit qualifies when
+its identity-validated runtime sidecar contains at least one passed or failed
+runtime check. Build-only failures, missing evidence, and no-new-commit runs
+retain the previous link. Baseline health-check retests qualify when they run.
+Before the first qualifying batch after this feature is enabled, the report
+says `Not recorded yet.` Historical pipeline discovery is not performed.

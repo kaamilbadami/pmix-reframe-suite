@@ -6,9 +6,12 @@ import errno
 import json
 from pathlib import Path
 import tempfile
+from urllib.parse import urlsplit
+
+from apply_reconciled_pmix_state import locked_state
 
 from collect_pmix_child_results import atomic_write
-from pmix_result_summary import read_json, publish, SHA, eastern_time, age_text, write_text_report
+from pmix_result_summary import read_json, publish, SHA, eastern_time, age_text, write_text_report, parse_timestamp
 from reconcile_pmix_results import parse_state, parse_commits, parse_result, InputError
 
 
@@ -40,8 +43,66 @@ def attempt_details(collection, baseline, suite, output, job, index):
         return publish(inputs, baseline, suite, output)
 
 
+def valid_tested_batch(value):
+    if not isinstance(value, dict) or value.get('schema_version') != 1:
+        return False
+    pipeline_id = value.get('pipeline_id')
+    if type(pipeline_id) is not int or pipeline_id <= 0:
+        return False
+    if type(value.get('commits_tested')) is not int or value['commits_tested'] <= 0:
+        return False
+    url = value.get('pipeline_url')
+    if not isinstance(url, str):
+        return False
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return False
+    return (parsed.scheme == 'https' and bool(parsed.netloc) and
+            parsed.username is None and parsed.password is None and
+            not parsed.query and not parsed.fragment and
+            parsed.path.endswith('/-/pipelines/' + str(pipeline_id)))
+
+
+def latest_tested_batch(items, jobs, index, record=None, final=False):
+    # A CI job merely existing is not evidence of runtime testing. Build-only
+    # failures and missing/mismatched sidecars must not replace a tested batch.
+    tested = [item for item in items if item['attempt'] and
+              sum(item['attempt']['checks'][key] for key in ('passed', 'failed')) > 0]
+    candidate = None
+    if tested:
+        times = [parse_timestamp(jobs.get(item['commit'], {}).get('finished_at')) for item in tested]
+        times = [value for value in times if value is not None]
+        try:
+            candidate = dict(schema_version=1, pipeline_id=int(index.get('child_pipeline_id', '')),
+                             pipeline_url=index.get('pipeline_url'), commits_tested=len(tested),
+                             finished_at=max(times).isoformat() if times else None,
+                             commit_counts={key: sum(item['category'] == key for item in tested)
+                                            for key in ('passed', 'failed', 'incomplete')})
+        except (ValueError, TypeError):
+            pass
+        if not valid_tested_batch(candidate):
+            candidate = None
+    if record is None:
+        return candidate
+    # Only the final Apply report is allowed to persist display metadata. This
+    # sidecar has its own lock and never changes the authoritative checkpoint.
+    with locked_state(record):
+        previous = None
+        if record.exists():
+            previous = read_json(record)
+            if not valid_tested_batch(previous):
+                raise ValueError('invalid saved latest-tested-batch metadata')
+        selected = candidate
+        if previous and (candidate is None or previous['pipeline_id'] > candidate['pipeline_id']):
+            selected = previous
+        if final and selected is candidate and candidate is not None:
+            atomic_write(record, (json.dumps(candidate, indent=2) + '\n').encode())
+        return selected
+
+
 def batch_summary(collection, baseline, commits_file, suite, output,
-                  saved_state=None, apply_exit_code=None, now=None):
+                  saved_state=None, apply_exit_code=None, now=None, tested_batch_record=None):
     now = now or datetime.now(timezone.utc)
     if not SHA.fullmatch(suite):
         raise ValueError('invalid suite revision')
@@ -152,7 +213,10 @@ def batch_summary(collection, baseline, commits_file, suite, output,
         good_age = (now - good_time).total_seconds()
     except (ValueError, OverflowError, OSError):
         good_at, good_age = None, None
+    tested_batch = latest_tested_batch(items, jobs, index, tested_batch_record,
+                                       final=apply_exit_code is not None)
     data = dict(schema_version=2, status=status, suite_commit=suite,
+                latest_tested_batch=tested_batch,
                 generated_at=now.isoformat(), last_known_good_recorded_at=good_at,
                 last_known_good_age_seconds=good_age,
                 batch_start_checkpoint=baseline_commit, saved_checkpoint=saved,
@@ -177,6 +241,12 @@ def batch_summary(collection, baseline, commits_file, suite, output,
             ('Last known good recorded', eastern_time(good_at)),
             ('Time since last known good', age_text(good_age)),
             ('Report generated', eastern_time(now.isoformat()))]
+    if tested_batch:
+        rows += [('Latest batch that tested commits', tested_batch['pipeline_url']),
+                 ('Commits tested in that batch', str(tested_batch['commits_tested'])),
+                 ('Latest test finished in that batch', eastern_time(tested_batch.get('finished_at')))]
+    else:
+        rows.append(('Latest batch that tested commits', 'Not recorded yet.'))
     if first:
         rows += [('First blocker', first['commit']), ('Reason', first['reason'])]
     if commits:
@@ -226,9 +296,11 @@ def main():
     parser.add_argument('--suite-commit', required=True)
     parser.add_argument('--saved-state', type=Path)
     parser.add_argument('--apply-exit-code', type=int)
+    parser.add_argument('--tested-batch-record', type=Path)
     args = parser.parse_args()
     batch_summary(args.collection, args.baseline, args.commits, args.suite_commit,
-                  args.output, args.saved_state, args.apply_exit_code)
+                  args.output, args.saved_state, args.apply_exit_code,
+                  tested_batch_record=args.tested_batch_record)
 
 
 if __name__ == '__main__':

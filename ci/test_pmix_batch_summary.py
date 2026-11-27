@@ -59,6 +59,107 @@ class BatchSummaryTests(unittest.TestCase):
         return batch_summary(self.collection, self.baseline, self.commits, SUITE,
                              self.output, saved, code)
 
+    def final_with_record(self, record, code=0):
+        return batch_summary(self.collection, self.baseline, self.commits, SUITE,
+                             self.output, self.baseline, code, tested_batch_record=record)
+
+    def empty_current_batch(self):
+        self.commits.write_text('')
+        (self.collection / 'attempts.json').write_text('{"jobs": [], "child_pipeline_id": "30", "pipeline_url": "https://gitlab.example/project/-/pipelines/30"}')
+        (self.collection / 'summary-attempt.json').write_text('{"job": null}')
+
+    def test_final_report_retains_tested_batch_across_no_work_runs(self):
+        for sha in (A, B, C):
+            self.result(sha, 'success')
+        record = self.root / 'state.last-tested-batch.json'
+        before = self.baseline.read_bytes()
+        data = self.final_with_record(record)
+        self.assertEqual(data['latest_tested_batch']['pipeline_id'], 20)
+        self.assertEqual(data['latest_tested_batch']['commits_tested'], 3)
+        original = record.read_bytes()
+        self.empty_current_batch()
+        data = self.final_with_record(record)
+        self.assertEqual(data['pipeline_url'], 'https://gitlab.example/project/-/pipelines/30')
+        self.assertEqual(data['latest_tested_batch']['pipeline_id'], 20)
+        self.assertEqual(record.read_bytes(), original)
+        self.assertEqual(self.baseline.read_bytes(), before)
+        text = (self.output / 'latest-summary.txt').read_text()
+        self.assertIn('Latest batch that tested commits: https://gitlab.example/project/-/pipelines/20', text)
+        self.assertIn('Latest test finished in that batch: 11/13/26 7:00 AM EST', text)
+        self.assertIn('No tests ran during this check.', text)
+
+    def test_failed_runtime_tests_count_even_if_checkpoint_apply_fails(self):
+        self.result(A, 'failed', dict(passed=0, failed=11, incomplete=0))
+        record = self.root / 'latest-tested.json'
+        data = self.final_with_record(record, code=1)
+        self.assertEqual(data['latest_tested_batch']['commits_tested'], 1)
+        self.assertEqual(data['latest_tested_batch']['commit_counts']['failed'], 1)
+        self.assertEqual(data['saved_checkpoint'], BASE)
+        self.assertTrue(record.is_file())
+
+    def test_jobs_without_completed_runtime_evidence_do_not_replace_link(self):
+        self.result(A, 'success')
+        record = self.root / 'latest-tested.json'
+        self.final_with_record(record)
+        original = record.read_bytes()
+        for sha in (A, B, C):
+            self.result(sha, 'failed', dict(passed=0, failed=0, incomplete=11))
+        self.assertEqual(self.final_with_record(record)['latest_tested_batch']['commits_tested'], 1)
+        self.assertEqual(record.read_bytes(), original)
+        # A missing sidecar also cannot establish that runtime checks ran.
+        for sha in (A, B, C):
+            (self.collection / (sha + '.summary.json')).unlink()
+        self.final_with_record(record)
+        self.assertEqual(record.read_bytes(), original)
+
+    def test_newer_failed_batch_replaces_a_passing_batch_link(self):
+        self.result(A, 'success')
+        record = self.root / 'latest-tested.json'
+        self.final_with_record(record)
+        self.result(A, 'failed', dict(passed=4, failed=7, incomplete=0))
+        for name in ('attempts.json', 'summary-attempt.json'):
+            path = self.collection / name
+            value = json.loads(path.read_text())
+            value.update(child_pipeline_id='30', pipeline_url='https://gitlab.example/project/-/pipelines/30')
+            path.write_text(json.dumps(value))
+        for suffix in ('.summary.json', '.env'):
+            path = self.collection / (A + suffix)
+            if suffix == '.summary.json':
+                value = json.loads(path.read_text())
+                value['pipeline_id'] = 30
+                path.write_text(json.dumps(value))
+            else:
+                path.write_text(path.read_text().replace('CI_PIPELINE_ID=20', 'CI_PIPELINE_ID=30'))
+        data = self.final_with_record(record)
+        self.assertEqual(data['latest_tested_batch']['pipeline_id'], 30)
+        self.assertEqual(data['latest_tested_batch']['commit_counts']['failed'], 1)
+        self.assertEqual(data['saved_checkpoint'], BASE)
+
+    def test_no_record_yet_is_explicit_and_preliminary_reports_do_not_persist(self):
+        record = self.root / 'latest-tested.json'
+        for sha in (A, B, C):
+            self.result(sha, 'success')
+        data = batch_summary(self.collection, self.baseline, self.commits, SUITE,
+                             self.output, tested_batch_record=record)
+        self.assertIsNotNone(data['latest_tested_batch'])
+        self.assertFalse(record.exists())
+        self.empty_current_batch()
+        self.assertIsNone(self.final_with_record(record)['latest_tested_batch'])
+        self.assertIn('Not recorded yet.', (self.output / 'latest-summary.txt').read_text())
+
+    def test_older_pipeline_and_invalid_links_cannot_replace_saved_record(self):
+        self.result(A, 'success')
+        record = self.root / 'latest-tested.json'
+        self.final_with_record(record)
+        value = json.loads(record.read_text())
+        value.update(pipeline_id=25, pipeline_url='https://gitlab.example/project/-/pipelines/25')
+        record.write_text(json.dumps(value))
+        self.assertEqual(self.final_with_record(record)['latest_tested_batch']['pipeline_id'], 25)
+        index = json.loads((self.collection / 'attempts.json').read_text())
+        index.update(child_pipeline_id='30', pipeline_url='https://token@elsewhere.example/-/pipelines/30')
+        (self.collection / 'attempts.json').write_text(json.dumps(index))
+        self.assertEqual(self.final_with_record(record)['latest_tested_batch']['pipeline_id'], 25)
+
     def test_eastern_display_tracks_daylight_saving_and_date_rollover(self):
         self.assertEqual(eastern_time('2026-11-24T17:52:03.086000+00:00'),
                          '11/24/26 12:52 PM EST')
@@ -265,6 +366,8 @@ class BatchSummaryTests(unittest.TestCase):
         self.assertLess(script.index('apply_reconciled_pmix_state.py apply'),
                         script.index('pmix_batch_summary.py'))
         self.assertIn('--apply-exit-code "$apply_status"', script)
+        self.assertIn('--tested-batch-record', script)
+        self.assertNotIn('--tested-batch-record', config['collect-pmix-child-results-scheduled']['script'][0])
         self.assertIn('ci-scheduled/report/', job['artifacts']['paths'])
         self.assertIn('exit "$apply_status"', script)
         self.assertEqual(job['artifacts']['when'], 'always')

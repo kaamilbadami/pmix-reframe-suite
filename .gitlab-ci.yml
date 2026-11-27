@@ -619,6 +619,7 @@ apply-pmix-reconciled-state-scheduled:
           --commits ci-scheduled/pmix-untested-commits.txt \
           --suite-commit "$CI_COMMIT_SHA" \
           --apply-exit-code "$apply_status" "${saved_options[@]}" \
+          --tested-batch-record "${PMIX_SCHEDULED_STATE_FILE:-$PMIX_AUTHORITATIVE_STATE_FILE}.last-tested-batch.json" \
           --output ci-scheduled/report || report_status=$?
       (( apply_status == 0 )) || exit "$apply_status"
       (( snapshot_status == 0 )) || exit "$snapshot_status"
